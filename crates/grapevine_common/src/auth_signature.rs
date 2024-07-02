@@ -89,7 +89,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
             .unwrap();
 
         let mut null_buf = [0u8; 48];
-        null_buf[..plaintext.len()].copy_from_slice(&plaintext);
+        null_buf[..nullifier_bytes.len()].copy_from_slice(&nullifier_bytes);
         let encrypted_nullifier: [u8; 48] =
             Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
                 .encrypt_padded_mut::<Pkcs7>(&mut null_buf, nullifier_bytes.len())

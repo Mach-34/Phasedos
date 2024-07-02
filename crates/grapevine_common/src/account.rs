@@ -121,7 +121,13 @@ impl GrapevineAccount {
         // sign pubkey hash
         let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&hash));
         let signature: Signature = self.private_key().sign(message).unwrap();
-        AuthSignatureEncrypted::new(self.username.clone(), signature, nullifier, recipient)
+
+        AuthSignatureEncrypted::new(
+            self.username.clone(),
+            signature,
+            convert_ff_ce_to_ff(&nullifier),
+            recipient,
+        )
     }
 
     /// PHRASE ENCRYPTION METHODS ///
@@ -251,11 +257,11 @@ impl GrapevineAccount {
         let encrypted_nullifier: [u8; 48] = [0u8; 48]; // TODO: Encrypt nullifier
                                                        // return the New Relationship http request struct
         NewRelationshipRequest {
-            nullifier: encrypted_nullifier,
-            nullifier_secret: encrypted_nullifier_secret,
+            encrypted_nullifier: encrypted_nullifier,
+            encrypted_nullifier_secret: encrypted_nullifier_secret,
             to: username.clone(),
             ephemeral_key: encrypted_auth_signature.ephemeral_key,
-            ciphertext: encrypted_auth_signature.ciphertext,
+            encrypted_auth_signature: encrypted_auth_signature.ciphertext,
         }
     }
 
