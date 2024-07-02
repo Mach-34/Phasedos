@@ -1,4 +1,5 @@
-use crate::{Fr, MAX_SECRET_CHARS, MAX_USERNAME_CHARS, SECRET_FIELD_LENGTH};
+use crate::{compat::ff_ce_from_le_bytes, Fr, MAX_SECRET_CHARS, MAX_USERNAME_CHARS, SECRET_FIELD_LENGTH};
+use babyjubjub_rs::Fr as Fr_ce;
 use std::error::Error;
 
 /**
@@ -8,6 +9,10 @@ use std::error::Error;
  */
 pub fn random_fr() -> Fr {
     ff::Field::random(rand::rngs::OsRng)
+}
+
+pub fn random_fr_ce() -> Fr_ce {
+    ff_ce_from_le_bytes(random_fr().to_bytes())
 }
 
 /**

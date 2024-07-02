@@ -13,6 +13,7 @@ path = "src/params_gen.rs"
 
 [dependencies]
 babyjubjub-rs.workspace = true
+poseidon-rs.workspace = true
 grapevine_common.workspace = true
 lazy_static.workspace = true
 nova-scotia.workspace = true

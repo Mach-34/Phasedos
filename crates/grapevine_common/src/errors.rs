@@ -23,7 +23,7 @@ pub enum GrapevineError {
     InternalError,
     SerdeError(String),
     DegreeProofExists,
-    DegreeProofVerificationFailed,
+    ProofFailed(String),
     FsError(String)
 }
 
@@ -92,8 +92,8 @@ impl std::fmt::Display for GrapevineError {
                     "Degree proof already exists between these accounts for this phrase"
                 )
             }
-            GrapevineError::DegreeProofVerificationFailed => {
-                write!(f, "Failed to verify degree proof")
+            GrapevineError::ProofFailed(msg) => {
+                write!(f, "Failed to verify proof: {}", msg)
             },
             GrapevineError::FsError(msg) => write!(f, "Filesystem error: {}", msg),
         }

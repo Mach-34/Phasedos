@@ -5,6 +5,10 @@ CIRCOM_DIR=./crates/grapevine_circuits/circom
 ## Install circomlib dependencies
 cd $CIRCOM_DIR
 yarn
+
+## remove any testing artifacts
+rm inputs.json
+rm witness.wtns
 cd -
 
 ## Ensure the existence of the artifacts directory

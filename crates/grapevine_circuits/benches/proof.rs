@@ -1,8 +1,5 @@
 use babyjubjub_rs::Point;
 use criterion::{criterion_group, criterion_main, Criterion};
-use grapevine_circuits::nova::{
-    continue_nova_proof, get_public_params, get_r1cs, nova_proof, verify_nova_proof,
-};
 use grapevine_circuits::utils::compress_proof;
 use grapevine_common::account::GrapevineAccount;
 use grapevine_common::utils::random_fr;

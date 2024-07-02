@@ -20,12 +20,12 @@ template StepType() {
     component step_mux = MultiMux1(2);
     step_mux.s <== scope_is_zero.out;
     // @ NOTE NEVER CHAFF IF IDENTITY IS TRUE FIX
-    // if scope is 0, then this is an identity step
-    step_mux.c[0][0] <== 1 - obfuscate;
-    step_mux.c[0][1] <== 0;
-    // if scope is not 0, then this is a degree step
-    step_mux.c[1][0] <== 0;
-    step_mux.c[1][1] <== 1 - obfuscate;
+    // if scope is 0 (true), then this is an identity step
+    step_mux.c[0][0] <== 0;
+    step_mux.c[0][1] <== 1 - obfuscate;
+    // if scope is not 0 (false), then this is a degree step
+    step_mux.c[1][0] <== 1 - obfuscate;
+    step_mux.c[1][1] <== 0;
 
     identity <== step_mux.out[0];
     degree <== step_mux.out[1];
@@ -53,7 +53,7 @@ template ParseInputs() {
     signal output nullifiers[8]; // array of nullifiers for each degree
     signal output is_identity_step; // boolean denoting if step is identity (0 if obfuscated)
     signal output is_degree_step; // boolean denoting if step is degree (0 if obfuscated)
-    
+
     // label inputs
     obfuscate <== step_in[0];
     degree <== step_in[1];

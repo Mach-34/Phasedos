@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreateUserRequest {
-    pub username: String,
-    pub pubkey: [u8; 32],
+    pub username: String, // the username of the user to create
+    pub pubkey: [u8; 32], // the pubkey of the user to create
     #[serde(with = "serde_bytes")]
-    pub signature: [u8; 64],
+    pub proof: Vec<u8>, // compressed identity proof
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
