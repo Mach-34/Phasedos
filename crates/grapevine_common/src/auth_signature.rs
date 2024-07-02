@@ -1,4 +1,4 @@
-use crate::compat::convert_ff_ce_to_ff;
+use crate::compat::{convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_to_le_bytes};
 use crate::Fr;
 use crate::{crypto::gen_aes_key, utils::to_array_32};
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
@@ -17,6 +17,8 @@ pub struct AuthSignatureEncrypted {
     pub recipient: [u8; 32],
     pub ephemeral_key: [u8; 32],
     #[serde(with = "serde_bytes")]
+    pub nullifier: [u8; 48],
+    #[serde(with = "serde_bytes")]
     pub ciphertext: [u8; 80],
 }
 
@@ -26,6 +28,8 @@ pub struct AuthSignatureEncrypted {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AuthSignature {
     pub username: String,
+    #[serde(with = "serde_bytes")]
+    pub nullifier: [u8; 32],
     #[serde(with = "serde_bytes")]
     pub auth_signature: [u8; 64], // compressed form of auth signature
 }
@@ -54,7 +58,7 @@ pub trait AuthSignatureEncryptedUser {
      * @param recipient- the bjj pubkey of the recipient of the auth signature
      * @returns - encrypted auth signature
      */
-    fn new(username: String, auth_signature: Signature, recipient: Point) -> Self;
+    fn new(username: String, auth_signature: Signature, nullifier: Fr, recipient: Point) -> Self;
 
     /**
      * Decrypts an encrypted AuthSignature
@@ -66,27 +70,40 @@ pub trait AuthSignatureEncryptedUser {
 }
 
 impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
-    fn new(username: String, signature: Signature, recipient: Point) -> Self {
+    fn new(username: String, signature: Signature, nullifier: Fr, recipient: Point) -> Self {
         // generate a new ephemeral keypair
         let ephm_sk = babyjubjub_rs::new_key();
         let ephm_pk = ephm_sk.public().compress();
         // compute the aes-cbc-128 key
         let (aes_key, aes_iv) = gen_aes_key(ephm_sk, recipient.clone());
+        let nullifier_bytes = ff_ce_to_le_bytes(&convert_ff_to_ff_ce(&nullifier)); // TODO: Change this garbage
+
         // encrypt the auth signature
         let plaintext = signature.compress();
-        let mut buf = [0u8; 80];
-        buf[..plaintext.len()].copy_from_slice(&plaintext);
+        let mut sig_buf = [0u8; 80];
+        sig_buf[..plaintext.len()].copy_from_slice(&plaintext);
         let ciphertext: [u8; 80] = Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
-            .encrypt_padded_mut::<Pkcs7>(&mut buf, plaintext.len())
+            .encrypt_padded_mut::<Pkcs7>(&mut sig_buf, plaintext.len())
             .unwrap()
             .try_into()
             .unwrap();
+
+        let mut null_buf = [0u8; 48];
+        null_buf[..plaintext.len()].copy_from_slice(&plaintext);
+        let encrypted_nullifier: [u8; 48] =
+            Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
+                .encrypt_padded_mut::<Pkcs7>(&mut null_buf, nullifier_bytes.len())
+                .unwrap()
+                .try_into()
+                .unwrap();
+
         // return the encrypted auth signature
         Self {
             username,
             recipient: recipient.compress(),
             ephemeral_key: ephm_pk,
             ciphertext: ciphertext,
+            nullifier: encrypted_nullifier,
         }
     }
 
@@ -94,16 +111,27 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
         // compute the aes-cbc-128 key
         let ephm_pk = babyjubjub_rs::decompress_point(self.ephemeral_key).unwrap();
         let (aes_key, aes_iv) = gen_aes_key(recipient, ephm_pk);
+
         // decrypt the auth signature
-        let mut buf = self.ciphertext;
+        let mut sig_buf = self.ciphertext;
         let auth_signature: [u8; 64] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
-            .decrypt_padded_mut::<Pkcs7>(&mut buf)
+            .decrypt_padded_mut::<Pkcs7>(&mut sig_buf)
             .unwrap()
             .try_into()
             .unwrap();
+
+        // decrypt the nullifier
+        let mut null_buf = self.nullifier;
+        let nullifier: [u8; 32] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
+            .decrypt_padded_mut::<Pkcs7>(&mut null_buf)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
         AuthSignature {
             username: self.username.clone(),
             auth_signature,
+            nullifier,
         }
     }
 }
@@ -114,7 +142,7 @@ mod test {
     use poseidon_rs::Poseidon;
 
     use super::*;
-    use crate::compat::ff_ce_to_le_bytes;
+    use crate::{compat::ff_ce_to_le_bytes, utils::random_fr};
     #[test]
     fn integrity_test() {
         // setup
@@ -131,9 +159,13 @@ mod test {
         let msg = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&hash));
         let auth_signature = sender_sk.sign(msg).unwrap();
 
+        // generate relationship nullifier
+        // TODO: Use random nullifier for now
+        let nullifier = random_fr();
+
         // create encrypted auth signature
         let encrypted_auth_signature =
-            AuthSignatureEncrypted::new(username, auth_signature.clone(), recipient_pk);
+            AuthSignatureEncrypted::new(username, auth_signature.clone(), nullifier, recipient_pk);
         // decrypt the auth signature
         let decrypted_auth_signature = encrypted_auth_signature.decrypt(recipient_sk);
         // check that the auth signature is the same
@@ -163,9 +195,12 @@ mod test {
         let msg = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&hash));
         let auth_signature = sender_sk.sign(msg).unwrap();
 
+        // TODO: Use random nullifier for now
+        let nullifier = random_fr();
+
         // create encrypted auth signature
         let encrypted_auth_signature =
-            AuthSignatureEncrypted::new(username, auth_signature.clone(), recipient_pk);
+            AuthSignatureEncrypted::new(username, auth_signature.clone(), nullifier, recipient_pk);
         // serialize to json
         let json = serde_json::to_string(&encrypted_auth_signature).unwrap();
         // deserialize from json

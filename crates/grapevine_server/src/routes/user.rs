@@ -33,98 +33,98 @@ use rocket::serde::json::Json;
  *             * 409 if username || pubkey are already in use by another user
  *             * 500 if db fails or other unknown issue
  */
-#[post("/create", format = "json", data = "<request>")]
-pub async fn create_user(
-    request: Json<CreateUserRequest>,
-    db: &State<GrapevineDB>,
-) -> Result<GrapevineResponse, GrapevineResponse> {
-    // check username length is valid
-    if request.username.len() > MAX_USERNAME_CHARS {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::UsernameTooLong(request.username.clone())),
-            None,
-        )));
-    };
-    // check request is ascii
-    if !request.username.is_ascii() {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::UsernameNotAscii(request.username.clone())),
-            None,
-        )));
-    };
-    // check the validity of the signature over the username
-    let message = BigInt::from_bytes_le(
-        Sign::Plus,
-        &convert_username_to_fr(&request.username).unwrap()[..],
-    );
-    let pubkey_decompressed = decompress_point(request.pubkey).unwrap();
-    let signature_decompressed = decompress_signature(&request.signature).unwrap();
-    match verify(pubkey_decompressed, signature_decompressed, message) {
-        true => (),
-        false => {
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::Signature(String::from(
-                    "Could not verify user creation signature",
-                ))),
-                None,
-            )));
-        }
-    };
-    // check that the username or pubkey are not already used
-    match db
-        .check_creation_params(&request.username, &request.pubkey)
-        .await
-    {
-        Ok(found) => match found {
-            [true, true] => {
-                return Err(GrapevineResponse::Conflict(ErrorMessage(
-                    Some(GrapevineError::UserExists(request.username.clone())),
-                    None,
-                )));
-            }
-            [true, false] => {
-                return Err(GrapevineResponse::Conflict(ErrorMessage(
-                    Some(GrapevineError::UsernameExists(request.username.clone())),
-                    None,
-                )));
-            }
-            [false, true] => {
-                return Err(GrapevineResponse::Conflict(ErrorMessage(
-                    Some(GrapevineError::PubkeyExists(format!(
-                        "0x{}",
-                        hex::encode(request.pubkey.clone())
-                    ))),
-                    None,
-                )));
-            }
-            _ => (),
-        },
-        Err(e) => {
-            return Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(e),
-                None,
-            )))
-        }
-    };
-    // create the new user in the database
-    let user = User {
-        id: None,
-        nonce: Some(0),
-        username: Some(request.username.clone()),
-        pubkey: Some(request.pubkey.clone()),
-        relationships: Some(vec![]),
-        degree_proofs: Some(vec![]),
-    };
-    match db.create_user(user).await {
-        Ok(_) => Ok(GrapevineResponse::Created(
-            "User succefully created".to_string(),
-        )),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
-    }
-}
+// #[post("/create", format = "json", data = "<request>")]
+// pub async fn create_user(
+//     request: Json<CreateUserRequest>,
+//     db: &State<GrapevineDB>,
+// ) -> Result<GrapevineResponse, GrapevineResponse> {
+//     // check username length is valid
+//     if request.username.len() > MAX_USERNAME_CHARS {
+//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
+//             Some(GrapevineError::UsernameTooLong(request.username.clone())),
+//             None,
+//         )));
+//     };
+//     // check request is ascii
+//     if !request.username.is_ascii() {
+//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
+//             Some(GrapevineError::UsernameNotAscii(request.username.clone())),
+//             None,
+//         )));
+//     };
+//     // check the validity of the signature over the username
+//     let message = BigInt::from_bytes_le(
+//         Sign::Plus,
+//         &convert_username_to_fr(&request.username).unwrap()[..],
+//     );
+//     let pubkey_decompressed = decompress_point(request.pubkey).unwrap();
+//     let signature_decompressed = decompress_signature(&request.signature).unwrap();
+//     match verify(pubkey_decompressed, signature_decompressed, message) {
+//         true => (),
+//         false => {
+//             return Err(GrapevineResponse::BadRequest(ErrorMessage(
+//                 Some(GrapevineError::Signature(String::from(
+//                     "Could not verify user creation signature",
+//                 ))),
+//                 None,
+//             )));
+//         }
+//     };
+//     // check that the username or pubkey are not already used
+//     match db
+//         .check_creation_params(&request.username, &request.pubkey)
+//         .await
+//     {
+//         Ok(found) => match found {
+//             [true, true] => {
+//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
+//                     Some(GrapevineError::UserExists(request.username.clone())),
+//                     None,
+//                 )));
+//             }
+//             [true, false] => {
+//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
+//                     Some(GrapevineError::UsernameExists(request.username.clone())),
+//                     None,
+//                 )));
+//             }
+//             [false, true] => {
+//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
+//                     Some(GrapevineError::PubkeyExists(format!(
+//                         "0x{}",
+//                         hex::encode(request.pubkey.clone())
+//                     ))),
+//                     None,
+//                 )));
+//             }
+//             _ => (),
+//         },
+//         Err(e) => {
+//             return Err(GrapevineResponse::InternalError(ErrorMessage(
+//                 Some(e),
+//                 None,
+//             )))
+//         }
+//     };
+//     // create the new user in the database
+//     let user = User {
+//         id: None,
+//         nonce: Some(0),
+//         username: Some(request.username.clone()),
+//         pubkey: Some(request.pubkey.clone()),
+//         relationships: Some(vec![]),
+//         degree_proofs: Some(vec![]),
+//     };
+//     match db.create_user(user).await {
+//         Ok(_) => Ok(GrapevineResponse::Created(
+//             "User succefully created".to_string(),
+//         )),
+//         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+//             Some(e),
+//             None,
+//         ))),
+//     }
+// }
 
 /**
  * Add a unidirectional relationship allowing the target to prove connection to the sender
@@ -205,20 +205,35 @@ pub async fn add_relationship(
         }
     };
 
-    // add relationship doc and push to recipient array
-    let relationship_doc = Relationship {
+    let from_relationship_doc = Relationship {
         id: None,
         sender: Some(sender.id.unwrap()),
         recipient: Some(recipient.id.unwrap()),
-        ephemeral_key: Some(request.ephemeral_key.clone()),
-        nullifier_secret: Some(request.nullifier_secret),
-        ciphertext: Some(request.ciphertext.clone()),
-        active: Some(activate),
+        encrypted_nullifier_secret: Some(request.nullifier_secret),
+        encrypted_nullifier: None,
+        ephemeral_key: None,
+        encrypted_auth_signature: None,
+        active: Some(active)
+    };
+
+    let to_relationship_doc = Relationship {
+        id: None,
+        sender: Some(recipient.id.unwrap()),
+        recipient: Some(sender.id.unwrap()),
+        encrypted_nullifier_secret: None,
+        ephemeral_key: Some(request.ephemeral_key),
+        encrypted_auth_signature: Some(request.encrypted_auth_signature),
+        encrypted_nullifier: Some(request.encrypted_nullifier),
+        active: Some(active)
     };
 
     let req = match activate {
         true => db.activate_relationship(&relationship_doc).await,
-        false => db.add_pending_relationship(&relationship_doc).await,
+        false => {
+            // TODO: Can prolly just achieve this with an "add_pending_relationships" function
+            db.add_pending_relationship(&from_relationship_doc).await;
+            db.add_pending_relationship(&to_relationship_doc).await;
+        },
     };
 
     match req {
@@ -296,55 +311,55 @@ pub async fn get_active_relationships(
 /**
  * @todo: remove / replace with get nonce
  */
-#[get("/<username>")]
-pub async fn get_user(
-    username: String,
-    db: &State<GrapevineDB>,
-) -> Result<Json<User>, GrapevineResponse> {
-    match db.get_user(&username).await {
-        Some(user) => Ok(Json(user)),
-        None => Err(GrapevineResponse::NotFound(format!(
-            "User {} does not exist.",
-            username
-        ))),
-    }
-}
+// #[get("/<username>")]
+// pub async fn get_user(
+//     username: String,
+//     db: &State<GrapevineDB>,
+// ) -> Result<Json<User>, GrapevineResponse> {
+//     match db.get_user(&username).await {
+//         Some(user) => Ok(Json(user)),
+//         None => Err(GrapevineResponse::NotFound(format!(
+//             "User {} does not exist.",
+//             username
+//         ))),
+//     }
+// }
 
-#[post("/nonce", format = "json", data = "<request>")]
-pub async fn get_nonce(
-    request: Json<GetNonceRequest>,
-    db: &State<GrapevineDB>,
-) -> Result<String, GrapevineResponse> {
-    // get pubkey & nonce for user
-    let (nonce, pubkey) = match db.get_nonce(&request.username).await {
-        Some((nonce, pubkey)) => (nonce, pubkey),
-        None => {
-            return Err(GrapevineResponse::NotFound(String::from(
-                "User not does not exist.",
-            )))
-        }
-    };
-    // check the validity of the signature over the username
-    let message = BigInt::from_bytes_le(
-        Sign::Plus,
-        &convert_username_to_fr(&request.username).unwrap()[..],
-    );
-    let pubkey_decompressed = decompress_point(pubkey).unwrap();
-    let signature_decompressed = decompress_signature(&request.signature).unwrap();
-    match verify(pubkey_decompressed, signature_decompressed, message) {
-        true => (),
-        false => {
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::Signature(String::from(
-                    "Could not verify nonce recovery signature",
-                ))),
-                None,
-            )));
-        }
-    };
-    // return the stringified nonce
-    Ok(nonce.to_string())
-}
+// #[post("/nonce", format = "json", data = "<request>")]
+// pub async fn get_nonce(
+//     request: Json<GetNonceRequest>,
+//     db: &State<GrapevineDB>,
+// ) -> Result<String, GrapevineResponse> {
+//     // get pubkey & nonce for user
+//     let (nonce, pubkey) = match db.get_nonce(&request.username).await {
+//         Some((nonce, pubkey)) => (nonce, pubkey),
+//         None => {
+//             return Err(GrapevineResponse::NotFound(String::from(
+//                 "User not does not exist.",
+//             )))
+//         }
+//     };
+//     // check the validity of the signature over the username
+//     let message = BigInt::from_bytes_le(
+//         Sign::Plus,
+//         &convert_username_to_fr(&request.username).unwrap()[..],
+//     );
+//     let pubkey_decompressed = decompress_point(pubkey).unwrap();
+//     let signature_decompressed = decompress_signature(&request.signature).unwrap();
+//     match verify(pubkey_decompressed, signature_decompressed, message) {
+//         true => (),
+//         false => {
+//             return Err(GrapevineResponse::BadRequest(ErrorMessage(
+//                 Some(GrapevineError::Signature(String::from(
+//                     "Could not verify nonce recovery signature",
+//                 ))),
+//                 None,
+//             )));
+//         }
+//     };
+//     // return the stringified nonce
+//     Ok(nonce.to_string())
+// }
 
 /**
  * Return the public key of a given user
@@ -356,18 +371,18 @@ pub async fn get_nonce(
  *            * 404 if user not found
  *            * 500 if db fails or other unknown issue
  */
-#[get("/<username>/pubkey")]
-pub async fn get_pubkey(
-    username: String,
-    db: &State<GrapevineDB>,
-) -> Result<String, GrapevineResponse> {
-    match db.get_pubkey(username).await {
-        Some(pubkey) => Ok(hex::encode(pubkey)),
-        None => Err(GrapevineResponse::NotFound(String::from(
-            "User not does not exist.",
-        ))),
-    }
-}
+// #[get("/<username>/pubkey")]
+// pub async fn get_pubkey(
+//     username: String,
+//     db: &State<GrapevineDB>,
+// ) -> Result<String, GrapevineResponse> {
+//     match db.get_pubkey(username).await {
+//         Some(pubkey) => Ok(hex::encode(pubkey)),
+//         None => Err(GrapevineResponse::NotFound(String::from(
+//             "User not does not exist.",
+//         ))),
+//     }
+// }
 
 /**
  * Return a list of all available (new) degree proofs from existing connections that a user can
@@ -384,21 +399,21 @@ pub async fn get_pubkey(
  *            * 404 if user not found
  *            * 500 if db fails or other unknown issue
  */
-#[get("/degrees")]
-pub async fn get_all_degrees(
-    user: AuthenticatedUser,
-    db: &State<GrapevineDB>,
-) -> Result<Json<Vec<DegreeData>>, GrapevineResponse> {
-    match db.get_all_degrees(user.0).await {
-        Some(proofs) => Ok(Json(proofs)),
-        None => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::MongoError(String::from(
-                "Error retrieving degrees in db",
-            ))),
-            None,
-        ))),
-    }
-}
+// #[get("/degrees")]
+// pub async fn get_all_degrees(
+//     user: AuthenticatedUser,
+//     db: &State<GrapevineDB>,
+// ) -> Result<Json<Vec<DegreeData>>, GrapevineResponse> {
+//     match db.get_all_degrees(user.0).await {
+//         Some(proofs) => Ok(Json(proofs)),
+//         None => Err(GrapevineResponse::InternalError(ErrorMessage(
+//             Some(GrapevineError::MongoError(String::from(
+//                 "Error retrieving degrees in db",
+//             ))),
+//             None,
+//         ))),
+//     }
+// }
 
 /**
  * Returns account details related to degree proofs
@@ -410,29 +425,29 @@ pub async fn get_all_degrees(
  *            * 404 if user not found
  *            * 500 if db fails or other unknown issue
  */
-#[get("/details")]
-pub async fn get_account_details(
-    user: AuthenticatedUser,
-    db: &State<GrapevineDB>,
-) -> Result<Json<(u64, u64, u64)>, GrapevineResponse> {
-    let recipient = match db.get_user(&user.0).await {
-        Some(user) => user,
-        None => {
-            return Err(GrapevineResponse::NotFound(String::from(
-                "Recipient does not exist.".to_string(),
-            )));
-        }
-    };
-    match db.get_account_details(&recipient.id.unwrap()).await {
-        Some(details) => Ok(Json(details)),
-        None => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::MongoError(String::from(
-                "Error user states",
-            ))),
-            None,
-        ))),
-    }
-}
+// #[get("/details")]
+// pub async fn get_account_details(
+//     user: AuthenticatedUser,
+//     db: &State<GrapevineDB>,
+// ) -> Result<Json<(u64, u64, u64)>, GrapevineResponse> {
+//     let recipient = match db.get_user(&user.0).await {
+//         Some(user) => user,
+//         None => {
+//             return Err(GrapevineResponse::NotFound(String::from(
+//                 "Recipient does not exist.".to_string(),
+//             )));
+//         }
+//     };
+//     match db.get_account_details(&recipient.id.unwrap()).await {
+//         Some(details) => Ok(Json(details)),
+//         None => Err(GrapevineResponse::InternalError(ErrorMessage(
+//             Some(GrapevineError::MongoError(String::from(
+//                 "Error user states",
+//             ))),
+//             None,
+//         ))),
+//     }
+// }
 
 // /**
 //  * Return a list of the usernames of all direct connections by a given user

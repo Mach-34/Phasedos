@@ -162,16 +162,16 @@ impl GrapevineDB {
     //     }
     // }
 
-    // pub async fn add_pending_relationship(
-    //     &self,
-    //     relationship: &Relationship,
-    // ) -> Result<(), GrapevineError> {
-    //     // create new relationship document
-    //     match self.relationships.insert_one(relationship, None).await {
-    //         Ok(_) => Ok(()),
-    //         Err(e) => Err(GrapevineError::MongoError(e.to_string())),
-    //     }
-    // }
+    pub async fn add_pending_relationship(
+        &self,
+        relationship: &Relationship,
+    ) -> Result<(), GrapevineError> {
+        // create new relationship document
+        match self.relationships.insert_one(relationship, None).await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        }
+    }
 
     // /**
     //  * Sets pending relationship to be active (to -> from) and creates a new relationship (from -> to)

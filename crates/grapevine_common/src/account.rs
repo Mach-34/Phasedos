@@ -39,7 +39,11 @@ impl GrapevineAccount {
      * Test function to allow manual specification of account
      */
     pub fn from_repr(username: String, private_key: [u8; 32], nonce: u64) -> Self {
-        Self { username, private_key, nonce }
+        Self {
+            username,
+            private_key,
+            nonce,
+        }
     }
 
     /// PERSISTENCE METHODS ///
@@ -117,7 +121,7 @@ impl GrapevineAccount {
         // sign pubkey hash
         let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&hash));
         let signature: Signature = self.private_key().sign(message).unwrap();
-        AuthSignatureEncrypted::new(self.username.clone(), signature, recipient)
+        AuthSignatureEncrypted::new(self.username.clone(), signature, nullifier, recipient)
     }
 
     /// PHRASE ENCRYPTION METHODS ///
@@ -171,7 +175,7 @@ impl GrapevineAccount {
         let nullifier = hasher.hash(vec![nullifier_secret, address]).unwrap();
 
         let secret_bytes = ff_ce_to_le_bytes(&nullifier_secret);
-        // encrypt the nullifier secret
+        // encrypt the nullifier secret to issuer
         let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());
         let mut buf = [0u8; 48];
         buf[..secret_bytes.len()].copy_from_slice(&secret_bytes);
@@ -214,16 +218,16 @@ impl GrapevineAccount {
 
     /**
      * Create the http request body for creating a new user in the Grapevine service
-     * 
+     *
      * @param proof - the compressed proof of identity (degree 0) for this user
-     * 
+     *
      * @returns - the CreateUserRequest authorizing a new user to be added to Grapevine service
      */
     pub fn create_user_request(&self, proof: Vec<u8>) -> CreateUserRequest {
         CreateUserRequest {
             username: self.username.clone(),
             pubkey: self.pubkey().compress(),
-            proof
+            proof,
         }
     }
 
@@ -243,8 +247,11 @@ impl GrapevineAccount {
         let (nullifier, encrypted_nullifier_secret) = self.generate_nullifier();
         // encrypt the auth signature with the target pubkey
         let encrypted_auth_signature = self.generate_auth_signature(pubkey.clone(), nullifier);
-        // return the New Relationship http request struct
+
+        let encrypted_nullifier: [u8; 48] = [0u8; 48]; // TODO: Encrypt nullifier
+                                                       // return the New Relationship http request struct
         NewRelationshipRequest {
+            nullifier: encrypted_nullifier,
             nullifier_secret: encrypted_nullifier_secret,
             to: username.clone(),
             ephemeral_key: encrypted_auth_signature.ephemeral_key,

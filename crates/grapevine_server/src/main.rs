@@ -75,7 +75,7 @@ mod test_rocket {
         local::asynchronous::Client,
     };
     use std::sync::Mutex;
-    use test_helper::{build_create_user_request, http_create_user};
+    use test_helper::{build_create_user_request, http_add_relationship, http_create_user};
 
     lazy_static! {
         static ref USERS: Mutex<Vec<GrapevineAccount>> = Mutex::new(vec![]);
@@ -167,6 +167,24 @@ mod test_rocket {
             let message = res.into_string().await.unwrap();
             (code, message)
         }
+
+        pub async fn http_add_relationship(
+            context: &GrapevineTestContext,
+            payload: &NewRelationshipRequest,
+        ) -> (u16, String) {
+            // serialize the payload
+            let serialized = bincode::serialize(&payload).unwrap();
+            // mock transmit the request
+            let res = context
+                .client
+                .post("/user/relationship/add")
+                .body(serialized)
+                .dispatch()
+                .await;
+            let code = res.status().code;
+            let message = res.into_string().await.unwrap();
+            (code, message)
+        }
     }
 
     #[cfg(test)]
@@ -250,6 +268,27 @@ mod test_rocket {
             );
             assert_eq!(code, Status::BadRequest.code);
             assert_eq!(message, expected_message);
+        }
+
+        #[rocket::async_test]
+        pub async fn test_relationship_creation() {
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // Create a request where proof creator is different from asserted pubkey
+            let user_a = GrapevineAccount::new("User_Coolaid".into());
+
+            let user_b = GrapevineAccount::new("User_Oj".into());
+
+            let user_request_a = build_create_user_request(&user_a);
+            let user_request_b = build_create_user_request(&user_b);
+            http_create_user(&context, &user_request_a).await;
+            http_create_user(&context, &user_request_b).await;
+
+            // add relationship as user_a to user_b
+            let relationship_request =
+                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+            http_add_relationship(&context, &relationship_request).await;
         }
 
         // todo: check malformed inputs

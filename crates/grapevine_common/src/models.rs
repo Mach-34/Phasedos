@@ -38,11 +38,13 @@ pub struct Relationship {
     pub recipient: Option<ObjectId>, // use this privkey to decrypt
     pub sender: Option<ObjectId>,
     #[serde(default, with = "serde_bytes")]
-    pub nullifier_secret: Option<[u8; 48]>,
+    pub encrypted_nullifier: Option<[u8; 48]>,
+    #[serde(default, with = "serde_bytes")]
+    pub encrypted_nullifier_secret: Option<[u8; 48]>,
     #[serde(default, with = "serde_bytes")]
     pub ephemeral_key: Option<[u8; 32]>,
     #[serde(default, with = "serde_bytes")]
-    pub ciphertext: Option<[u8; 80]>,
+    pub encrypted_auth_signature: Option<[u8; 80]>,
     pub active: Option<bool>, // true if both users have accepted, false if pending
 }
 
@@ -56,5 +58,5 @@ pub struct User {
     #[serde(with = "serde_bytes")]
     pub pubkey: Option<[u8; 32]>, // the pubkey of the user
     #[serde(with = "serde_bytes")]
-    pub address: Option<[u8; 32]> // the hashed pubkey of the user
+    pub address: Option<[u8; 32]>, // the hashed pubkey of the user
 }
