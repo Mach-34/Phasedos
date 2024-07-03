@@ -75,7 +75,10 @@ mod test_rocket {
         local::asynchronous::Client,
     };
     use std::sync::Mutex;
-    use test_helper::{build_create_user_request, http_add_relationship, http_create_user};
+    use test_helper::{
+        build_create_user_request, http_add_relationship, http_create_user,
+        http_get_nullifier_secret,
+    };
 
     lazy_static! {
         static ref USERS: Mutex<Vec<GrapevineAccount>> = Mutex::new(vec![]);
@@ -144,6 +147,17 @@ mod test_rocket {
         }
 
         /**
+         * Signs a nonce used to authenticate user on the server
+         *
+         * @param user - account signing nonce
+         * @return - account's signature over nonce
+         */
+        fn generate_nonce_signature(user: &GrapevineAccount) -> String {
+            let nonce_signature = user.sign_nonce();
+            hex::encode(nonce_signature.compress())
+        }
+
+        /**
          * Mock http request to create a new user
          *
          * @param context - the mocked rocket http server context
@@ -170,19 +184,51 @@ mod test_rocket {
 
         pub async fn http_add_relationship(
             context: &GrapevineTestContext,
+            from: &mut GrapevineAccount,
             payload: &NewRelationshipRequest,
         ) -> (u16, String) {
             // serialize the payload
             let serialized = bincode::serialize(&payload).unwrap();
+
+            let username = from.username().clone();
+            let signature = generate_nonce_signature(from);
+
             // mock transmit the request
             let res = context
                 .client
                 .post("/user/relationship/add")
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
                 .body(serialized)
                 .dispatch()
                 .await;
             let code = res.status().code;
             let message = res.into_string().await.unwrap();
+            // Increment nonce after request
+            let _ = from.increment_nonce(None);
+            (code, message)
+        }
+
+        pub async fn http_get_nullifier_secret(
+            context: &GrapevineTestContext,
+            from: &mut GrapevineAccount,
+            recipient: &String,
+        ) -> (u16, String) {
+            let username = from.username().clone();
+            let signature = generate_nonce_signature(from);
+
+            // mock transmit the request
+            let res = context
+                .client
+                .get(format!("/user/relationship/nullifier-secret/{}", recipient))
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .dispatch()
+                .await;
+            let code = res.status().code;
+            let message = res.into_string().await.unwrap();
+            // Increment nonce after request
+            let _ = from.increment_nonce(None);
             (code, message)
         }
     }
@@ -275,9 +321,9 @@ mod test_rocket {
             let context = GrapevineTestContext::init().await;
             GrapevineDB::drop("grapevine_mocked").await;
             // Create a request where proof creator is different from asserted pubkey
-            let user_a = GrapevineAccount::new("User_Coolaid".into());
+            let mut user_a = GrapevineAccount::new("User_Coolaid".into());
 
-            let user_b = GrapevineAccount::new("User_Oj".into());
+            let mut user_b = GrapevineAccount::new("User_Oj".into());
 
             let user_request_a = build_create_user_request(&user_a);
             let user_request_b = build_create_user_request(&user_b);
@@ -285,10 +331,18 @@ mod test_rocket {
             http_create_user(&context, &user_request_b).await;
 
             // add relationship as user_a to user_b
-            let relationship_request =
+            let user_a_relationship_request =
                 user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
 
-            http_add_relationship(&context, &relationship_request).await;
+            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+            // accept relation from user_a as user_b
+            let user_b_relationship_request =
+                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+            http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
         }
 
         // todo: check malformed inputs
@@ -329,11 +383,6 @@ mod test_rocket {
     //         let _ = from.increment_nonce(None);
 
     //         (code, msg)
-    //     }
-
-    //     fn generate_nonce_signature(user: &GrapevineAccount) -> String {
-    //         let nonce_signature = user.sign_nonce();
-    //         hex::encode(nonce_signature.compress())
     //     }
 
     //     async fn get_account_details_request(user: &mut GrapevineAccount) -> Option<(u64, u64, u64)> {

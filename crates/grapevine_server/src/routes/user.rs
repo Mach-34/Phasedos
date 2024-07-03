@@ -11,7 +11,7 @@ use grapevine_common::{
     http::requests::NewRelationshipRequest,
     models::{Relationship, User},
 };
-use rocket::{Data, State};
+use rocket::{data::ToByteUnit, tokio::io::AsyncReadExt, Data, State};
 
 use num_bigint::{BigInt, Sign};
 use rocket::http::Status;
@@ -143,10 +143,10 @@ use rocket::serde::json::Json;
  *            * 404 if from or to user does not exist
  *            * 409 if relationship already exists
  */
-#[post("/relationship/add", data = "<request>")]
+#[post("/relationship/add", data = "<data>")]
 pub async fn add_relationship(
-    data: Data<'_>,
     user: AuthenticatedUser,
+    data: Data<'_>,
     db: &State<GrapevineDB>,
 ) -> Result<GrapevineResponse, GrapevineResponse> {
     // stream in data
@@ -193,28 +193,29 @@ pub async fn add_relationship(
         }
     };
 
+    // TODO: Commenting this out for now so we are not blocked
     // ensure relationship does not alreaday exist between two users
-    match db
-        .check_relationship_exists(&sender.id.unwrap(), &recipient.id.unwrap())
-        .await
-    {
-        Ok((exists, active)) => match exists {
-            true => {
-                let err = match active {
-                    true => GrapevineError::ActiveRelationshipExists(user.0, request.to.clone()),
-                    false => GrapevineError::PendingRelationshipExists(user.0, request.to.clone()),
-                };
-                return Err(GrapevineResponse::Conflict(ErrorMessage(Some(err), None)));
-            }
-            false => (),
-        },
-        Err(e) => {
-            return Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(e),
-                None,
-            )))
-        }
-    }
+    // match db
+    //     .check_relationship_exists(&sender.id.unwrap(), &recipient.id.unwrap())
+    //     .await
+    // {
+    //     Ok((exists, active)) => match exists {
+    //         true => {
+    //             let err = match active {
+    //                 true => GrapevineError::ActiveRelationshipExists(user.0, request.to.clone()),
+    //                 false => GrapevineError::PendingRelationshipExists(user.0, request.to.clone()),
+    //             };
+    //             return Err(GrapevineResponse::Conflict(ErrorMessage(Some(err), None)));
+    //         }
+    //         false => (),
+    //     },
+    //     Err(e) => {
+    //         return Err(GrapevineResponse::InternalError(ErrorMessage(
+    //             Some(e),
+    //             None,
+    //         )))
+    //     }
+    // }
 
     // check if a pending relationship from recipient to sender exists
     let activate = match db
@@ -253,7 +254,10 @@ pub async fn add_relationship(
     };
 
     let req = match activate {
-        true => db.activate_relationship(&from_relationship_doc).await,
+        true => {
+            db.activate_relationship(&from_relationship_doc, &to_relationship_doc)
+                .await
+        }
         false => {
             // TODO: Can prolly just achieve this with an "add_pending_relationships" function
             db.add_pending_relationship(&from_relationship_doc).await;
@@ -280,6 +284,17 @@ pub async fn add_relationship(
             None,
         ))),
     }
+}
+
+#[get("/relationship/nullifier-secret/<recipient>")]
+pub async fn get_nullifier_secret(
+    recipient: String,
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<GrapevineResponse, GrapevineResponse> {
+    // TODO: Need to throw error if from is user
+    db.get_relationship(&user.0, &recipient).await;
+    Ok(GrapevineResponse::Created("TODO".into()))
 }
 
 // #[post("/relationship/reject/<username>")]
