@@ -291,10 +291,15 @@ pub async fn get_nullifier_secret(
     recipient: String,
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<GrapevineResponse, GrapevineResponse> {
+) -> Result<Json<Relationship>, GrapevineResponse> {
     // TODO: Need to throw error if from is user
-    db.get_relationship(&user.0, &recipient).await;
-    Ok(GrapevineResponse::Created("TODO".into()))
+    match db.get_relationship(&user.0, &recipient).await {
+        Ok(relationship) => Ok(Json(relationship)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
 }
 
 // #[post("/relationship/reject/<username>")]

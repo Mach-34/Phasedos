@@ -384,10 +384,14 @@ impl GrapevineDB {
     //     Ok(())
     // }
 
-    pub async fn get_relationship(&self, sender: &String, recipient: &String) {
+    pub async fn get_relationship(
+        &self,
+        sender: &String,
+        recipient: &String,
+    ) -> Result<Relationship, GrapevineError> {
         // TODO: Make this into aggregation pipeline
         let find_options = FindOptions::builder()
-            .projection(doc! {"_id": 1, "pubkey": 1, "address": 1 })
+            .projection(doc! {"_id": 1, "username": 1, "pubkey": 1, "address": 1 })
             .build();
         let usernames = [sender, recipient];
         let bson_usernames: Vec<Bson> = usernames
@@ -401,17 +405,28 @@ impl GrapevineDB {
             .await
             .unwrap();
 
-        let mut user_oids = vec![];
+        let mut user_oids: Vec<(String, ObjectId)> = vec![];
 
         while let Some(result) = cursor.next().await {
             match result {
-                Ok(document) => user_oids.push(document.id),
+                Ok(document) => {
+                    user_oids.push((document.username.unwrap(), document.id.unwrap()));
+                }
                 Err(e) => {
                     println!("Error: {:?}", e);
                 }
             }
         }
-        println!("Oids: {:?}", user_oids);
+
+        let relationship_query = match user_oids[0].0 == *sender {
+            true => doc! { "sender": user_oids[0].1, "recipient": user_oids[1].1},
+            false => doc! { "sender": user_oids[1].1, "recipient": user_oids[0].1},
+        };
+
+        match self.relationships.find_one(relationship_query, None).await {
+            Ok(res) => Ok(res.unwrap()),
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        }
     }
 
     // /**

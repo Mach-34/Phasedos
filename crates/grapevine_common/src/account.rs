@@ -1,5 +1,7 @@
 use crate::auth_signature::{AuthSignature, AuthSignatureEncrypted, AuthSignatureEncryptedUser};
-use crate::compat::{convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_to_le_bytes};
+use crate::compat::{
+    convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_from_le_bytes, ff_ce_to_le_bytes,
+};
 use crate::crypto::{gen_aes_key, new_private_key, nonce_hash, pubkey_to_address};
 use crate::http::requests::{CreateUserRequest, GetNonceRequest, NewRelationshipRequest};
 use crate::utils::{convert_username_to_fr, random_fr};
@@ -169,11 +171,24 @@ impl GrapevineAccount {
         String::from_utf8(ptr[..end].to_vec()).unwrap()
     }
 
+    pub fn decrypt_nullifier_secret(&self, encrypted_nullifier_secret: [u8; 48]) -> Fr {
+        let mut null_buf = encrypted_nullifier_secret;
+        let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());
+        let nullifier_secret = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
+            .decrypt_padded_mut::<Pkcs7>(&mut null_buf)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        ff_ce_from_le_bytes(nullifier_secret)
+    }
+
     /**
      * Generates a nullifier for use in a relationship
      */
     pub fn generate_nullifier(&self) -> (Fr, [u8; 48]) {
         let nullifier_secret = convert_ff_to_ff_ce(&random_fr());
+        println!("Nullifier secret: {:?}", nullifier_secret);
 
         let address = pubkey_to_address(&self.pubkey()); // TODO: Make address helper function
 

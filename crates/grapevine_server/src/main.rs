@@ -120,7 +120,8 @@ mod test_rocket {
         use super::*;
         use grapevine_circuits::{inputs::GrapevineInputs, utils::compress_proof};
         use grapevine_common::{
-            account::GrapevineAccount, http::requests::CreateUserRequest, NovaProof,
+            account::GrapevineAccount, http::requests::CreateUserRequest, models::Relationship,
+            NovaProof,
         };
 
         /**
@@ -213,7 +214,7 @@ mod test_rocket {
             context: &GrapevineTestContext,
             from: &mut GrapevineAccount,
             recipient: &String,
-        ) -> (u16, String) {
+        ) -> Relationship {
             let username = from.username().clone();
             let signature = generate_nonce_signature(from);
 
@@ -224,12 +225,11 @@ mod test_rocket {
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .dispatch()
+                .await
+                .into_json::<Relationship>()
                 .await;
-            let code = res.status().code;
-            let message = res.into_string().await.unwrap();
-            // Increment nonce after request
-            let _ = from.increment_nonce(None);
-            (code, message)
+
+            res.unwrap()
         }
     }
 
@@ -342,7 +342,13 @@ mod test_rocket {
 
             http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
 
-            http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
+            let relationship =
+                http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
+
+            println!(
+                "Decrypted: {:?}",
+                user_b.decrypt_nullifier_secret(relationship.encrypted_nullifier_secret.unwrap())
+            );
         }
 
         // todo: check malformed inputs
