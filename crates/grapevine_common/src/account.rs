@@ -188,7 +188,6 @@ impl GrapevineAccount {
      */
     pub fn generate_nullifier(&self) -> (Fr, [u8; 48]) {
         let nullifier_secret = convert_ff_to_ff_ce(&random_fr());
-        println!("Nullifier secret: {:?}", nullifier_secret);
 
         let address = pubkey_to_address(&self.pubkey()); // TODO: Make address helper function
 
