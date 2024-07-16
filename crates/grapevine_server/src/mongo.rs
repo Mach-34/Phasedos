@@ -429,6 +429,90 @@ impl GrapevineDB {
         }
     }
 
+    pub async fn terminate_relationship(
+        &self,
+        encrypted_nullifier: [u8; 48],
+        sender: &String,
+        recipient: &String,
+    ) -> Result<(), GrapevineError> {
+        // setup aggregation pipeline for finding usernames of relationships
+        let pipeline = vec![
+            // get the ObjectID of the user doc for the given username
+            doc! {
+                "$match": {
+                    "username": { "$in": [recipient, sender] }
+                }
+            },
+            doc! {
+                "$project": {
+                    "_id": 0,
+                    "recipient": {
+                        "$cond": { "if": { "$eq": ["$username", recipient] }, "then": "$_id", "else": "$$REMOVE" }
+                    },
+                    "sender": {
+                        "$cond": { "if": { "$eq": ["$username", sender] }, "then": "$_id", "else": "$$REMOVE" }
+                    }
+                }
+            },
+            doc! {
+                "$group": {
+                    "_id": 0,
+                    "recipient": { "$max": "$recipient" },
+                    "sender": { "$max": "$sender" }
+                }
+            },
+            // query relationship document
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "sender_user": "$sender", "recipient_user": "$recipient" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": ["$sender", "$$sender_user"] },
+                                        { "$eq": ["$recipient", "$$recipient_user"] },
+                                        // { "$eq": ["$encrypted_nullifier", encrypted_nullifier] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    "as": "relationship"
+                }
+            },
+            doc! {
+                "$unwind": "$relationship"
+            },
+            doc! {
+                "$replaceRoot": {
+                    "newRoot": "$relationship"
+                }
+            },
+        ];
+
+        // get oid for relationship
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let relationship_id = document.get("_id").unwrap();
+                    // delete relationship from db
+                    self.relationships
+                        .delete_one(doc! {"_id": relationship_id}, None)
+                        .await;
+                }
+                Err(e) => eprintln!("Error retrieving document: {}", e),
+            }
+        } else {
+            println!("No documents found.");
+        }
+
+        Ok(())
+    }
+
     // /**
     //  * Find all (pending or active) relationships for a user
     //  *

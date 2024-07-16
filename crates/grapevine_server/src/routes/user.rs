@@ -3,7 +3,7 @@ use crate::guards::AuthenticatedUser;
 use crate::mongo::GrapevineDB;
 use babyjubjub_rs::{decompress_point, decompress_signature, verify};
 use grapevine_common::errors::GrapevineError;
-use grapevine_common::http::requests::GetNonceRequest;
+use grapevine_common::http::requests::{EmitNullifierRequest, GetNonceRequest};
 use grapevine_common::http::{requests::CreateUserRequest, responses::DegreeData};
 use grapevine_common::utils::convert_username_to_fr;
 use grapevine_common::MAX_USERNAME_CHARS;
@@ -162,12 +162,12 @@ pub async fn add_relationship(
         Ok(req) => req,
         Err(e) => {
             println!(
-                "Error deserializing body from binary to CreateUserRequest: {:?}",
+                "Error deserializing body from binary to NewRelationshipRequest: {:?}",
                 e
             );
             return Err(GrapevineResponse::BadRequest(ErrorMessage(
                 Some(GrapevineError::SerdeError(String::from(
-                    "CreateUserRequest",
+                    "NewRelationshipRequest",
                 ))),
                 None,
             )));
@@ -301,6 +301,43 @@ pub async fn get_nullifier_secret(
             None,
         ))),
     }
+}
+
+#[post("/relationship/emit-nullifier", data = "<data>")]
+pub async fn emit_nullifier(
+    user: AuthenticatedUser,
+    data: Data<'_>,
+    db: &State<GrapevineDB>,
+) -> Result<(), GrapevineResponse> {
+    // stream in data
+    let mut buffer = Vec::new();
+    let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
+    if let Err(e) = stream.read_to_end(&mut buffer).await {
+        println!("Error reading request body: {:?}", e);
+        return Err(GrapevineResponse::TooLarge(
+            "Request body execeeds 2 MiB".to_string(),
+        ));
+    }
+    let request = match bincode::deserialize::<EmitNullifierRequest>(&buffer) {
+        Ok(req) => req,
+        Err(e) => {
+            println!(
+                "Error deserializing body from binary to EmitNullifierRequest: {:?}",
+                e
+            );
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(
+                Some(GrapevineError::SerdeError(String::from(
+                    "EmitNullifierRequest",
+                ))),
+                None,
+            )));
+        }
+    };
+
+    db.terminate_relationship(request.encrypted_nullifier, &request.sender, &user.0)
+        .await;
+
+    Ok(())
 }
 
 // #[post("/relationship/reject/<username>")]

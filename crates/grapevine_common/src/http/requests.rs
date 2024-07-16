@@ -48,3 +48,10 @@ pub struct DegreeProofRequest {
     pub previous: String,
     pub degree: u8,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EmitNullifierRequest {
+    #[serde(with = "serde_bytes")]
+    pub encrypted_nullifier: [u8; 48],
+    pub sender: String, // username of relationship creator
+}

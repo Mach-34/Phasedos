@@ -8,6 +8,7 @@ lazy_static! {
         // user::create_user,
         user::add_relationship,
         user::get_nullifier_secret,
+        user::emit_nullifier,
         // user::reject_pending_relationship,
         // user::get_pending_relationships,
         // user::get_active_relationships,

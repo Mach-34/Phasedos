@@ -76,7 +76,7 @@ mod test_rocket {
     };
     use std::sync::Mutex;
     use test_helper::{
-        build_create_user_request, http_add_relationship, http_create_user,
+        build_create_user_request, http_add_relationship, http_create_user, http_emit_nullifier,
         http_get_nullifier_secret,
     };
 
@@ -120,7 +120,9 @@ mod test_rocket {
         use super::*;
         use grapevine_circuits::{inputs::GrapevineInputs, utils::compress_proof};
         use grapevine_common::{
-            account::GrapevineAccount, http::requests::CreateUserRequest, models::Relationship,
+            account::GrapevineAccount,
+            http::requests::{CreateUserRequest, EmitNullifierRequest},
+            models::Relationship,
             NovaProof,
         };
 
@@ -210,6 +212,35 @@ mod test_rocket {
             (code, message)
         }
 
+        pub async fn http_emit_nullifier(
+            context: &GrapevineTestContext,
+            encrypted_nullifier: [u8; 48],
+            sender: &String,
+            recipient: &mut GrapevineAccount,
+        ) {
+            let username = recipient.username().clone();
+            let signature = generate_nonce_signature(recipient);
+
+            let payload = EmitNullifierRequest {
+                encrypted_nullifier,
+                sender: sender.to_string(),
+            };
+
+            let serialized = bincode::serialize(&payload).unwrap();
+
+            let res = context
+                .client
+                .post("/user//relationship/emit-nullifier")
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .body(serialized)
+                .dispatch()
+                .await;
+
+            // Increment nonce after request
+            let _ = recipient.increment_nonce(None);
+        }
+
         pub async fn http_get_nullifier_secret(
             context: &GrapevineTestContext,
             from: &mut GrapevineAccount,
@@ -228,6 +259,9 @@ mod test_rocket {
                 .await
                 .into_json::<Relationship>()
                 .await;
+
+            // Increment nonce after request
+            let _ = from.increment_nonce(None);
 
             res.unwrap()
         }
@@ -349,6 +383,42 @@ mod test_rocket {
                 "Decrypted: {:?}",
                 user_b.decrypt_nullifier_secret(relationship.encrypted_nullifier_secret.unwrap())
             );
+        }
+
+        #[rocket::async_test]
+        pub async fn test_nullifier_emission() {
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // Create a request where proof creator is different from asserted pubkey
+            let mut user_a = GrapevineAccount::new("User_Wombat".into());
+
+            let mut user_b = GrapevineAccount::new("User_SucklingPig".into());
+
+            let user_request_a = build_create_user_request(&user_a);
+            let user_request_b = build_create_user_request(&user_b);
+            http_create_user(&context, &user_request_a).await;
+            http_create_user(&context, &user_request_b).await;
+
+            // add relationship as user_a to user_b
+            let user_a_relationship_request =
+                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+            // accept relation from user_a as user_b
+            let user_b_relationship_request =
+                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+            // emit nullifier as user_b
+            http_emit_nullifier(
+                &context,
+                user_a_relationship_request.encrypted_nullifier,
+                user_a.username(),
+                &mut user_b,
+            )
+            .await;
         }
 
         // todo: check malformed inputs
