@@ -431,7 +431,7 @@ impl GrapevineDB {
 
     pub async fn terminate_relationship(
         &self,
-        encrypted_nullifier: [u8; 48],
+        nullifier: [u8; 48],
         sender: &String,
         recipient: &String,
     ) -> Result<(), GrapevineError> {
@@ -473,7 +473,6 @@ impl GrapevineDB {
                                     "$and": [
                                         { "$eq": ["$sender", "$$sender_user"] },
                                         { "$eq": ["$recipient", "$$recipient_user"] },
-                                        // { "$eq": ["$encrypted_nullifier", encrypted_nullifier] }
                                     ]
                                 }
                             }
@@ -498,11 +497,18 @@ impl GrapevineDB {
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
+                    let ephemeral_key = document.get("ephemeral_key").unwrap(); // key to decrypt nullifier
+                    let encrypted_nullifier = document.get("encrypted_nullifier").unwrap();
                     let relationship_id = document.get("_id").unwrap();
+
+                    // decrypt stored nullifier and check that it matches up with one provided in payload
+                    println!("Ephemeral key: {:?}", ephemeral_key);
+                    println!("Encrypted nullifier: {:?}", encrypted_nullifier);
+
                     // delete relationship from db
-                    self.relationships
-                        .delete_one(doc! {"_id": relationship_id}, None)
-                        .await;
+                    // self.relationships
+                    //     .delete_one(doc! {"_id": relationship_id}, None)
+                    //     .await;
                 }
                 Err(e) => eprintln!("Error retrieving document: {}", e),
             }

@@ -291,11 +291,11 @@ pub async fn get_nullifier_secret(
     recipient: String,
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<Relationship>, GrapevineResponse> {
+) -> Result<Vec<u8>, GrapevineResponse> {
     // TODO: Need to throw error if from is user
     match db.get_relationship(&user.0, &recipient).await {
         // TODO: Solve rocket response error so we can return just encrypted nullifier secret
-        Ok(relationship) => Ok(Json(relationship)),
+        Ok(relationship) => Ok(relationship.encrypted_nullifier_secret.unwrap().to_vec()),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),
             None,
