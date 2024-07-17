@@ -1,10 +1,10 @@
 use crate::{
-    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes, convert_ff_ce_to_ff},
+    compat::{convert_ff_ce_to_ff, ff_ce_from_le_bytes, ff_ce_to_le_bytes},
     utils::{convert_phrase_to_fr, convert_username_to_fr, random_fr_ce},
-    Fr
+    Fr,
 };
 use babyjubjub_rs::{Point, PrivateKey, Signature};
-use num_bigint::{RandBigInt, ToBigInt, BigInt, Sign};
+use num_bigint::{BigInt, RandBigInt, Sign, ToBigInt};
 use poseidon_rs::Fr as Fr_ce;
 use sha256::digest;
 use sha3::{Digest, Sha3_256};
@@ -133,7 +133,7 @@ pub fn sign_auth(from: &PrivateKey, to: &Point) -> (Signature, Fr, Fr) {
 
 /**
  * Generate a "scope" signature proving intent to participate in a degree chain
- * 
+ *
  * @param from - the private key of the user generating the scope signature
  * @param scope - the scope address of the degree chain
  * @return - signature by "from" over the scope address

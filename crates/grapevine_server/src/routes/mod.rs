@@ -1,12 +1,13 @@
 use lazy_static::lazy_static;
 use rocket::route::Route;
 mod proof;
-// mod user;
+mod user;
 
 lazy_static! {
     pub(crate) static ref USER_ROUTES: Vec<Route> = routes![
         // user::create_user,
-        // user::add_relationship,
+        user::add_relationship,
+        user::get_nullifier_secret,
         // user::reject_pending_relationship,
         // user::get_pending_relationships,
         // user::get_active_relationships,

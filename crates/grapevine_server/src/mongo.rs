@@ -1,4 +1,5 @@
 use futures::stream::StreamExt;
+use futures::TryStreamExt;
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::responses::DegreeData;
 use grapevine_common::models::{GrapevineProof, Relationship, User};
@@ -58,7 +59,7 @@ impl GrapevineDB {
         // Verify user existence
         let filter = doc! { "username": username };
         // TODO: Projection doesn't work without pubkey due to BSON deserialization error
-        let projection = doc! { "nonce": 1, "pubkey": 1 };
+        let projection = doc! { "nonce": 1, "pubkey": 1, "address": 1 };
         let find_options = FindOneOptions::builder().projection(projection).build();
         let user = self
             .users
@@ -137,15 +138,15 @@ impl GrapevineDB {
         }
     }
 
-    // pub async fn get_user(&self, username: &String) -> Option<User> {
-    //     let filter = doc! { "username": username };
-    //     let projection = doc! { "degree_proofs": 0 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     self.users
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    // }
+    pub async fn get_user(&self, username: &String) -> Option<User> {
+        let filter = doc! { "username": username };
+        let projection = doc! { "degree_proofs": 0 };
+        let find_options = FindOneOptions::builder().projection(projection).build();
+        self.users
+            .find_one(filter, Some(find_options))
+            .await
+            .unwrap()
+    }
 
     // pub async fn get_pubkey(&self, username: String) -> Option<[u8; 32]> {
     //     let filter = doc! { "username": username };
@@ -162,83 +163,128 @@ impl GrapevineDB {
     //     }
     // }
 
-    // pub async fn add_pending_relationship(
-    //     &self,
-    //     relationship: &Relationship,
-    // ) -> Result<(), GrapevineError> {
-    //     // create new relationship document
-    //     match self.relationships.insert_one(relationship, None).await {
-    //         Ok(_) => Ok(()),
-    //         Err(e) => Err(GrapevineError::MongoError(e.to_string())),
-    //     }
-    // }
+    pub async fn add_pending_relationship(
+        &self,
+        relationship: &Relationship,
+    ) -> Result<(), GrapevineError> {
+        // create new relationship document
+        match self.relationships.insert_one(relationship, None).await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        }
+    }
 
-    // /**
-    //  * Sets pending relationship to be active (to -> from) and creates a new relationship (from -> to)
-    //  *
-    //  * @param relationship - the relationship to activate
-    //  * @returns - the object id of the activated relationship
-    //  */
-    // pub async fn activate_relationship(
-    //     &self,
-    //     relationship: &Relationship,
-    // ) -> Result<(), GrapevineError> {
-    //     // set the pending relationship to be active
-    //     let query = doc! {
-    //         "sender": relationship.recipient.unwrap(),
-    //         "recipient": relationship.sender.unwrap()
-    //     };
-    //     let update = doc! { "$set": { "active": true } };
-    //     match self
-    //         .relationships
-    //         .update_one(query.clone(), update, None)
-    //         .await
-    //     {
-    //         Ok(_) => (),
-    //         Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-    //     };
+    /**
+     * Sets pending relationship to be active (to -> from) and creates a new relationship (from -> to)
+     *
+     * @param relationship - the relationship to activate
+     * @returns - the object id of the activated relationship
+     */
+    pub async fn activate_relationship(
+        &self,
+        from_relationship: &Relationship,
+        to_relationship: &Relationship,
+    ) -> Result<(), GrapevineError> {
+        let from_query = doc! {
+            "sender": from_relationship.sender.unwrap(),
+            "recipient": from_relationship.recipient.unwrap()
+        };
 
-    //     // retrieve the oid of the activated relationship
-    //     let find_options = FindOneOptions::builder()
-    //         .projection(doc! {"_id": 1})
-    //         .build();
-    //     // probably safe to unwrap here since we just activated the relationship
-    //     // annoying that API does not return the oid of the updated document
-    //     let sender_relationship: Bson = self
-    //         .relationships
-    //         .find_one(query, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap()
-    //         .id
-    //         .unwrap()
-    //         .into();
+        let to_query = doc! {
+            "sender": to_relationship.sender.unwrap(),
+            "recipient": to_relationship.recipient.unwrap()
+        };
 
-    //     // push the relationship to the 's list of relationships
-    //     let query = doc! { "_id": relationship.sender.unwrap() };
-    //     let update = doc! { "$push": { "relationships": sender_relationship } };
-    //     match self.users.update_one(query, update, None).await {
-    //         Ok(_) => (),
-    //         Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-    //     }
+        let find_options = FindOneOptions::builder()
+            .projection(doc! {"_id": 1})
+            .build();
 
-    //     // create new relationship document
-    //     let recipient_relationship = self
-    //         .relationships
-    //         .insert_one(relationship, None)
-    //         .await
-    //         .unwrap()
-    //         .inserted_id;
+        // retrived oid for "from" relationship
+        let from_oid: Bson = self
+            .relationships
+            .find_one(from_query, Some(find_options.clone()))
+            .await
+            .unwrap()
+            .unwrap()
+            .id
+            .unwrap()
+            .into();
 
-    //     // push the relationship to the recipien's list of relationships
-    //     let query = doc! { "_id": relationship.recipient.unwrap() };
-    //     let update = doc! { "$push": { "relationships": recipient_relationship } };
-    //     match self.users.update_one(query, update, None).await {
-    //         Ok(_) => (),
-    //         Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-    //     }
-    //     Ok(())
-    // }
+        let to_oid: Bson = self
+            .relationships
+            .find_one(to_query, Some(find_options))
+            .await
+            .unwrap()
+            .unwrap()
+            .id
+            .unwrap()
+            .into();
+
+        let from_update = doc! {
+            "$set": {
+                "active": true,
+                "encrypted_nullifier_secret": Bson::Binary(Binary {
+                    subtype: bson::spec::BinarySubtype::Generic,
+                    bytes: from_relationship.encrypted_nullifier_secret.unwrap().to_vec(),
+                })
+            }
+        };
+
+        let to_update = doc! {
+            "$set": {
+                "active": true,
+                "encrypted_auth_signature": Bson::Binary(Binary {
+                    subtype: bson::spec::BinarySubtype::Generic,
+                    bytes: to_relationship.encrypted_auth_signature.unwrap().to_vec(),
+                }),
+                "encrypted_nullifier": Bson::Binary(Binary {
+                    subtype: bson::spec::BinarySubtype::Generic,
+                    bytes: to_relationship.encrypted_nullifier.unwrap().to_vec(),
+                }),
+                "ephemeral_key": Bson::Binary(Binary {
+                    subtype: bson::spec::BinarySubtype::Generic,
+                    bytes: to_relationship.ephemeral_key.unwrap().to_vec(),
+                }),
+            }
+        };
+
+        // update "from" relationship
+        match self
+            .relationships
+            .update_one(doc! {"_id": from_oid.clone()}, from_update, None)
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        };
+
+        // update "to" relationship
+        match self
+            .relationships
+            .update_one(doc! {"_id": to_oid.clone()}, to_update, None)
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        };
+
+        // push the relationship to the sender's list of relationships
+        let query = doc! { "_id": from_relationship.sender.unwrap() };
+        let update = doc! { "$push": { "relationships": from_oid } };
+        match self.users.update_one(query, update, None).await {
+            Ok(_) => (),
+            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        }
+
+        // push the relationship to the recipients's list of relationships
+        let query = doc! { "_id": to_relationship.sender.unwrap() };
+        let update = doc! { "$push": { "relationships": to_oid } };
+        match self.users.update_one(query, update, None).await {
+            Ok(_) => (),
+            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        }
+        Ok(())
+    }
 
     // /**
     //  * Delete a pending relationship from one user to another
@@ -338,6 +384,51 @@ impl GrapevineDB {
     //     Ok(())
     // }
 
+    pub async fn get_relationship(
+        &self,
+        sender: &String,
+        recipient: &String,
+    ) -> Result<Relationship, GrapevineError> {
+        // TODO: Make this into aggregation pipeline
+        let find_options = FindOptions::builder()
+            .projection(doc! {"_id": 1, "username": 1, "pubkey": 1, "address": 1 })
+            .build();
+        let usernames = [sender, recipient];
+        let bson_usernames: Vec<Bson> = usernames
+            .iter()
+            .map(|u| Bson::String(u.to_string()))
+            .collect();
+        // Get sender and recipient oids
+        let mut cursor = self
+            .users
+            .find(doc! {"username": {"$in": bson_usernames}}, find_options)
+            .await
+            .unwrap();
+
+        let mut user_oids: Vec<(String, ObjectId)> = vec![];
+
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    user_oids.push((document.username.unwrap(), document.id.unwrap()));
+                }
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                }
+            }
+        }
+
+        let relationship_query = match user_oids[0].0 == *sender {
+            true => doc! { "sender": user_oids[0].1, "recipient": user_oids[1].1},
+            false => doc! { "sender": user_oids[1].1, "recipient": user_oids[0].1},
+        };
+
+        match self.relationships.find_one(relationship_query, None).await {
+            Ok(res) => Ok(res.unwrap()),
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        }
+    }
+
     // /**
     //  * Find all (pending or active) relationships for a user
     //  *
@@ -401,60 +492,60 @@ impl GrapevineDB {
     //     Ok(relationships)
     // }
 
-    // /**
-    //  * Attempts to find a relationship between to users
-    //  *
-    //  * @param from - the user enabling relationship
-    //  * @param to - the user receiving relationship
-    //  * @returns - the relationship if found, None otherwise
-    //  */
-    // pub async fn find_pending_relationship(
-    //     &self,
-    //     from: &ObjectId,
-    //     to: &ObjectId,
-    // ) -> Result<bool, GrapevineError> {
-    //     let filter = doc! { "sender": from, "recipient": to, "active": false };
-    //     let projection = doc! { "_id": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     match self.relationships.find_one(filter, find_options).await {
-    //         Ok(res) => match res {
-    //             Some(_) => Ok(true),
-    //             None => Ok(false),
-    //         },
-    //         Err(e) => Err(GrapevineError::MongoError(e.to_string())),
-    //     }
-    // }
+    /**
+     * Attempts to find a relationship between to users
+     *
+     * @param from - the user enabling relationship
+     * @param to - the user receiving relationship
+     * @returns - the relationship if found, None otherwise
+     */
+    pub async fn find_pending_relationship(
+        &self,
+        from: &ObjectId,
+        to: &ObjectId,
+    ) -> Result<bool, GrapevineError> {
+        let filter = doc! { "sender": from, "recipient": to, "active": false };
+        let projection = doc! { "_id": 1 };
+        let find_options = FindOneOptions::builder().projection(projection).build();
+        match self.relationships.find_one(filter, find_options).await {
+            Ok(res) => match res {
+                Some(_) => Ok(true),
+                None => Ok(false),
+            },
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        }
+    }
 
-    // /**
-    //  * Check to see if a relationship already exists between two users
-    //  *
-    //  * @param sender - the user enabling relationship
-    //  * @param recipient - the user receiving relationship
-    //  * @returns
-    //  *  - 0: true if relationship from sender to user exists
-    //  *  - 1: true if relationship is active
-    //  */
-    // pub async fn check_relationship_exists(
-    //     &self,
-    //     sender: &ObjectId,
-    //     recipient: &ObjectId,
-    // ) -> Result<(bool, bool), GrapevineError> {
-    //     let query = doc! { "recipient": recipient, "sender": sender };
-    //     let projection = doc! { "_id": 1, "active": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
+    /**
+     * Check to see if a relationship already exists between two users
+     *
+     * @param sender - the user enabling relationship
+     * @param recipient - the user receiving relationship
+     * @returns
+     *  - 0: true if relationship from sender to user exists
+     *  - 1: true if relationship is active
+     */
+    pub async fn check_relationship_exists(
+        &self,
+        sender: &ObjectId,
+        recipient: &ObjectId,
+    ) -> Result<(bool, bool), GrapevineError> {
+        let query = doc! { "recipient": recipient, "sender": sender };
+        let projection = doc! { "_id": 1, "active": 1 };
+        let find_options = FindOneOptions::builder().projection(projection).build();
 
-    //     match self.relationships.find_one(query, find_options).await {
-    //         Ok(res) => {
-    //             let exists = res.is_some();
-    //             let active = match exists {
-    //                 true => res.unwrap().active.unwrap(),
-    //                 false => false,
-    //             };
-    //             Ok((exists, active))
-    //         }
-    //         Err(e) => Err(GrapevineError::MongoError(e.to_string())),
-    //     }
-    // }
+        match self.relationships.find_one(query, find_options).await {
+            Ok(res) => {
+                let exists = res.is_some();
+                let active = match exists {
+                    true => res.unwrap().active.unwrap(),
+                    false => false,
+                };
+                Ok((exists, active))
+            }
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        }
+    }
 
     // /**
     //  * Creates a new phrase document in the database

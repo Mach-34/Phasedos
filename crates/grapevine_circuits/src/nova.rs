@@ -307,39 +307,27 @@ mod test {
 
     #[ignore]
     #[test]
-    fn test_bad_auth_signature_from() {
-        
-    }
+    fn test_bad_auth_signature_from() {}
 
     #[ignore]
     #[test]
-    fn test_bad_auth_signature_to() {
-        
-    }
+    fn test_bad_auth_signature_to() {}
 
     #[ignore]
     #[test]
-    fn test_bad_auth_signature_nullifier() {
-        
-    }
+    fn test_bad_auth_signature_nullifier() {}
 
     #[ignore]
     #[test]
-    fn test_bad_scope_signature_pubkey() {
-
-    }
+    fn test_bad_scope_signature_pubkey() {}
 
     #[ignore]
     #[test]
-    fn test_bad_scope_signature_scope() {
-
-    }
+    fn test_bad_scope_signature_scope() {}
 
     #[ignore]
     #[test]
-    fn test_no_degree_9() {
-
-    }
+    fn test_no_degree_9() {}
 
     // #[test]
     // fn test_continued_fs() {

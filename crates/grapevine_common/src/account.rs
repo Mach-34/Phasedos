@@ -1,13 +1,14 @@
 use crate::auth_signature::{AuthSignature, AuthSignatureEncrypted, AuthSignatureEncryptedUser};
-use crate::compat::ff_ce_to_le_bytes;
-use crate::crypto::{gen_aes_key, new_private_key, nonce_hash};
+use crate::compat::{
+    convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_from_le_bytes, ff_ce_to_le_bytes,
+};
+use crate::crypto::{gen_aes_key, new_private_key, nonce_hash, pubkey_to_address};
 use crate::http::requests::{CreateUserRequest, GetNonceRequest, NewRelationshipRequest};
 use crate::utils::{convert_username_to_fr, random_fr};
-use crate::Fr;
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use babyjubjub_rs::{Point, PrivateKey, Signature};
 use num_bigint::{BigInt, Sign};
-use poseidon_rs::Poseidon;
+use poseidon_rs::{Fr, Poseidon};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -40,7 +41,11 @@ impl GrapevineAccount {
      * Test function to allow manual specification of account
      */
     pub fn from_repr(username: String, private_key: [u8; 32], nonce: u64) -> Self {
-        Self { username, private_key, nonce }
+        Self {
+            username,
+            private_key,
+            nonce,
+        }
     }
 
     /// PERSISTENCE METHODS ///
@@ -105,15 +110,26 @@ impl GrapevineAccount {
      * @param message - the encrypted auth signature
      * @returns - the decrypted auth signature
      */
-    pub fn generate_auth_signature(&self, recipient: Point) -> AuthSignatureEncrypted {
-        // hash recipient pubkey
-        let poseidon = Poseidon::new();
-        let hash = poseidon.hash(vec![recipient.x, recipient.y]).unwrap();
+    pub fn generate_auth_signature(
+        &self,
+        recipient: Point,
+        nullifier: Fr,
+    ) -> AuthSignatureEncrypted {
+        // generate recipient address from recipient pubkey
+        let address = pubkey_to_address(&recipient);
+        let hasher = Poseidon::new();
+        let hash = hasher.hash(vec![nullifier, address]).unwrap();
 
         // sign pubkey hash
         let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&hash));
         let signature: Signature = self.private_key().sign(message).unwrap();
-        AuthSignatureEncrypted::new(self.username.clone(), signature, recipient)
+
+        AuthSignatureEncrypted::new(
+            self.username.clone(),
+            signature,
+            convert_ff_ce_to_ff(&nullifier),
+            recipient,
+        )
     }
 
     /// PHRASE ENCRYPTION METHODS ///
@@ -155,6 +171,43 @@ impl GrapevineAccount {
         String::from_utf8(ptr[..end].to_vec()).unwrap()
     }
 
+    pub fn decrypt_nullifier_secret(&self, encrypted_nullifier_secret: [u8; 48]) -> Fr {
+        let mut null_buf = encrypted_nullifier_secret;
+        let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());
+        let nullifier_secret = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
+            .decrypt_padded_mut::<Pkcs7>(&mut null_buf)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        ff_ce_from_le_bytes(nullifier_secret)
+    }
+
+    /**
+     * Generates a nullifier for use in a relationship
+     */
+    pub fn generate_nullifier(&self) -> (Fr, [u8; 48]) {
+        let nullifier_secret = convert_ff_to_ff_ce(&random_fr());
+
+        let address = pubkey_to_address(&self.pubkey()); // TODO: Make address helper function
+
+        let hasher = Poseidon::new();
+        let nullifier = hasher.hash(vec![nullifier_secret, address]).unwrap();
+
+        let secret_bytes = ff_ce_to_le_bytes(&nullifier_secret);
+        // encrypt the nullifier secret to issuer
+        let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());
+        let mut buf = [0u8; 48];
+        buf[..secret_bytes.len()].copy_from_slice(&secret_bytes);
+        let encrypted_nullifier_secret: [u8; 48] =
+            Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
+                .encrypt_padded_mut::<Pkcs7>(&mut buf, secret_bytes.len())
+                .unwrap()
+                .try_into()
+                .unwrap();
+        (nullifier, encrypted_nullifier_secret)
+    }
+
     /// SIGNING METHODS ///
 
     /**
@@ -185,16 +238,16 @@ impl GrapevineAccount {
 
     /**
      * Create the http request body for creating a new user in the Grapevine service
-     * 
+     *
      * @param proof - the compressed proof of identity (degree 0) for this user
-     * 
+     *
      * @returns - the CreateUserRequest authorizing a new user to be added to Grapevine service
      */
     pub fn create_user_request(&self, proof: Vec<u8>) -> CreateUserRequest {
         CreateUserRequest {
             username: self.username.clone(),
             pubkey: self.pubkey().compress(),
-            proof
+            proof,
         }
     }
 
@@ -210,13 +263,19 @@ impl GrapevineAccount {
         username: &String,
         pubkey: &Point,
     ) -> NewRelationshipRequest {
+        // generate a nullifier for relationship
+        let (nullifier, encrypted_nullifier_secret) = self.generate_nullifier();
         // encrypt the auth signature with the target pubkey
-        let encrypted_auth_signature = self.generate_auth_signature(pubkey.clone());
-        // return the New Relationship http request struct
+        let encrypted_auth_signature = self.generate_auth_signature(pubkey.clone(), nullifier);
+
+        let encrypted_nullifier: [u8; 48] = [0u8; 48]; // TODO: Encrypt nullifier
+                                                       // return the New Relationship http request struct
         NewRelationshipRequest {
+            encrypted_nullifier: encrypted_nullifier,
+            encrypted_nullifier_secret: encrypted_nullifier_secret,
             to: username.clone(),
             ephemeral_key: encrypted_auth_signature.ephemeral_key,
-            ciphertext: encrypted_auth_signature.ciphertext,
+            encrypted_auth_signature: encrypted_auth_signature.ciphertext,
         }
     }
 
