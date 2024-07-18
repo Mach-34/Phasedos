@@ -120,7 +120,7 @@ mod test_rocket {
         use super::*;
         use grapevine_circuits::{inputs::GrapevineInputs, utils::compress_proof};
         use grapevine_common::{
-            account::GrapevineAccount, http::requests::CreateUserRequest, models::Relationship,
+            account::GrapevineAccount, http::requests::CreateUserRequest, models::{AvailableProofs, Relationship},
             NovaProof,
         };
 
@@ -235,7 +235,7 @@ mod test_rocket {
         pub async fn http_get_available_proofs(
             context: &GrapevineTestContext,
             user: &GrapevineAccount,
-        ) -> Vec<String> {
+        ) -> Vec<AvailableProofs> {
             let username = user.username().clone();
             let signature = generate_nonce_signature(user);
 
@@ -247,7 +247,7 @@ mod test_rocket {
                 .header(Header::new("X-Username", username))
                 .dispatch()
                 .await
-                .into_json::<Vec<String>>()
+                .into_json::<Vec<AvailableProofs>>()
                 .await;
 
             res.unwrap()
@@ -396,13 +396,24 @@ mod test_rocket {
             let mut user_b = GrapevineAccount::new("user_b".into());
             let user_request_b = build_create_user_request(&user_b);
             http_create_user(&context, &user_request_b).await;
+
+            let mut user_c = GrapevineAccount::new("user_c".into());
+            let user_request_c = build_create_user_request(&user_c);
+            http_create_user(&context, &user_request_c).await;
             // establish relationship between users
             let user_a_relationship_request =
                 user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
-            http_add_relationship(&context, &mut user_b, &user_a_relationship_request).await;
+            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
             let user_b_relationship_request =
                 user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
             http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+            let request =
+                user_a.new_relationship_request(user_c.username(), &user_c.pubkey());
+            http_add_relationship(&context, &mut user_a, &request).await;
+            let request =
+                user_c.new_relationship_request(user_a.username(), &user_a.pubkey());
+            http_add_relationship(&context, &mut user_c, &request).await;
             // retrieve available proofs as user_b
             let proofs = http_get_available_proofs(&context, &user_b).await;
             println!("Proofs: {:?}", proofs);

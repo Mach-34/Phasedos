@@ -3,6 +3,7 @@ use crate::mongo::GrapevineDB;
 use crate::utils::PUBLIC_PARAMS;
 use crate::{catchers::GrapevineResponse, guards::AuthenticatedUser};
 use grapevine_circuits::{nova::verify_grapevine_proof, utils::decompress_proof, inputs::GrapevineOutputs};
+use grapevine_common::models::AvailableProofs;
 use grapevine_common::{
     Fr, MAX_USERNAME_CHARS,
     http::{
@@ -467,7 +468,7 @@ pub async fn prove_identity(
 pub async fn get_available_proofs(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<Vec<String>>, Status> {
+) -> Result<Json<Vec<AvailableProofs>>, Status> {
     Ok(Json(db.find_available_degrees(user.0).await))
 }
 

@@ -2,7 +2,7 @@ use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::responses::DegreeData;
-use grapevine_common::models::{GrapevineProof, Relationship, User};
+use grapevine_common::models::{AvailableProofs, GrapevineProof, Relationship, User};
 use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
 use mongodb::{Client, Collection};
@@ -815,94 +815,110 @@ impl GrapevineDB {
      * Given a user, find available degrees of separation proofs they can build from
      *   - find degree chains they are not a part of
      *   - find lower degree proofs they can build from
+     * 
+     * @param username - the username of the user to find available proofs for
+     * @returns - a list of available proofs the user can build from with metadata for ui
      */
-    pub async fn find_available_degrees(&self, username: String) -> Vec<String> {
+    pub async fn find_available_degrees(&self, username: String) -> Vec<AvailableProofs> {
         // find degree chains they are not a part of
         let pipeline = vec![
-            // find the user to find available proofs for
+            // Match the user
             doc! { "$match": { "username": username } },
-            doc! { "$project": { "relationships": 1, "degree_proofs": 1, "_id": 0 } },
-            // look up the degree proofs made by this user
-            doc! {
-                "$lookup": {
-                    "from": "degree_proofs",
-                    "localField": "degree_proofs",
-                    "foreignField": "_id",
-                    "as": "userDegreeProofs",
-                    "pipeline": [doc! { "$project": { "degree": 1, "phrase": 1 } }]
-                }
-            },
-            // look up the relationships made by this user
+            // Lookup relationships where the user is the recipient
             doc! {
                 "$lookup": {
                     "from": "relationships",
-                    "localField": "relationships",
-                    "foreignField": "_id",
-                    "as": "userRelationships",
-                    "pipeline": [doc! { "$project": { "sender": 1 } }]
+                    "let": { "userId": "$_id" },
+                    "pipeline": [
+                        doc! {
+                            "$match": {
+                                "$expr": { "$eq": ["$recipient", "$$userId"] }
+                            }
+                        },
+                        doc! { "$project": { "sender": 1, "_id": 0 } }
+                    ],
+                    "as": "userRelationships"
                 }
             },
-            // look up the degree proofs made by relationships
-            // @todo: allow limitation of degrees of separation here
+            doc! { "$unwind": "$userRelationships" },
+            // project out only the _id of the senders
+            doc! {
+                "$project": {
+                    "sender": "$userRelationships.sender",
+                    "_id": 0
+                }
+            },
+            // find all proofs where the relation = any of the senders
             doc! {
                 "$lookup": {
-                    "from": "degree_proofs",
-                    "localField": "userRelationships.sender",
-                    "foreignField": "user",
-                    "as": "relationshipDegreeProofs",
+                    "from": "proofs",
+                    "localField": "sender",
+                    "foreignField": "relation",
+                    "as": "proofs",
                     "pipeline": [
                         doc! { "$match": { "inactive": { "$ne": true } } },
-                        doc! { "$project": { "degree": 1, "phrase": 1 } }
+                        doc! { "$project": { "degree": 1, "scope": 1 } }
                     ]
                 }
             },
-            // unwind the results
-            doc! { "$project": { "userDegreeProofs": 1, "relationshipDegreeProofs": 1 } },
-            doc! { "$unwind": "$relationshipDegreeProofs" },
-            // find the lowest degree proof in each chain from relationship proofs and reference user proofs in this chain if exists
+            // Unwind the proofs array
+            doc! { "$unwind": "$proofs" },
+            // Reshape the document to the desired format
             doc! {
-                "$group": {
-                    "_id": "$relationshipDegreeProofs.phrase",
-                    "originalId": { "$first": "$relationshipDegreeProofs._id" },
-                    "degree": { "$min": "$relationshipDegreeProofs.degree" },
-                    "userProof": {
-                        "$first": {
-                            "$arrayElemAt": [{
-                                "$filter": {
-                                    "input": "$userDegreeProofs",
-                                    "as": "userProof",
-                                    "cond": { "$eq": ["$$userProof.phrase", "$relationshipDegreeProofs.phrase"] }
-                                }
-                            }, 0]
-                        }
-                    }
+                "$project": {
+                    "_id": "$proofs._id",
+                    "degree": "$proofs.degree",
+                    "scope": "$proofs.scope",
+                    "relation": "$sender"
                 }
             },
-            // remove the proofs that do not offer improved degrees of separation from existing user proofs
+            // Lookup the username for the scope
             doc! {
-                "$match": {
-                    "$expr": {
-                        "$or": [
-                            { "$gte": ["$userProof.degree", { "$add": ["$degree", 2] }] },
-                            { "$eq": ["$userProof", null] }
-                        ]
-                    }
+                "$lookup": {
+                    "from": "users",
+                    "localField": "scope",
+                    "foreignField": "_id",
+                    "as": "scopeUser",
+                    "pipeline": [
+                        doc! { "$project": { "_id": 0, "username": 1 } }
+                    ]
                 }
             },
-            // project only the ids of the proofs the user can build from
-            doc! { "$project": { "_id": "$originalId" } },
+            // Lookup the username for the relation
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "relation",
+                    "foreignField": "_id",
+                    "as": "relationUser",
+                    "pipeline": [
+                        doc! { "$project": { "_id": 0, "username": 1 } }
+                    ]
+                }
+            },
+            // Final projection to format the output
+            doc! {
+                "$project": {
+                    "degree": 1,
+                    "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
+                    "relation": { "$arrayElemAt": ["$relationUser.username", 0] }
+                }
+            },
         ];
         // get the OID's of degree proofs the user can build from
-        let mut proofs: Vec<String> = vec![];
+        let mut proofs: Vec<AvailableProofs> = vec![];
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    let oid = document
+                    let id = document
                         .get("_id")
                         .and_then(|id| id.as_object_id())
                         .unwrap();
-                    proofs.push(oid.to_string());
+                    let degree = document.get("degree").unwrap().as_i32().unwrap() as u8;
+                    let scope = document.get("scope").unwrap().as_str().unwrap().to_string();
+                    let relation = document.get("relation").unwrap().as_str().unwrap().to_string();
+                    proofs.push(AvailableProofs { id, degree, scope, relation });
                 }
                 Err(e) => println!("Error: {}", e),
             }

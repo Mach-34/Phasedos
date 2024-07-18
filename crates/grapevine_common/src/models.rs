@@ -15,6 +15,14 @@ pub struct GrapevineProof {
     pub inactive: Option<bool>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AvailableProofs {
+    pub id: ObjectId,
+    pub degree: u8,
+    pub scope: String,
+    pub relation: String
+}
+
 // // all data needed from server to prove a degree of separation
 // #[derive(Debug, Serialize, Deserialize, Clone)]
 // pub struct ProvingData {
