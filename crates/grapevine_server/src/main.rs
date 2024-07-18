@@ -186,6 +186,14 @@ mod test_rocket {
             (code, message)
         }
 
+        /**
+         * Mock http request to create a new relationship
+         *
+         * @param context - the mocked rocket http server context
+         * @param from - the account sending the relationship creation request
+         * @param payload - the body of the request
+         * @return - (http status code, returned message)
+         */
         pub async fn http_add_relationship(
             context: &GrapevineTestContext,
             from: &mut GrapevineAccount,
@@ -213,6 +221,15 @@ mod test_rocket {
             (code, message)
         }
 
+        /**
+         * Mock http request to emit a nullifier to terminate a relationship
+         *
+         * @param context - the mocked rocket http server context
+         * @param nullifier - plaintext nullifier to terminate relationship
+         * @param sender - account terminating relationship
+         * @param recipient - username of recipient account
+         * @return - http status code
+         */
         pub async fn http_emit_nullifier(
             context: &GrapevineTestContext,
             nullifier: [u8; 32],
@@ -244,6 +261,14 @@ mod test_rocket {
             res.status().code
         }
 
+        /**
+         * Mock http request to get an encrypted nullifier secret from db
+         *
+         * @param context - the mocked rocket http server context
+         * @param from - account retrieving their nullifier secret
+         * @param recipient - username of recipient user in relationship
+         * @return - encrypted nullifier secret
+         */
         pub async fn http_get_nullifier_secret(
             context: &GrapevineTestContext,
             from: &mut GrapevineAccount,
@@ -271,6 +296,29 @@ mod test_rocket {
 
             encrypted_nullifier_secret
         }
+
+        // async fn http_get_relationships(
+        //     context: &GrapevineTestContext,
+        //     user: &mut GrapevineAccount,
+        //     active: bool,
+        // ) -> Option<Vec<String>> {
+        //     let username = user.username().clone();
+        //     let signature = generate_nonce_signature(user);
+        //     let route = if active { "active" } else { "pending" };
+        //     let res = context
+        //         .client
+        //         .get(format!("/user/relationship/{}", route))
+        //         .header(Header::new("X-Authorization", signature))
+        //         .header(Header::new("X-Username", username))
+        //         .dispatch()
+        //         .await
+        //         .into_json::<Vec<String>>()
+        //         .await;
+
+        //     // Increment nonce after request
+        //     let _ = user.increment_nonce(None);
+        //     res
+        // }
     }
 
     #[cfg(test)]
@@ -732,29 +780,6 @@ mod test_rocket {
     //             .await
     //             .into_json::<User>()
     //             .await
-    //     }
-
-    //     async fn get_relationships_request(
-    //         context: &GrapevineTestContext,
-    //         user: &mut GrapevineAccount,
-    //         active: bool,
-    //     ) -> Option<Vec<String>> {
-    //         let username = user.username().clone();
-    //         let signature = generate_nonce_signature(user);
-    //         let route = if active { "active" } else { "pending" };
-    //         let res = context
-    //             .client
-    //             .get(format!("/user/relationship/{}", route))
-    //             .header(Header::new("X-Authorization", signature))
-    //             .header(Header::new("X-Username", username))
-    //             .dispatch()
-    //             .await
-    //             .into_json::<Vec<String>>()
-    //             .await;
-
-    //         // Increment nonce after request
-    //         let _ = user.increment_nonce(None);
-    //         res
     //     }
 
     //     async fn reject_relationship_request(
