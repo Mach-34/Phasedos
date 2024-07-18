@@ -231,13 +231,33 @@ mod test_rocket {
 
             res.unwrap()
         }
+
+        pub async fn http_get_available_proofs(
+            context: &GrapevineTestContext,
+            user: &GrapevineAccount,
+        ) -> Vec<String> {
+            let username = user.username().clone();
+            let signature = generate_nonce_signature(user);
+
+            // mock transmit the request
+            let res = context
+                .client
+                .get("/proof/available")
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .dispatch()
+                .await
+                .into_json::<Vec<String>>()
+                .await;
+
+            res.unwrap()
+        }
     }
 
     #[cfg(test)]
     mod user_creation_tests {
         use grapevine_common::compat::convert_ff_ce_to_ff;
         use grapevine_common::crypto::pubkey_to_address;
-
         use super::*;
 
         #[rocket::async_test]
@@ -316,6 +336,13 @@ mod test_rocket {
             assert_eq!(message, expected_message);
         }
 
+        // todo: check malformed inputs
+    }
+
+    #[cfg(test)]
+    mod relationship_tests {
+        use super::*;
+
         #[rocket::async_test]
         pub async fn test_relationship_creation() {
             let context = GrapevineTestContext::init().await;
@@ -350,9 +377,41 @@ mod test_rocket {
                 user_b.decrypt_nullifier_secret(relationship.encrypted_nullifier_secret.unwrap())
             );
         }
-
-        // todo: check malformed inputs
     }
+
+    #[cfg(test)]
+    mod degree_proof_tests {
+        use super::*;
+        use crate::test_rocket::test_helper::http_get_available_proofs;
+
+        #[rocket::async_test]
+        pub async fn test_degree_one() {
+            // Setup
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // create users
+            let mut user_a = GrapevineAccount::new("user_a".into());
+            let user_request_a = build_create_user_request(&user_a);
+            http_create_user(&context, &user_request_a).await;
+            let mut user_b = GrapevineAccount::new("user_b".into());
+            let user_request_b = build_create_user_request(&user_b);
+            http_create_user(&context, &user_request_b).await;
+            // establish relationship between users
+            let user_a_relationship_request =
+                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+            http_add_relationship(&context, &mut user_b, &user_a_relationship_request).await;
+            let user_b_relationship_request =
+                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+            // retrieve available proofs as user_b
+            let proofs = http_get_available_proofs(&context, &user_b).await;
+            println!("Proofs: {:?}", proofs);
+            let proofs = http_get_available_proofs(&context, &user_a).await;
+            println!("Proofs: {:?}", proofs);
+
+        }
+    }
+    
 
     //     // @TODO: Change eventually because to doesn't need to be mutable?
     //     async fn add_relationship_request(

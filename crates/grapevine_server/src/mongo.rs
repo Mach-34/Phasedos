@@ -811,105 +811,105 @@ impl GrapevineDB {
     // //         .expect("Failed to remove user");
     // // }
 
-    // /**
-    //  * Given a user, find available degrees of separation proofs they can build from
-    //  *   - find degree chains they are not a part of
-    //  *   - find lower degree proofs they can build from
-    //  */
-    // pub async fn find_available_degrees(&self, username: String) -> Vec<String> {
-    //     // find degree chains they are not a part of
-    //     let pipeline = vec![
-    //         // find the user to find available proofs for
-    //         doc! { "$match": { "username": username } },
-    //         doc! { "$project": { "relationships": 1, "degree_proofs": 1, "_id": 0 } },
-    //         // look up the degree proofs made by this user
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "degree_proofs",
-    //                 "foreignField": "_id",
-    //                 "as": "userDegreeProofs",
-    //                 "pipeline": [doc! { "$project": { "degree": 1, "phrase": 1 } }]
-    //             }
-    //         },
-    //         // look up the relationships made by this user
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "relationships",
-    //                 "localField": "relationships",
-    //                 "foreignField": "_id",
-    //                 "as": "userRelationships",
-    //                 "pipeline": [doc! { "$project": { "sender": 1 } }]
-    //             }
-    //         },
-    //         // look up the degree proofs made by relationships
-    //         // @todo: allow limitation of degrees of separation here
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "userRelationships.sender",
-    //                 "foreignField": "user",
-    //                 "as": "relationshipDegreeProofs",
-    //                 "pipeline": [
-    //                     doc! { "$match": { "inactive": { "$ne": true } } },
-    //                     doc! { "$project": { "degree": 1, "phrase": 1 } }
-    //                 ]
-    //             }
-    //         },
-    //         // unwind the results
-    //         doc! { "$project": { "userDegreeProofs": 1, "relationshipDegreeProofs": 1 } },
-    //         doc! { "$unwind": "$relationshipDegreeProofs" },
-    //         // find the lowest degree proof in each chain from relationship proofs and reference user proofs in this chain if exists
-    //         doc! {
-    //             "$group": {
-    //                 "_id": "$relationshipDegreeProofs.phrase",
-    //                 "originalId": { "$first": "$relationshipDegreeProofs._id" },
-    //                 "degree": { "$min": "$relationshipDegreeProofs.degree" },
-    //                 "userProof": {
-    //                     "$first": {
-    //                         "$arrayElemAt": [{
-    //                             "$filter": {
-    //                                 "input": "$userDegreeProofs",
-    //                                 "as": "userProof",
-    //                                 "cond": { "$eq": ["$$userProof.phrase", "$relationshipDegreeProofs.phrase"] }
-    //                             }
-    //                         }, 0]
-    //                     }
-    //                 }
-    //             }
-    //         },
-    //         // remove the proofs that do not offer improved degrees of separation from existing user proofs
-    //         doc! {
-    //             "$match": {
-    //                 "$expr": {
-    //                     "$or": [
-    //                         { "$gte": ["$userProof.degree", { "$add": ["$degree", 2] }] },
-    //                         { "$eq": ["$userProof", null] }
-    //                     ]
-    //                 }
-    //             }
-    //         },
-    //         // project only the ids of the proofs the user can build from
-    //         doc! { "$project": { "_id": "$originalId" } },
-    //     ];
-    //     // get the OID's of degree proofs the user can build from
-    //     let mut proofs: Vec<String> = vec![];
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let oid = document
-    //                     .get("_id")
-    //                     .and_then(|id| id.as_object_id())
-    //                     .unwrap();
-    //                 proofs.push(oid.to_string());
-    //             }
-    //             Err(e) => println!("Error: {}", e),
-    //         }
-    //     }
+    /**
+     * Given a user, find available degrees of separation proofs they can build from
+     *   - find degree chains they are not a part of
+     *   - find lower degree proofs they can build from
+     */
+    pub async fn find_available_degrees(&self, username: String) -> Vec<String> {
+        // find degree chains they are not a part of
+        let pipeline = vec![
+            // find the user to find available proofs for
+            doc! { "$match": { "username": username } },
+            doc! { "$project": { "relationships": 1, "degree_proofs": 1, "_id": 0 } },
+            // look up the degree proofs made by this user
+            doc! {
+                "$lookup": {
+                    "from": "degree_proofs",
+                    "localField": "degree_proofs",
+                    "foreignField": "_id",
+                    "as": "userDegreeProofs",
+                    "pipeline": [doc! { "$project": { "degree": 1, "phrase": 1 } }]
+                }
+            },
+            // look up the relationships made by this user
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "localField": "relationships",
+                    "foreignField": "_id",
+                    "as": "userRelationships",
+                    "pipeline": [doc! { "$project": { "sender": 1 } }]
+                }
+            },
+            // look up the degree proofs made by relationships
+            // @todo: allow limitation of degrees of separation here
+            doc! {
+                "$lookup": {
+                    "from": "degree_proofs",
+                    "localField": "userRelationships.sender",
+                    "foreignField": "user",
+                    "as": "relationshipDegreeProofs",
+                    "pipeline": [
+                        doc! { "$match": { "inactive": { "$ne": true } } },
+                        doc! { "$project": { "degree": 1, "phrase": 1 } }
+                    ]
+                }
+            },
+            // unwind the results
+            doc! { "$project": { "userDegreeProofs": 1, "relationshipDegreeProofs": 1 } },
+            doc! { "$unwind": "$relationshipDegreeProofs" },
+            // find the lowest degree proof in each chain from relationship proofs and reference user proofs in this chain if exists
+            doc! {
+                "$group": {
+                    "_id": "$relationshipDegreeProofs.phrase",
+                    "originalId": { "$first": "$relationshipDegreeProofs._id" },
+                    "degree": { "$min": "$relationshipDegreeProofs.degree" },
+                    "userProof": {
+                        "$first": {
+                            "$arrayElemAt": [{
+                                "$filter": {
+                                    "input": "$userDegreeProofs",
+                                    "as": "userProof",
+                                    "cond": { "$eq": ["$$userProof.phrase", "$relationshipDegreeProofs.phrase"] }
+                                }
+                            }, 0]
+                        }
+                    }
+                }
+            },
+            // remove the proofs that do not offer improved degrees of separation from existing user proofs
+            doc! {
+                "$match": {
+                    "$expr": {
+                        "$or": [
+                            { "$gte": ["$userProof.degree", { "$add": ["$degree", 2] }] },
+                            { "$eq": ["$userProof", null] }
+                        ]
+                    }
+                }
+            },
+            // project only the ids of the proofs the user can build from
+            doc! { "$project": { "_id": "$originalId" } },
+        ];
+        // get the OID's of degree proofs the user can build from
+        let mut proofs: Vec<String> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let oid = document
+                        .get("_id")
+                        .and_then(|id| id.as_object_id())
+                        .unwrap();
+                    proofs.push(oid.to_string());
+                }
+                Err(e) => println!("Error: {}", e),
+            }
+        }
 
-    //     proofs
-    // }
+        proofs
+    }
 
     // /**
     //  * Get all degree proofs created by a specific user

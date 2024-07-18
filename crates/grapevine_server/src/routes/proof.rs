@@ -450,26 +450,26 @@ pub async fn prove_identity(
 
 // /// GET REQUESTS ///
 
-// /**
-//  * Return a list of all available (new) degree proofs from existing connections that a user can
-//  * build from
-//  *
-//  * @param username - the username to look up the available proofs for
-//  * @return - a vector of stringified OIDs of available proofs to use with get_proof_with_params
-//  *           route (empty if none)
-//  * @return status:
-//  *         - 200 if successful retrieval
-//  *         - 401 if signature mismatch or nonce mismatch
-//  *         - 404 if user not found
-//  *         - 500 if db fails or other unknown issue
-//  */
-// #[get("/available")]
-// pub async fn get_available_proofs(
-//     user: AuthenticatedUser,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<Vec<String>>, Status> {
-//     Ok(Json(db.find_available_degrees(user.0).await))
-// }
+/**
+ * Return a list of all available (new) degree proofs from existing connections that a user can
+ * build from
+ *
+ * @param username - the username to look up the available proofs for
+ * @return - a vector of stringified OIDs of available proofs to use with get_proof_with_params
+ *           route (empty if none)
+ * @return status:
+ *         - 200 if successful retrieval
+ *         - 401 if signature mismatch or nonce mismatch
+ *         - 404 if user not found
+ *         - 500 if db fails or other unknown issue
+ */
+#[get("/available")]
+pub async fn get_available_proofs(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<String>>, Status> {
+    Ok(Json(db.find_available_degrees(user.0).await))
+}
 
 // /**
 //  * Returns all the information needed to construct a proof of degree of separation from a given user
