@@ -501,94 +501,98 @@ impl GrapevineDB {
                     let relationship_id = document.get("_id").unwrap();
 
                     // update relationship document by adding emitted nullifier
-                    self.relationships
-                        .update_one(
-                            doc! {"_id": relationship_id},
-                            doc! {"$set": {"emitted_nullifier": serialize_bytes_to_bson(&nullifier)}},
-                            None,
-                        )
-                        .await;
+                    let query_rel = doc! {"_id": relationship_id};
+                    let update_rel =
+                        doc! {"$set": {"emitted_nullifier": serialize_bytes_to_bson(&nullifier)}};
+                    match self
+                        .relationships
+                        .update_one(query_rel, update_rel, None)
+                        .await
+                    {
+                        Ok(_) => {}
+                        Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+                    };
 
                     // remove relationship id from user document
-                    self.users
-                        .update_one(
-                            doc! {"username": sender},
-                            doc! {"$pull": {"relationships": relationship_id}},
-                            None,
-                        )
-                        .await;
+                    let query_u = doc! {"username": sender};
+                    let update_u = doc! {"$pull": {"relationships": relationship_id}};
+                    match self.users.update_one(query_u, update_u, None).await {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+                    }
                 }
-                Err(e) => eprintln!("Error retrieving relationship: {}", e),
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
             }
         } else {
-            println!("No relationship found.");
+            // TODO: Create relationship not found type
+            return Err(GrapevineError::MongoError(
+                "Relationship not found".to_string(),
+            ));
         }
-
-        Ok(())
     }
 
-    // /**
-    //  * Find all (pending or active) relationships for a user
-    //  *
-    //  * @param user - the username of the user to find relationships for
-    //  * @param active - whether to find active or pending relationships
-    //  * @returns - a list of usernames of the users the user has relationships with
-    //  */
-    // pub async fn get_relationships(
-    //     &self,
-    //     user: &String,
-    //     active: bool,
-    // ) -> Result<Vec<String>, GrapevineError> {
-    //     // setup aggregation pipeline for finding usernames of relationships
-    //     let pipeline = vec![
-    //         // get the ObjectID of the user doc for the given username
-    //         doc! { "$match": { "username": user } },
-    //         doc! { "$project": { "_id": 1 } },
-    //         // lookup all (pending/ active) relationships for the user
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "relationships",
-    //                 "localField": "_id",
-    //                 "foreignField": "recipient",
-    //                 "as": "relationships",
-    //                 "pipeline": [
-    //                     doc! { "$match": { "$expr": { "$eq": ["$active", active] } } },
-    //                     doc! { "$project": { "sender": 1, "_id": 0 } },
-    //                 ],
-    //             }
-    //         },
-    //         doc! { "$unwind": "$relationships" },
-    //         // lookup the usernames of the relationships by the ObjectID found in the relationship docs
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "users",
-    //                 "localField": "relationships.sender",
-    //                 "foreignField": "_id",
-    //                 "as": "relationships",
-    //                 "pipeline": [
-    //                     doc! { "$project": { "username": 1, "_id": 0 } },
-    //                 ],
-    //             }
-    //         },
-    //         doc! { "$unwind": "$relationships" },
-    //         // project only the usernames of the relationships
-    //         doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
-    //     ];
+    /**
+     * Find all (pending or active) relationships for a user
+     *
+     * @param user - the username of the user to find relationships for
+     * @param active - whether to find active or pending relationships
+     * @returns - a list of usernames of the users the user has relationships with
+     */
+    pub async fn get_relationships(
+        &self,
+        user: &String,
+        active: bool,
+    ) -> Result<Vec<String>, GrapevineError> {
+        // setup aggregation pipeline for finding usernames of relationships
+        let pipeline = vec![
+            // get the ObjectID of the user doc for the given username
+            doc! { "$match": { "username": user } },
+            doc! { "$project": { "_id": 1 } },
+            // lookup all (pending/ active) relationships for the user
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "localField": "_id",
+                    "foreignField": "recipient",
+                    "as": "relationships",
+                    "pipeline": [
+                        doc! { "$match": { "$expr": { "$eq": ["$active", active] } } },
+                        doc! { "$project": { "sender": 1, "_id": 0 } },
+                    ],
+                }
+            },
+            doc! { "$unwind": "$relationships" },
+            // lookup the usernames of the relationships by the ObjectID found in the relationship docs
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "relationships.sender",
+                    "foreignField": "_id",
+                    "as": "relationships",
+                    "pipeline": [
+                        doc! { "$project": { "username": 1, "_id": 0 } },
+                    ],
+                }
+            },
+            doc! { "$unwind": "$relationships" },
+            // project only the usernames of the relationships
+            doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
+        ];
 
-    //     // get the OID's of degree proofs the user can build from
-    //     let mut relationships: Vec<String> = vec![];
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let username = document.get("username").unwrap().as_str().unwrap();
-    //                 relationships.push(username.to_string());
-    //             }
-    //             Err(e) => println!("Error: {}", e),
-    //         }
-    //     }
-    //     Ok(relationships)
-    // }
+        // get the OID's of degree proofs the user can build from
+        let mut relationships: Vec<String> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let username = document.get("username").unwrap().as_str().unwrap();
+                    relationships.push(username.to_string());
+                }
+                Err(e) => println!("Error: {}", e),
+            }
+        }
+        Ok(relationships)
+    }
 
     /**
      * Attempts to find a relationship between to users

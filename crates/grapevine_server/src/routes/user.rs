@@ -334,10 +334,16 @@ pub async fn emit_nullifier(
         }
     };
 
-    db.terminate_relationship(request.nullifier, &user.0, &request.recipient)
-        .await;
-
-    Ok(())
+    match db
+        .terminate_relationship(request.nullifier, &user.0, &request.recipient)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
 }
 
 // #[post("/relationship/reject/<username>")]
@@ -376,19 +382,19 @@ pub async fn emit_nullifier(
 //     }
 // }
 
-// #[get("/relationship/active")]
-// pub async fn get_active_relationships(
-//     user: AuthenticatedUser,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<Vec<String>>, GrapevineResponse> {
-//     match db.get_relationships(&user.0, true).await {
-//         Ok(relationships) => Ok(Json(relationships)),
-//         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(e),
-//             None,
-//         ))),
-//     }
-// }
+#[get("/relationship/active")]
+pub async fn get_active_relationships(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<String>>, GrapevineResponse> {
+    match db.get_relationships(&user.0, true).await {
+        Ok(relationships) => Ok(Json(relationships)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
+}
 
 // /// GET REQUESTS ///
 

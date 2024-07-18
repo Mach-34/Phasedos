@@ -218,7 +218,7 @@ mod test_rocket {
             nullifier: [u8; 32],
             sender: &mut GrapevineAccount,
             recipient: &String,
-        ) {
+        ) -> u16 {
             let username = sender.username().clone();
             let signature = generate_nonce_signature(sender);
 
@@ -231,7 +231,7 @@ mod test_rocket {
 
             let res = context
                 .client
-                .post("/user//relationship/emit-nullifier")
+                .post("/user/relationship/emit-nullifier")
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .body(serialized)
@@ -240,6 +240,8 @@ mod test_rocket {
 
             // Increment nonce after request
             let _ = sender.increment_nonce(None);
+
+            res.status().code
         }
 
         pub async fn http_get_nullifier_secret(
@@ -422,16 +424,16 @@ mod test_rocket {
 
             // recompute nullifier to pass to server
             let nullifier = user_a.compute_nullifier(nullifier_secret);
-            println!("Nullifier: {:?}", nullifier);
 
             // emit nullifier as user_a
-            http_emit_nullifier(
+            let code = http_emit_nullifier(
                 &context,
                 ff_ce_to_le_bytes(&nullifier),
                 &mut user_a,
                 user_b.username(),
             )
             .await;
+            assert!(code == 200, "Nullifier emission call failed.");
         }
 
         // todo: check malformed inputs
