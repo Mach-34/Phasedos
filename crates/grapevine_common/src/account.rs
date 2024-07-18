@@ -293,6 +293,17 @@ impl GrapevineAccount {
 
     /// GETTERS ///
 
+    /** Computes address from pubkey and returns it */
+    pub fn address(&self) -> Fr {
+        pubkey_to_address(&self.pubkey())
+    }
+
+    /** Compute nullifier from nullifier secret and return */
+    pub fn compute_nullifier(&self, nullifier_secret: Fr) -> Fr {
+        let hasher = Poseidon::new();
+        hasher.hash(vec![nullifier_secret, self.address()]).unwrap()
+    }
+
     /** Return the username associated with this account */
     pub fn username(&self) -> &String {
         &self.username

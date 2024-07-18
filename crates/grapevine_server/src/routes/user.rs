@@ -334,7 +334,7 @@ pub async fn emit_nullifier(
         }
     };
 
-    db.terminate_relationship(request.encrypted_nullifier, &request.sender, &user.0)
+    db.terminate_relationship(request.nullifier, &user.0, &request.recipient)
         .await;
 
     Ok(())

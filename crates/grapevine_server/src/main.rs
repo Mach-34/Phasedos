@@ -59,6 +59,7 @@ mod test_rocket {
     use grapevine_common::{
         account::GrapevineAccount,
         auth_signature::AuthSignatureEncrypted,
+        compat::ff_ce_to_le_bytes,
         http::{
             requests::{
                 CreateUserRequest, DegreeProofRequest, NewRelationshipRequest, PhraseRequest,
@@ -214,16 +215,16 @@ mod test_rocket {
 
         pub async fn http_emit_nullifier(
             context: &GrapevineTestContext,
-            encrypted_nullifier: [u8; 48],
-            sender: &String,
-            recipient: &mut GrapevineAccount,
+            nullifier: [u8; 32],
+            sender: &mut GrapevineAccount,
+            recipient: &String,
         ) {
-            let username = recipient.username().clone();
-            let signature = generate_nonce_signature(recipient);
+            let username = sender.username().clone();
+            let signature = generate_nonce_signature(sender);
 
             let payload = EmitNullifierRequest {
-                encrypted_nullifier,
-                sender: sender.to_string(),
+                nullifier,
+                recipient: recipient.to_string(),
             };
 
             let serialized = bincode::serialize(&payload).unwrap();
@@ -238,7 +239,7 @@ mod test_rocket {
                 .await;
 
             // Increment nonce after request
-            let _ = recipient.increment_nonce(None);
+            let _ = sender.increment_nonce(None);
         }
 
         pub async fn http_get_nullifier_secret(
@@ -414,17 +415,23 @@ mod test_rocket {
 
             http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
 
-            let relationship =
-                http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
+            let encrypted_nullifier_secret =
+                http_get_nullifier_secret(&context, &mut user_a, user_b.username()).await;
 
-            // emit nullifier as user_b
-            // http_emit_nullifier(
-            //     &context,
-            //     user_a_relationship_request.encrypted_nullifier,
-            //     user_a.username(),
-            //     &mut user_b,
-            // )
-            // .await;
+            let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+            // recompute nullifier to pass to server
+            let nullifier = user_a.compute_nullifier(nullifier_secret);
+            println!("Nullifier: {:?}", nullifier);
+
+            // emit nullifier as user_a
+            http_emit_nullifier(
+                &context,
+                ff_ce_to_le_bytes(&nullifier),
+                &mut user_a,
+                user_b.username(),
+            )
+            .await;
         }
 
         // todo: check malformed inputs

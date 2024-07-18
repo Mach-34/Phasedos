@@ -7,6 +7,7 @@ use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
 use mongodb::{Client, Collection};
 
+use crate::utils::serialize_bytes_to_bson;
 use crate::MONGODB_URI;
 
 pub struct GrapevineDB {
@@ -431,7 +432,7 @@ impl GrapevineDB {
 
     pub async fn terminate_relationship(
         &self,
-        nullifier: [u8; 48],
+        nullifier: [u8; 32],
         sender: &String,
         recipient: &String,
     ) -> Result<(), GrapevineError> {
@@ -497,23 +498,30 @@ impl GrapevineDB {
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    let ephemeral_key = document.get("ephemeral_key").unwrap(); // key to decrypt nullifier
-                    let encrypted_nullifier = document.get("encrypted_nullifier").unwrap();
                     let relationship_id = document.get("_id").unwrap();
 
-                    // decrypt stored nullifier and check that it matches up with one provided in payload
-                    println!("Ephemeral key: {:?}", ephemeral_key);
-                    println!("Encrypted nullifier: {:?}", encrypted_nullifier);
+                    // update relationship document by adding emitted nullifier
+                    self.relationships
+                        .update_one(
+                            doc! {"_id": relationship_id},
+                            doc! {"$set": {"emitted_nullifier": serialize_bytes_to_bson(&nullifier)}},
+                            None,
+                        )
+                        .await;
 
-                    // delete relationship from db
-                    // self.relationships
-                    //     .delete_one(doc! {"_id": relationship_id}, None)
-                    //     .await;
+                    // remove relationship id from user document
+                    self.users
+                        .update_one(
+                            doc! {"username": sender},
+                            doc! {"$pull": {"relationships": relationship_id}},
+                            None,
+                        )
+                        .await;
                 }
-                Err(e) => eprintln!("Error retrieving document: {}", e),
+                Err(e) => eprintln!("Error retrieving relationship: {}", e),
             }
         } else {
-            println!("No documents found.");
+            println!("No relationship found.");
         }
 
         Ok(())
