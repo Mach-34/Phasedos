@@ -467,10 +467,11 @@ impl GrapevineDB {
             doc! {
                 "$project": {
                     "_id": 0,
-                    "recipient": {
+                    // TODO; This may need to change cause of relationship confusion???
+                    "sender": {
                         "$cond": { "if": { "$eq": ["$username", recipient] }, "then": "$_id", "else": "$$REMOVE" }
                     },
-                    "sender": {
+                    "recipient": {
                         "$cond": { "if": { "$eq": ["$username", sender] }, "then": "$_id", "else": "$$REMOVE" }
                     }
                 }
@@ -521,22 +522,10 @@ impl GrapevineDB {
                     let relationship_id = document.get("_id").unwrap();
 
                     // update relationship document by adding emitted nullifier
-                    let query_rel = doc! {"_id": relationship_id};
-                    let update_rel =
+                    let query = doc! {"_id": relationship_id};
+                    let update =
                         doc! {"$set": {"emitted_nullifier": serialize_bytes_to_bson(&nullifier)}};
-                    match self
-                        .relationships
-                        .update_one(query_rel, update_rel, None)
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-                    };
-
-                    // remove relationship id from user document
-                    let query_u = doc! {"username": sender};
-                    let update_u = doc! {"$pull": {"relationships": relationship_id}};
-                    match self.users.update_one(query_u, update_u, None).await {
+                    match self.relationships.update_one(query, update, None).await {
                         Ok(_) => Ok(()),
                         Err(e) => Err(GrapevineError::MongoError(e.to_string())),
                     }

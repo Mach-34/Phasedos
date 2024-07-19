@@ -239,6 +239,7 @@ pub async fn add_relationship(
         encrypted_nullifier: None,
         ephemeral_key: None,
         encrypted_auth_signature: None,
+        emitted_nullifier: None,
         active: Some(activate),
     };
 
@@ -250,6 +251,7 @@ pub async fn add_relationship(
         ephemeral_key: Some(request.ephemeral_key),
         encrypted_auth_signature: Some(request.encrypted_auth_signature),
         encrypted_nullifier: Some(request.encrypted_nullifier),
+        emitted_nullifier: None,
         active: Some(activate),
     };
 
@@ -296,7 +298,8 @@ pub async fn add_relationship(
  *            * 401 if relationship is not found   
  *            * 500 if db fails or other unknown issue    
  */
-#[get("/relationship/nullifier-secret/<recipient>")]
+// relationship prefix removed for now due to route collision with get_relationship
+#[get("/nullifier-secret/<recipient>")]
 pub async fn get_nullifier_secret(
     recipient: String,
     user: AuthenticatedUser,
@@ -368,6 +371,32 @@ pub async fn emit_nullifier(
     }
 }
 
+/**
+ * Route used to fetch a relationship while testing
+ *
+ * @param recipient - recipient username
+ * @param sender
+ *
+ * @return status:
+ *            * 201 if success
+ *            * 401 if relationship is not found   
+ *            * 500 if db fails or other unknown issue    
+ */
+#[get("/relationship/<recipient>/<sender>")]
+pub async fn get_relationship(
+    recipient: String,
+    sender: String,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Relationship>, GrapevineResponse> {
+    match db.get_relationship(&sender, &recipient).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
+}
+
 // #[post("/relationship/reject/<username>")]
 // pub async fn reject_pending_relationship(
 //     user: AuthenticatedUser,
@@ -403,7 +432,6 @@ pub async fn emit_nullifier(
 //         ))),
 //     }
 // }
-
 #[get("/relationship/active")]
 pub async fn get_active_relationships(
     user: AuthenticatedUser,
@@ -420,22 +448,19 @@ pub async fn get_active_relationships(
 
 // /// GET REQUESTS ///
 
-// /**
-//  * @todo: remove / replace with get nonce
-//  */
-// // #[get("/<username>")]
-// // pub async fn get_user(
-// //     username: String,
-// //     db: &State<GrapevineDB>,
-// // ) -> Result<Json<User>, GrapevineResponse> {
-// //     match db.get_user(&username).await {
-// //         Some(user) => Ok(Json(user)),
-// //         None => Err(GrapevineResponse::NotFound(format!(
-// //             "User {} does not exist.",
-// //             username
-// //         ))),
-// //     }
-// // }
+// #[get("/<username>")]
+// pub async fn get_user(
+//     username: String,
+//     db: &State<GrapevineDB>,
+// ) -> Result<Json<User>, GrapevineResponse> {
+//     match db.get_user(&username).await {
+//         Some(user) => Ok(Json(user)),
+//         None => Err(GrapevineResponse::NotFound(format!(
+//             "User {} does not exist.",
+//             username
+//         ))),
+//     }
+// }
 
 // // #[post("/nonce", format = "json", data = "<request>")]
 // // pub async fn get_nonce(

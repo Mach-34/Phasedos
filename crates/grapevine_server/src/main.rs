@@ -78,7 +78,7 @@ mod test_rocket {
     use std::sync::Mutex;
     use test_helper::{
         build_create_user_request, http_add_relationship, http_create_user, http_emit_nullifier,
-        http_get_nullifier_secret,
+        http_get_nullifier_secret, http_get_relationship,
     };
 
     lazy_static! {
@@ -280,7 +280,7 @@ mod test_rocket {
             // mock transmit the request
             let encrypted_nullifier_secret: [u8; 48] = context
                 .client
-                .get(format!("/user/relationship/nullifier-secret/{}", recipient))
+                .get(format!("/user/nullifier-secret/{}", recipient))
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .dispatch()
@@ -295,6 +295,29 @@ mod test_rocket {
             let _ = from.increment_nonce(None);
 
             encrypted_nullifier_secret
+        }
+
+        /**
+         * Mock http request to get a relationship between a sender and recipient
+         *
+         * @param context - the mocked rocket http server context
+         * @param sender - username of sender in relationship
+         * @param recipient - username of recipient in relationship
+         * @return - relationship struct
+         */
+        pub async fn http_get_relationship(
+            context: &GrapevineTestContext,
+            sender: &String,
+            recipient: &String,
+        ) -> Relationship {
+            context
+                .client
+                .get(format!("/user/relationship/{}/{}", recipient, sender))
+                .dispatch()
+                .await
+                .into_json::<Relationship>()
+                .await
+                .unwrap()
         }
 
         // async fn http_get_relationships(
@@ -433,10 +456,10 @@ mod test_rocket {
             let encrypted_nullifier_secret =
                 http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
 
-            println!(
-                "Decrypted: {:?}",
-                user_b.decrypt_nullifier_secret(encrypted_nullifier_secret)
-            );
+            let decrypted_local = user_b
+                .decrypt_nullifier_secret(user_b_relationship_request.encrypted_nullifier_secret);
+            let decrypted_server = user_b.decrypt_nullifier_secret(encrypted_nullifier_secret);
+            assert_eq!(decrypted_local, decrypted_server);
         }
 
         #[rocket::async_test]
@@ -482,6 +505,14 @@ mod test_rocket {
             )
             .await;
             assert!(code == 200, "Nullifier emission call failed.");
+
+            // confirm relationship now has emitted nullifier
+            let relationship =
+                http_get_relationship(&context, user_b.username(), user_a.username()).await;
+            assert!(
+                relationship.emitted_nullifier.is_some(),
+                "No nullifier emitted"
+            );
         }
 
         // todo: check malformed inputs
