@@ -23,21 +23,19 @@ pub struct AvailableProofs {
     pub relation: String
 }
 
-// // all data needed from server to prove a degree of separation
-// #[derive(Debug, Serialize, Deserialize, Clone)]
-// pub struct ProvingData {
-//     pub phrase_index: u32,
-//     #[serde(default, with = "serde_bytes")]
-//     pub phrase_hash: [u8; 32],
-//     pub description: String,
-//     pub degree: u8, // multiply by 2 to get iterations
-//     pub proof: Vec<u8>,
-//     pub username: String,
-//     #[serde(with = "serde_bytes")]
-//     pub ephemeral_key: [u8; 32],
-//     #[serde(with = "serde_bytes")]
-//     pub ciphertext: [u8; 80],
-// }
+// all data needed from server to prove a degree of separation
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProvingData {
+    #[serde(default, with = "serde_bytes")]
+    pub relation_pubkey: [u8; 32],
+    pub proof: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub ephemeral_key: [u8; 32],
+    #[serde(with = "serde_bytes")]
+    pub signature_ciphertext: [u8; 80],
+    #[serde(with = "serde_bytes")]
+    pub nullifier_ciphertext: [u8; 48],
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Relationship {

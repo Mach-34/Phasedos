@@ -2,7 +2,7 @@ use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::responses::DegreeData;
-use grapevine_common::models::{AvailableProofs, GrapevineProof, Relationship, User};
+use grapevine_common::models::{AvailableProofs, GrapevineProof, ProvingData, Relationship, User};
 use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
 use mongodb::{Client, Collection};
@@ -815,7 +815,7 @@ impl GrapevineDB {
      * Given a user, find available degrees of separation proofs they can build from
      *   - find degree chains they are not a part of
      *   - find lower degree proofs they can build from
-     * 
+     *
      * @param username - the username of the user to find available proofs for
      * @returns - a list of available proofs the user can build from with metadata for ui
      */
@@ -917,8 +917,18 @@ impl GrapevineDB {
                         .unwrap();
                     let degree = document.get("degree").unwrap().as_i32().unwrap() as u8;
                     let scope = document.get("scope").unwrap().as_str().unwrap().to_string();
-                    let relation = document.get("relation").unwrap().as_str().unwrap().to_string();
-                    proofs.push(AvailableProofs { id, degree, scope, relation });
+                    let relation = document
+                        .get("relation")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string();
+                    proofs.push(AvailableProofs {
+                        id,
+                        degree,
+                        scope,
+                        relation,
+                    });
                 }
                 Err(e) => println!("Error: {}", e),
             }
@@ -1205,86 +1215,128 @@ impl GrapevineDB {
     //     Some(degrees)
     // }
 
-    // /**
-    //  * Get a proof from the server with all info needed to prove a degree of separation as a given user
-    //  *
-    //  * @param username - the username of the user proving a degree of separation
-    //  * @param oid - the id of the proof to get
-    //  */
-    // pub async fn get_proof_and_data(
-    //     &self,
-    //     username: String,
-    //     proof: ObjectId,
-    // ) -> Option<ProvingData> {
-    //     // @todo: aggregation pipeline
-    //     // get the proof
-    //     let filter = doc! { "_id": proof };
-    //     let projection = doc! { "user": 1, "degree": 1, "proof": 1, "phrase": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let proof = self
-    //         .degree_proofs
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
-    //     // look up the phrase info
-    //     let filter = doc! { "_id": proof.phrase.unwrap() };
-    //     let projection = doc! { "index": 1, "hash": 1, "description": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let phrase = self
-    //         .phrases
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
-    //     // get the username of the user who made the proof
-    //     let proof_creator = proof.user.unwrap();
-    //     let filter = doc! { "_id": proof_creator };
-    //     let projection = doc! { "username": 1, "pubkey": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let proof_creator_username = self
-    //         .users
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap()
-    //         .username
-    //         .unwrap();
-    //     // get the oid of message sender
-    //     let filter = doc! { "username": username };
-    //     let projection = doc! { "_id": 1, "pubkey": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let caller = self
-    //         .users
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap()
-    //         .id
-    //         .unwrap();
-    //     // look up relationship with sender and recipient
-    //     let filter = doc! { "sender": proof_creator, "recipient": caller };
-    //     let projection = doc! { "ephemeral_key": 1, "ciphertext": 1};
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let relationship = self
-    //         .relationships
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
+    /**
+     * Get a proof from the server with all info needed to prove a degree of separation as a given user
+     *
+     * @param username - the username of the user proving a degree of separation
+     * @param oid - the id of the proof to get
+     */
+    pub async fn get_proof_and_data(
+        &self,
+        username: String,
+        proof: ObjectId,
+    ) -> Option<ProvingData> {
+        let pipeline = vec![
+            // 1. Find the matching proof
+            doc! { "$match": { "_id": proof }},
+            // 2. Look up the pubkey of the proof creator
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "relation",
+                    "foreignField": "_id",
+                    "as": "relation_pubkey",
+                    "pipeline": [{ "$project": { "_id": 0, "pubkey": 1 }}]
+                }
+            },
+            doc! { "$unwind": "$relation_pubkey" },
+            doc! { "$set": { "relation_pubkey": "$relation_pubkey.pubkey" }},
+            // 3. Look up the OID of the user requesting proof data given the username
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "let": { "username": "user_a" },
+                    "pipeline": [
+                        {"$match": { "$expr": { "$eq": [ "$username", "$$username" ] }}},
+                        { "$project": { "_id": 1 }}
+                    ],
+                    "as": "user_id"
+                }
+            },
+            doc! { "$unwind": "$user_id" },
+            doc! { "$set": { "user_id": "$user_id._id" }},
+            // 4. Look up the nullifier and auth signature for the given relationship
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "sender": "$relation", "recipient": "$user_id" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": [ "$sender", "$$sender" ] },
+                                        { "$eq": [ "$recipient", "$$recipient" ] }
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "encrypted_nullifier": 1,
+                                "encrypted_auth_signature": 1,
+                                "ephemeral_key": 1
+                            }
+                        }
+                    ],
+                    "as": "relationship"
+                }
+            },
+            doc! { "$unwind": "$relationship" },
+            // 5: Project only necessary fields
+            doc! {
+                "$project": {
+                    "_id": 0,
+                    "proof": 1,
+                    "relation_pubkey": 1,
+                    "encrypted_nullifier": "$relationship.encrypted_nullifier",
+                    "encrypted_auth_signature": "$relationship.encrypted_auth_signature",
+                    "ephemeral_key": "$relationship.ephemeral_key"
+                }
+            },
+        ];
 
-    //     // return the proof data
-    //     Some(ProvingData {
-    //         description: phrase.description.unwrap(),
-    //         phrase_index: phrase.index.unwrap(),
-    //         phrase_hash: phrase.hash.unwrap(),
-    //         degree: proof.degree.unwrap(),
-    //         proof: proof.proof.unwrap(),
-    //         username: proof_creator_username,
-    //         ephemeral_key: relationship.ephemeral_key.unwrap(),
-    //         ciphertext: relationship.ciphertext.unwrap(),
-    //     })
-    // }
+        // Get the proving data
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let mut proof: Vec<u8> = vec![];
+                    let mut relation_pubkey: [u8; 32] = [0; 32];
+                    let mut ephemeral_key: [u8; 32] = [0; 32];
+                    let mut encrypted_auth_signature: [u8; 80] = [0; 80];
+                    let mut encrypted_nullifier: [u8; 48] = [0; 48];
+                    if let Some(Bson::Binary(binary)) = document.get("proof") {
+                        proof = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("relation_pubkey") {
+                        relation_pubkey = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("ephemeral_key") {
+                        ephemeral_key = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("encrypted_auth_signature") {
+                        encrypted_auth_signature = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("encrypted_nullifier") {
+                        encrypted_nullifier = binary.bytes.clone().try_into().unwrap();
+                    };
+                    
+                    Some(ProvingData {
+                        proof,
+                        relation_pubkey,
+                        ephemeral_key,
+                        signature_ciphertext: encrypted_auth_signature,
+                        nullifier_ciphertext: encrypted_nullifier
+                    })
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
 
     // /**
     // * Get details on account:

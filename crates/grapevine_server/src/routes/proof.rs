@@ -3,7 +3,7 @@ use crate::mongo::GrapevineDB;
 use crate::utils::PUBLIC_PARAMS;
 use crate::{catchers::GrapevineResponse, guards::AuthenticatedUser};
 use grapevine_circuits::{nova::verify_grapevine_proof, utils::decompress_proof, inputs::GrapevineOutputs};
-use grapevine_common::models::AvailableProofs;
+use grapevine_common::models::{AvailableProofs, ProvingData};
 use grapevine_common::{
     Fr, MAX_USERNAME_CHARS,
     http::{
@@ -472,39 +472,39 @@ pub async fn get_available_proofs(
     Ok(Json(db.find_available_degrees(user.0).await))
 }
 
-// /**
-//  * Returns all the information needed to construct a proof of degree of separation from a given user
-//  *
-//  * @param oid - the ObjectID of the proof to retrieve
-//  * @param username - the username to retrieve encrypted auth signature for when proving relationship
-//  * @return - a ProvingData struct containing:
-//  *         * degree: the separation degree of the returned proof
-//  *         * proof: the gzip-compressed fold proof
-//  *         * username: the username of the proof creator
-//  *         * ephemeral_key: the ephemeral pubkey that can be combined with the requesting user's
-//  *           private key to derive returned proof creator's auth signature decryption key
-//  *         * ciphertext: the encrypted auth signature
-//  * @return status:
-//  *         - 200 if successful retrieval
-//  *         - 401 if signature mismatch or nonce mismatch
-//  *         - 404 if username or proof not found
-//  *         - 500 if db fails or other unknown issue
-//  */
-// #[get("/params/<oid>")]
-// pub async fn get_proof_with_params(
-//     user: AuthenticatedUser,
-//     oid: String,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<ProvingData>, GrapevineResponse> {
-//     let oid = ObjectId::from_str(&oid).unwrap();
-//     match db.get_proof_and_data(user.0, oid).await {
-//         Some(data) => Ok(Json(data)),
-//         None => Err(GrapevineResponse::NotFound(format!(
-//             "No proof found with oid {}",
-//             oid
-//         ))),
-//     }
-// }
+/**
+ * Returns all the information needed to construct a proof of degree of separation from a given user
+ *
+ * @param oid - the ObjectID of the proof to retrieve
+ * @param username - the username to retrieve encrypted auth signature for when proving relationship
+ * @return - a ProvingData struct containing:
+ *         * degree: the separation degree of the returned proof
+ *         * proof: the gzip-compressed fold proof
+ *         * username: the username of the proof creator
+ *         * ephemeral_key: the ephemeral pubkey that can be combined with the requesting user's
+ *           private key to derive returned proof creator's auth signature decryption key
+ *         * ciphertext: the encrypted auth signature
+ * @return status:
+ *         - 200 if successful retrieval
+ *         - 401 if signature mismatch or nonce mismatch
+ *         - 404 if username or proof not found
+ *         - 500 if db fails or other unknown issue
+ */
+#[get("/params/<oid>")]
+pub async fn get_proof_with_params(
+    user: AuthenticatedUser,
+    oid: String,
+    db: &State<GrapevineDB>,
+) -> Result<Json<ProvingData>, GrapevineResponse> {
+    let oid = ObjectId::from_str(&oid).unwrap();
+    match db.get_proof_and_data(user.0, oid).await {
+        Some(data) => Ok(Json(data)),
+        None => Err(GrapevineResponse::NotFound(format!(
+            "No proof found with oid {}",
+            oid
+        ))),
+    }
+}
 
 // /**
 //  * Get all created phrases
