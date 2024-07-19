@@ -15,21 +15,41 @@ pub struct GrapevineProof {
     pub inactive: Option<bool>,
 }
 
-// // all data needed from server to prove a degree of separation
-// #[derive(Debug, Serialize, Deserialize, Clone)]
-// pub struct ProvingData {
-//     pub phrase_index: u32,
-//     #[serde(default, with = "serde_bytes")]
-//     pub phrase_hash: [u8; 32],
-//     pub description: String,
-//     pub degree: u8, // multiply by 2 to get iterations
-//     pub proof: Vec<u8>,
-//     pub username: String,
-//     #[serde(with = "serde_bytes")]
-//     pub ephemeral_key: [u8; 32],
-//     #[serde(with = "serde_bytes")]
-//     pub ciphertext: [u8; 80],
-// }
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AvailableProofs {
+    pub id: ObjectId,
+    pub degree: u8,
+    pub scope: String,
+    pub relation: String
+}
+
+// todo: maybe move this somewhere else? is not used in transport
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DegreeProofValidationData {
+    #[serde(default, with = "serde_bytes")]
+    pub prover_address: [u8; 32],
+    pub prover_oid: ObjectId,
+    #[serde(default, with = "serde_bytes")]
+    pub scope: [u8; 32],
+    pub scope_oid: ObjectId,
+    pub nullifiers: Vec<[u8; 32]>,
+    pub degree: u8,
+    pub inactive: bool
+}
+
+// all data needed from server to prove a degree of separation
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProvingData {
+    #[serde(default, with = "serde_bytes")]
+    pub relation_pubkey: [u8; 32],
+    pub proof: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub ephemeral_key: [u8; 32],
+    #[serde(with = "serde_bytes")]
+    pub signature_ciphertext: [u8; 80],
+    #[serde(with = "serde_bytes")]
+    pub nullifier_ciphertext: [u8; 48],
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Relationship {

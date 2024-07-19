@@ -17,9 +17,9 @@ pub struct AuthSignatureEncrypted {
     pub recipient: [u8; 32],
     pub ephemeral_key: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub nullifier: [u8; 48],
+    pub nullifier_ciphertext: [u8; 48],
     #[serde(with = "serde_bytes")]
-    pub ciphertext: [u8; 80],
+    pub signature_ciphertext: [u8; 80],
 }
 
 /**
@@ -82,7 +82,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
         let plaintext = signature.compress();
         let mut sig_buf = [0u8; 80];
         sig_buf[..plaintext.len()].copy_from_slice(&plaintext);
-        let ciphertext: [u8; 80] = Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
+        let signature_ciphertext: [u8; 80] = Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
             .encrypt_padded_mut::<Pkcs7>(&mut sig_buf, plaintext.len())
             .unwrap()
             .try_into()
@@ -91,7 +91,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
         // encrypt the nullifier
         let mut null_buf = [0u8; 48];
         null_buf[..nullifier_bytes.len()].copy_from_slice(&nullifier_bytes);
-        let encrypted_nullifier: [u8; 48] =
+        let nullifier_ciphertext: [u8; 48] =
             Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
                 .encrypt_padded_mut::<Pkcs7>(&mut null_buf, nullifier_bytes.len())
                 .unwrap()
@@ -103,8 +103,8 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
             username,
             recipient: recipient.compress(),
             ephemeral_key: ephm_pk,
-            ciphertext: ciphertext,
-            nullifier: encrypted_nullifier,
+            signature_ciphertext,
+            nullifier_ciphertext,
         }
     }
 
@@ -114,7 +114,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
         let (aes_key, aes_iv) = gen_aes_key(recipient, ephm_pk);
 
         // decrypt the auth signature
-        let mut sig_buf = self.ciphertext;
+        let mut sig_buf = self.signature_ciphertext;
         let auth_signature: [u8; 64] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
             .decrypt_padded_mut::<Pkcs7>(&mut sig_buf)
             .unwrap()
@@ -122,7 +122,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
             .unwrap();
 
         // decrypt the nullifier
-        let mut null_buf = self.nullifier;
+        let mut null_buf = self.nullifier_ciphertext;
         let nullifier: [u8; 32] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
             .decrypt_padded_mut::<Pkcs7>(&mut null_buf)
             .unwrap()

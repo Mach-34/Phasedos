@@ -270,17 +270,15 @@ impl GrapevineAccount {
     ) -> NewRelationshipRequest {
         // generate a nullifier for relationship
         let (nullifier, encrypted_nullifier_secret) = self.generate_nullifier();
-        // encrypt the auth signature with the target pubkey
-        let encrypted_auth_signature = self.generate_auth_signature(pubkey.clone(), nullifier);
+        // encrypt the auth signature and nullifier with the target pubkey
+        let encrypted_auth_secret = self.generate_auth_signature(pubkey.clone(), nullifier);
 
-        let encrypted_nullifier: [u8; 48] = [0u8; 48]; // TODO: Encrypt nullifier
-                                                       // return the New Relationship http request struct
         NewRelationshipRequest {
-            encrypted_nullifier: encrypted_nullifier,
             encrypted_nullifier_secret: encrypted_nullifier_secret,
             to: username.clone(),
-            ephemeral_key: encrypted_auth_signature.ephemeral_key,
-            encrypted_auth_signature: encrypted_auth_signature.ciphertext,
+            ephemeral_key: encrypted_auth_secret.ephemeral_key,
+            encrypted_auth_signature: encrypted_auth_secret.signature_ciphertext,
+            encrypted_nullifier: encrypted_auth_secret.nullifier_ciphertext,
         }
     }
 

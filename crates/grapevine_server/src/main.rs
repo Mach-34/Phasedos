@@ -123,7 +123,7 @@ mod test_rocket {
         use grapevine_common::{
             account::GrapevineAccount,
             http::requests::{CreateUserRequest, EmitNullifierRequest},
-            models::Relationship,
+            models::{AvailableProofs, ProvingData, Relationship},
             NovaProof,
         };
 
@@ -320,6 +320,77 @@ mod test_rocket {
                 .unwrap()
         }
 
+        pub async fn http_get_available_proofs(
+            context: &GrapevineTestContext,
+            user: &mut GrapevineAccount,
+        ) -> Vec<AvailableProofs> {
+            let username = user.username().clone();
+            let signature = generate_nonce_signature(user);
+
+            // mock transmit the request
+            let res = context
+                .client
+                .get("/proof/available")
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .dispatch()
+                .await
+                .into_json::<Vec<AvailableProofs>>()
+                .await;
+
+            let _ = user.increment_nonce(None);
+            res.unwrap()
+        }
+
+        pub async fn http_get_proving_data(
+            context: &GrapevineTestContext,
+            user: &mut GrapevineAccount,
+            proof: &String,
+        ) -> ProvingData {
+            let username = user.username().clone();
+            let signature = generate_nonce_signature(user);
+            let uri = format!("/proof/params/{}", proof);
+
+            // mock transmit the request
+            let res = context
+                .client
+                .get(uri)
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .dispatch()
+                .await
+                .into_json::<ProvingData>()
+                .await;
+
+            let _ = user.increment_nonce(None);
+            res.unwrap()
+        }
+
+        pub async fn http_submit_degree_proof(
+            context: &GrapevineTestContext,
+            user: &mut GrapevineAccount,
+            payload: DegreeProofRequest,
+        ) -> (u16, String) {
+            let serialized = bincode::serialize(&payload).unwrap();
+            let username = user.username().clone();
+            let signature = generate_nonce_signature(user);
+
+            // mock transmit the request
+            let res = context
+                .client
+                .post("/proof/degree")
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .body(serialized)
+                .dispatch()
+                .await;
+            let code = res.status().code;
+            let message = res.into_string().await.unwrap_or(String::default());
+            // Increment nonce after request
+            let _ = user.increment_nonce(None);
+            (code, message)
+        }
+
         // async fn http_get_relationships(
         //     context: &GrapevineTestContext,
         //     user: &mut GrapevineAccount,
@@ -346,10 +417,9 @@ mod test_rocket {
 
     #[cfg(test)]
     mod user_creation_tests {
+        use super::*;
         use grapevine_common::compat::convert_ff_ce_to_ff;
         use grapevine_common::crypto::pubkey_to_address;
-
-        use super::*;
 
         #[rocket::async_test]
         pub async fn test_add_user() {
@@ -426,6 +496,13 @@ mod test_rocket {
             assert_eq!(code, Status::BadRequest.code);
             assert_eq!(message, expected_message);
         }
+
+        // todo: check malformed inputs
+    }
+
+    #[cfg(test)]
+    mod relationship_tests {
+        use super::*;
 
         #[rocket::async_test]
         pub async fn test_relationship_creation() {
@@ -514,8 +591,101 @@ mod test_rocket {
                 "No nullifier emitted"
             );
         }
+    }
 
-        // todo: check malformed inputs
+    #[cfg(test)]
+    mod degree_proof_tests {
+        use babyjubjub_rs::{decompress_point, decompress_signature};
+        use ff::PrimeField;
+        use grapevine_circuits::{
+            inputs::{GrapevineInputs, GrapevineOutputs},
+            nova::{degree_proof, verify_grapevine_proof},
+        };
+        use grapevine_common::{auth_signature::AuthSignatureEncryptedUser, Fr};
+
+        use super::*;
+        use crate::test_rocket::test_helper::*;
+
+        #[rocket::async_test]
+        pub async fn test_degree_one() {
+            // Setup
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // create users
+            let mut user_a = GrapevineAccount::new("user_a".into());
+            let user_request_a = build_create_user_request(&user_a);
+            http_create_user(&context, &user_request_a).await;
+            let mut user_b = GrapevineAccount::new("user_b".into());
+            let user_request_b = build_create_user_request(&user_b);
+            http_create_user(&context, &user_request_b).await;
+
+            // establish relationship between users
+            let user_a_relationship_request =
+                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+            let user_b_relationship_request =
+                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+            // retrieve available proofs as user_b
+            let available_proofs = http_get_available_proofs(&context, &mut user_b).await;
+            // retrieve proving data for user_b to prove degree 1 from user_a
+            let prev_proof_oid = available_proofs[0].id.to_string();
+            let degree = available_proofs[0].degree as usize;
+            let proving_data = http_get_proving_data(&context, &mut user_b, &prev_proof_oid).await;
+
+            // decompress the proof
+            let mut proof = decompress_proof(&proving_data.proof[..]);
+            let res = verify_grapevine_proof(&proof, &ARTIFACTS.params, degree)
+                .unwrap()
+                .0;
+            let outputs = GrapevineOutputs::try_from(res).unwrap();
+            // decrypt the auth secret
+            let auth_secret_encrypted = AuthSignatureEncrypted {
+                username: "".into(),
+                recipient: user_b.pubkey().compress(),
+                ephemeral_key: proving_data.ephemeral_key,
+                signature_ciphertext: proving_data.signature_ciphertext,
+                nullifier_ciphertext: proving_data.nullifier_ciphertext,
+            };
+            let auth_secret = auth_secret_encrypted.decrypt(user_b.private_key());
+            // build the inputs for the degree proof
+            let auth_signature = decompress_signature(&auth_secret.auth_signature).unwrap();
+            let relation_pubkey = decompress_point(proving_data.relation_pubkey).unwrap();
+            let relation_nullifier = Fr::from_repr(auth_secret.nullifier).unwrap();
+            let inputs = GrapevineInputs::degree_step(
+                &user_b.private_key(),
+                &relation_pubkey,
+                &relation_nullifier,
+                &outputs.scope,
+                &auth_signature,
+            );
+
+            // user_b proves degree 1 separation from user_a
+            degree_proof(
+                &ARTIFACTS,
+                &inputs,
+                &mut proof,
+                &outputs.try_into().unwrap(),
+            )
+            .unwrap();
+            // verify proof
+            let res = verify_grapevine_proof(&proof, &ARTIFACTS.params, degree + 1)
+                .unwrap()
+                .0;
+            let output = GrapevineOutputs::try_from(res).unwrap();
+            // build DegreeProofRequest
+            let compressed = compress_proof(&proof);
+            let degree_proof_request = DegreeProofRequest {
+                proof: compressed,
+                previous: prev_proof_oid,
+                degree: degree as u8 + 1,
+            };
+            // simulate http call
+            let (code, _) =
+                http_submit_degree_proof(&context, &mut user_b, degree_proof_request).await;
+            assert_eq!(code, Status::Created.code);
+        }
     }
 
     //     // @TODO: Change eventually because to doesn't need to be mutable?

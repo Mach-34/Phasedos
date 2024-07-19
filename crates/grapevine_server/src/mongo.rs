@@ -2,7 +2,9 @@ use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::responses::DegreeData;
-use grapevine_common::models::{GrapevineProof, Relationship, User};
+use grapevine_common::models::{
+    AvailableProofs, DegreeProofValidationData, GrapevineProof, ProvingData, Relationship, User,
+};
 use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
 use mongodb::{Client, Collection};
@@ -155,20 +157,97 @@ impl GrapevineDB {
             .unwrap()
     }
 
-    // pub async fn get_pubkey(&self, username: String) -> Option<[u8; 32]> {
-    //     let filter = doc! { "username": username };
-    //     let projection = doc! { "pubkey": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let user = self
-    //         .users
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap();
-    //     match user {
-    //         Some(user) => Some(user.pubkey.unwrap()),
-    //         None => None,
-    //     }
-    // }
+    /**
+     * Returns all the information needed for validating a degree proof
+     * @dev returns 404 if the proof does not exist
+     *
+     * @param username - the username of the requesting user
+     * @param proof - the object id of the degree proof
+     *
+     * @returns: all data used to validate proof being added to chain if proof found, or None
+     */
+    pub async fn get_degree_data(
+        &self,
+        username: &String,
+        proof: &ObjectId,
+    ) -> Option<DegreeProofValidationData> {
+        // find degree chains they are not a part of
+        let pipeline = vec![
+            // 1. Look up the address of the proving user
+            doc! { "$match": { "username": username } },
+            doc! { "$project": { "address": 1, "_id": 1 } },
+            // 2. Look up the matching proof document
+            doc! { "$lookup": {
+                "from": "proofs",
+                "pipeline": [
+                    doc! { "$match": { "$expr": { "$eq": ["$_id", proof] } } },
+                    doc! { "$project": { "scope": 1, "degree": 1, "nullifiers": 1, "inactive": 1, "_id": 0 } }
+                ],
+                "as": "proofDoc"
+            }},
+            doc! { "$unwind": "$proofDoc" },
+            // 3. Look up the scope address given in the proof document
+            doc! { "$lookup": {
+                "from": "users",
+                "localField": "proofDoc.scope",
+                "foreignField": "_id",
+                "pipeline": [
+                    doc! { "$project": { "address": 1, "_id": 1 } }
+                ],
+                "as": "scopeAddress"
+            }},
+            doc! { "$unwind": "$scopeAddress" },
+            // 4. Project out unnecessary data and reshape according to returned values
+            doc! { "$project": {
+                "_id": 0,
+                "prover_oid": "$_id",
+                "prover_address": "$address",
+                "degree": "$proofDoc.degree",
+                "nullifiers": "$proofDoc.nullifiers",
+                "inactive": "$proofDoc.inactive",
+                "scope": "$scopeAddress.address",
+                "scope_oid": "$scopeAddress._id"
+            }},
+        ];
+        // get the OID's of degree proofs the user can build from
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let validation_data: DegreeProofValidationData =
+                        bson::from_bson(bson::Bson::Document(document)).unwrap();
+                    Some(validation_data)
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    /**
+     * Get the pubkey and the address of a user
+     *
+     * @param username - the username of the user to get the pubkey for
+     * @return - (compressed pubkey, address)
+     */
+    pub async fn get_pubkey(&self, username: &String) -> Option<([u8; 32], [u8; 32])> {
+        let filter = doc! { "username": username };
+        let projection = doc! { "pubkey": 1, "address": 1 };
+        let find_options = FindOneOptions::builder().projection(projection).build();
+        let user = self
+            .users
+            .find_one(filter, Some(find_options))
+            .await
+            .unwrap();
+        match user {
+            Some(user) => Some((user.pubkey.unwrap(), user.address.unwrap())),
+            None => None,
+        }
+    }
 
     /**
      * Adds a pending relationship to the relationship collection
@@ -731,296 +810,323 @@ impl GrapevineDB {
         }
     }
 
-    // pub async fn add_proof(
-    //     &self,
-    //     user: &ObjectId,
-    //     proof: &DegreeProof,
-    // ) -> Result<ObjectId, GrapevineError> {
-    //     // fetch all proofs preceding this one
-    //     let mut proof_chain: Vec<DegreeProof> = vec![];
-    //     let mut cursor = self
-    //         .degree_proofs
-    //         .aggregate(
-    //             vec![
-    //                 doc! {
-    //                   "$match": {
-    //                     "user": user,
-    //                     "phrase": proof.phrase
-    //                   }
-    //                 },
-    //                 doc! {
-    //                   "$graphLookup": {
-    //                     "from": "degree_proofs",
-    //                     "startWith": "$preceding", // Assuming 'preceding' is a field that points to the parent document
-    //                     "connectFromField": "preceding",
-    //                     "connectToField": "_id",
-    //                     "as": "preceding_chain",
-    //                   }
-    //                 },
-    //                 doc! {
-    //                     "$project": {
-    //                         "_id": 1,
-    //                         "degree": 1,
-    //                         "inactive": 1,
-    //                         "preceding": 1,
-    //                         "proceeding": 1,
-    //                         "preceding_chain": {
-    //                             "$map": {
-    //                                 "input": "$preceding_chain",
-    //                                 "as": "chain",
-    //                                 "in": {
-    //                                     "_id": "$$chain._id",
-    //                                     "degree": "$$chain.degree",
-    //                                     "inactive": "$$chain.inactive",
-    //                                     "preceding": "$$chain.preceding",
-    //                                     "proceeding": "$$chain.proceeding",
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 },
-    //             ],
-    //             None,
-    //         )
-    //         .await
-    //         .unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let preceding_chain = document.get("preceding_chain");
-    //                 let mut parsed: Vec<DegreeProof> = vec![];
-    //                 if preceding_chain.is_some() {
-    //                     parsed =
-    //                         bson::from_bson::<Vec<DegreeProof>>(preceding_chain.unwrap().clone())
-    //                             .unwrap();
-    //                 }
-    //                 let base_proof = bson::from_document::<DegreeProof>(document).unwrap();
-    //                 proof_chain.push(base_proof);
-    //                 proof_chain.append(&mut parsed);
-    //             }
-    //             Err(e) => println!("Error: {}", e),
-    //         }
-    //     }
+    pub async fn add_degree_proof(
+        &self,
+        proof: &GrapevineProof,
+    ) -> Result<ObjectId, GrapevineError> {
+        // TODO: Implement proof deactivation
 
-    //     // Sort by degrees
-    //     proof_chain.sort_by(|a, b| b.degree.cmp(&a.degree));
+        // // fetch all proofs preceding this one
+        // let mut proof_chain: Vec<DegreeProof> = vec![];
+        // let mut cursor = self
+        //     .degree_proofs
+        //     .aggregate(
+        //         vec![
+        //             doc! {
+        //               "$match": {
+        //                 "user": user,
+        //                 "phrase": proof.phrase
+        //               }
+        //             },
+        //             doc! {
+        //               "$graphLookup": {
+        //                 "from": "degree_proofs",
+        //                 "startWith": "$preceding", // Assuming 'preceding' is a field that points to the parent document
+        //                 "connectFromField": "preceding",
+        //                 "connectToField": "_id",
+        //                 "as": "preceding_chain",
+        //               }
+        //             },
+        //             doc! {
+        //                 "$project": {
+        //                     "_id": 1,
+        //                     "degree": 1,
+        //                     "inactive": 1,
+        //                     "preceding": 1,
+        //                     "proceeding": 1,
+        //                     "preceding_chain": {
+        //                         "$map": {
+        //                             "input": "$preceding_chain",
+        //                             "as": "chain",
+        //                             "in": {
+        //                                 "_id": "$$chain._id",
+        //                                 "degree": "$$chain.degree",
+        //                                 "inactive": "$$chain.inactive",
+        //                                 "preceding": "$$chain.preceding",
+        //                                 "proceeding": "$$chain.proceeding",
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             },
+        //         ],
+        //         None,
+        //     )
+        //     .await
+        //     .unwrap();
+        // while let Some(result) = cursor.next().await {
+        //     match result {
+        //         Ok(document) => {
+        //             let preceding_chain = document.get("preceding_chain");
+        //             let mut parsed: Vec<DegreeProof> = vec![];
+        //             if preceding_chain.is_some() {
+        //                 parsed =
+        //                     bson::from_bson::<Vec<DegreeProof>>(preceding_chain.unwrap().clone())
+        //                         .unwrap();
+        //             }
+        //             let base_proof = bson::from_document::<DegreeProof>(document).unwrap();
+        //             proof_chain.push(base_proof);
+        //             proof_chain.append(&mut parsed);
+        //         }
+        //         Err(e) => println!("Error: {}", e),
+        //     }
+        // }
 
-    //     let mut delete_entities: Vec<ObjectId> = vec![];
-    //     // Tuple containing object id, inactive status, updated proceeding array
-    //     let mut update_entitity: (ObjectId, bool, ObjectId) =
-    //         (ObjectId::new(), false, ObjectId::new());
+        // // Sort by degrees
+        // proof_chain.sort_by(|a, b| b.degree.cmp(&a.degree));
 
-    //     // There may be multiple delete values but there will always be one update
-    //     let mut index = 0;
+        // let mut delete_entities: Vec<ObjectId> = vec![];
+        // // Tuple containing object id, inactive status, updated proceeding array
+        // let mut update_entitity: (ObjectId, bool, ObjectId) =
+        //     (ObjectId::new(), false, ObjectId::new());
 
-    //     while index < proof_chain.len() {
-    //         let proof = proof_chain.get(index).unwrap();
-    //         let empty_proceeding =
-    //             proof.proceeding.is_none() || proof.proceeding.clone().unwrap().is_empty();
+        // // There may be multiple delete values but there will always be one update
+        // let mut index = 0;
 
-    //         // If proceeding isn't empty on base proof we simply flag it as inactive and exit
-    //         if index == 0 && !empty_proceeding {
-    //             update_entitity.0 = proof.id.unwrap();
-    //             update_entitity.1 = true;
+        // while index < proof_chain.len() {
+        //     let proof = proof_chain.get(index).unwrap();
+        //     let empty_proceeding =
+        //         proof.proceeding.is_none() || proof.proceeding.clone().unwrap().is_empty();
 
-    //             // Make loop exit
-    //             index = proof_chain.len();
-    //         } else {
-    //             if empty_proceeding && (index == 0 || proof.inactive.unwrap()) {
-    //                 delete_entities.push(proof.id.unwrap());
-    //                 // Remove from preceding proof's proceeding vec
-    //                 let next_proof = proof_chain.get(index + 1).unwrap();
-    //                 let mut next_proceeding = next_proof.proceeding.clone().unwrap();
-    //                 let pos = next_proceeding
-    //                     .iter()
-    //                     .position(|&x| x == proof.id.unwrap())
-    //                     .unwrap();
+        //     // If proceeding isn't empty on base proof we simply flag it as inactive and exit
+        //     if index == 0 && !empty_proceeding {
+        //         update_entitity.0 = proof.id.unwrap();
+        //         update_entitity.1 = true;
 
-    //                 update_entitity.0 = next_proof.id.unwrap();
-    //                 update_entitity.2 = next_proceeding.remove(pos);
+        //         // Make loop exit
+        //         index = proof_chain.len();
+        //     } else {
+        //         if empty_proceeding && (index == 0 || proof.inactive.unwrap()) {
+        //             delete_entities.push(proof.id.unwrap());
+        //             // Remove from preceding proof's proceeding vec
+        //             let next_proof = proof_chain.get(index + 1).unwrap();
+        //             let mut next_proceeding = next_proof.proceeding.clone().unwrap();
+        //             let pos = next_proceeding
+        //                 .iter()
+        //                 .position(|&x| x == proof.id.unwrap())
+        //                 .unwrap();
 
-    //                 proof_chain[index + 1].proceeding = Some(next_proceeding);
-    //                 index += 1;
-    //             // When we reach the last inactive proof we can end the loop
-    //             } else {
-    //                 index = proof_chain.len();
-    //             }
-    //         }
-    //     }
+        //             update_entitity.0 = next_proof.id.unwrap();
+        //             update_entitity.2 = next_proceeding.remove(pos);
 
-    //     // Delete documents if not empty
-    //     if !delete_entities.is_empty() {
-    //         let filter = doc! {
-    //             "_id": {"$in": delete_entities} // Match documents whose IDs are in the provided list
-    //         };
-    //         self.degree_proofs
-    //             .delete_many(filter, None)
-    //             .await
-    //             .expect("Error deleting degree proofs");
-    //     }
+        //             proof_chain[index + 1].proceeding = Some(next_proceeding);
+        //             index += 1;
+        //         // When we reach the last inactive proof we can end the loop
+        //         } else {
+        //             index = proof_chain.len();
+        //         }
+        //     }
+        // }
 
-    //     // Update document
-    //     let update_filter = doc! {"_id": update_entitity.0};
-    //     let update;
-    //     if update_entitity.1 {
-    //         update = doc! {"$set": { "inactive": true }};
-    //     } else {
-    //         update = doc! {"$pull": { "proceeding": update_entitity.2 }};
-    //     }
+        // // Delete documents if not empty
+        // if !delete_entities.is_empty() {
+        //     let filter = doc! {
+        //         "_id": {"$in": delete_entities} // Match documents whose IDs are in the provided list
+        //     };
+        //     self.degree_proofs
+        //         .delete_many(filter, None)
+        //         .await
+        //         .expect("Error deleting degree proofs");
+        // }
+
+        // Update document
+        // let update_filter = doc! {"_id": update_entitity.0};
+        // let update;
+        // if update_entitity.1 {
+        //     update = doc! {"$set": { "inactive": true }};
+        // } else {
+        //     update = doc! {"$pull": { "proceeding": update_entitity.2 }};
+        // }
+        // self.degree_proofs
+        //     .update_one(update_filter, update, None)
+        //     .await
+        //     .expect("Error updating degree proof");
+
+        // create new proof document
+        let proof_oid = self
+            .proofs
+            .insert_one(proof, None)
+            .await
+            .unwrap()
+            .inserted_id
+            .as_object_id()
+            .unwrap();
+
+        // // reference this proof in previous proof if not first proof in chain
+        // if proof.preceding.is_some() {
+        //     let query = doc! { "_id": proof.preceding.unwrap() };
+        //     let update = doc! { "$push": { "proceeding": bson::to_bson(&proof_oid).unwrap()} };
+        //     self.degree_proofs
+        //         .update_one(query, update, None)
+        //         .await
+        //         .unwrap();
+        // }
+
+        // // push the proof to the user's list of proofs
+        // let query = doc! { "_id": user };
+        // let update = doc! {"$push": { "degree_proofs": bson::to_bson(&proof_oid).unwrap()}};
+        // self.users
+        //     .update_one(query.clone(), update, None)
+        //     .await
+        //     .unwrap();
+
+        // // If a proof is marked inactive then remove from user's list of degree proofs
+        // if update_entitity.1 {
+        //     let update = doc! { "$pull": { "degree_proofs": update_entitity.0 } };
+        //     self.users.update_one(query, update, None).await.unwrap();
+        // }
+        Ok(proof_oid)
+    }
+
+    // pub async fn get_proof(&self, proof_oid: &ObjectId) -> Option<DegreeProof> {
     //     self.degree_proofs
-    //         .update_one(update_filter, update, None)
-    //         .await
-    //         .expect("Error updating degree proof");
-
-    //     // create new proof document
-    //     let proof_oid = self
-    //         .degree_proofs
-    //         .insert_one(proof, None)
+    //         .find_one(doc! { "_id": proof_oid }, None)
     //         .await
     //         .unwrap()
-    //         .inserted_id
-    //         .as_object_id()
-    //         .unwrap();
+    // }
 
-    //     // reference this proof in previous proof if not first proof in chain
-    //     if proof.preceding.is_some() {
-    //         let query = doc! { "_id": proof.preceding.unwrap() };
-    //         let update = doc! { "$push": { "proceeding": bson::to_bson(&proof_oid).unwrap()} };
-    //         self.degree_proofs
-    //             .update_one(query, update, None)
-    //             .await
-    //             .unwrap();
-    //     }
-
-    //     // push the proof to the user's list of proofs
-    //     let query = doc! { "_id": user };
-    //     let update = doc! {"$push": { "degree_proofs": bson::to_bson(&proof_oid).unwrap()}};
+    // pub async fn remove_user(&self, user: &ObjectId) {
     //     self.users
-    //         .update_one(query.clone(), update, None)
+    //         .delete_one(doc! { "_id": user }, None)
     //         .await
-    //         .unwrap();
-
-    //     // If a proof is marked inactive then remove from user's list of degree proofs
-    //     if update_entitity.1 {
-    //         let update = doc! { "$pull": { "degree_proofs": update_entitity.0 } };
-    //         self.users.update_one(query, update, None).await.unwrap();
-    //     }
-    //     Ok(proof_oid)
+    //         .expect("Failed to remove user");
     // }
 
-    // // pub async fn get_proof(&self, proof_oid: &ObjectId) -> Option<DegreeProof> {
-    // //     self.degree_proofs
-    // //         .find_one(doc! { "_id": proof_oid }, None)
-    // //         .await
-    // //         .unwrap()
-    // // }
+    /**
+     * Given a user, find available degrees of separation proofs they can build from
+     *   - find degree chains they are not a part of
+     *   - find lower degree proofs they can build from
+     *
+     * @param username - the username of the user to find available proofs for
+     * @returns - a list of available proofs the user can build from with metadata for ui
+     */
+    pub async fn find_available_degrees(&self, username: String) -> Vec<AvailableProofs> {
+        // find degree chains they are not a part of
+        let pipeline = vec![
+            // Match the user
+            doc! { "$match": { "username": username } },
+            // Lookup relationships where the user is the recipient
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "userId": "$_id" },
+                    "pipeline": [
+                        doc! {
+                            "$match": {
+                                "$expr": { "$eq": ["$recipient", "$$userId"] }
+                            }
+                        },
+                        doc! { "$project": { "sender": 1, "_id": 0 } }
+                    ],
+                    "as": "userRelationships"
+                }
+            },
+            doc! { "$unwind": "$userRelationships" },
+            // project out only the _id of the senders
+            doc! {
+                "$project": {
+                    "sender": "$userRelationships.sender",
+                    "_id": 0
+                }
+            },
+            // find all proofs where the relation = any of the senders
+            doc! {
+                "$lookup": {
+                    "from": "proofs",
+                    "localField": "sender",
+                    "foreignField": "relation",
+                    "as": "proofs",
+                    "pipeline": [
+                        doc! { "$match": { "inactive": { "$ne": true } } },
+                        doc! { "$project": { "degree": 1, "scope": 1 } }
+                    ]
+                }
+            },
+            // Unwind the proofs array
+            doc! { "$unwind": "$proofs" },
+            // Reshape the document to the desired format
+            doc! {
+                "$project": {
+                    "_id": "$proofs._id",
+                    "degree": "$proofs.degree",
+                    "scope": "$proofs.scope",
+                    "relation": "$sender"
+                }
+            },
+            // Lookup the username for the scope
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "scope",
+                    "foreignField": "_id",
+                    "as": "scopeUser",
+                    "pipeline": [
+                        doc! { "$project": { "_id": 0, "username": 1 } }
+                    ]
+                }
+            },
+            // Lookup the username for the relation
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "relation",
+                    "foreignField": "_id",
+                    "as": "relationUser",
+                    "pipeline": [
+                        doc! { "$project": { "_id": 0, "username": 1 } }
+                    ]
+                }
+            },
+            // Final projection to format the output
+            doc! {
+                "$project": {
+                    "degree": 1,
+                    "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
+                    "relation": { "$arrayElemAt": ["$relationUser.username", 0] }
+                }
+            },
+        ];
+        // get the OID's of degree proofs the user can build from
+        let mut proofs: Vec<AvailableProofs> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let id = document
+                        .get("_id")
+                        .and_then(|id| id.as_object_id())
+                        .unwrap();
+                    let degree = document.get("degree").unwrap().as_i32().unwrap() as u8;
+                    let scope = document.get("scope").unwrap().as_str().unwrap().to_string();
+                    let relation = document
+                        .get("relation")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string();
+                    proofs.push(AvailableProofs {
+                        id,
+                        degree,
+                        scope,
+                        relation,
+                    });
+                }
+                Err(e) => println!("Error: {}", e),
+            }
+        }
 
-    // // pub async fn remove_user(&self, user: &ObjectId) {
-    // //     self.users
-    // //         .delete_one(doc! { "_id": user }, None)
-    // //         .await
-    // //         .expect("Failed to remove user");
-    // // }
-
-    // /**
-    //  * Given a user, find available degrees of separation proofs they can build from
-    //  *   - find degree chains they are not a part of
-    //  *   - find lower degree proofs they can build from
-    //  */
-    // pub async fn find_available_degrees(&self, username: String) -> Vec<String> {
-    //     // find degree chains they are not a part of
-    //     let pipeline = vec![
-    //         // find the user to find available proofs for
-    //         doc! { "$match": { "username": username } },
-    //         doc! { "$project": { "relationships": 1, "degree_proofs": 1, "_id": 0 } },
-    //         // look up the degree proofs made by this user
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "degree_proofs",
-    //                 "foreignField": "_id",
-    //                 "as": "userDegreeProofs",
-    //                 "pipeline": [doc! { "$project": { "degree": 1, "phrase": 1 } }]
-    //             }
-    //         },
-    //         // look up the relationships made by this user
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "relationships",
-    //                 "localField": "relationships",
-    //                 "foreignField": "_id",
-    //                 "as": "userRelationships",
-    //                 "pipeline": [doc! { "$project": { "sender": 1 } }]
-    //             }
-    //         },
-    //         // look up the degree proofs made by relationships
-    //         // @todo: allow limitation of degrees of separation here
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "userRelationships.sender",
-    //                 "foreignField": "user",
-    //                 "as": "relationshipDegreeProofs",
-    //                 "pipeline": [
-    //                     doc! { "$match": { "inactive": { "$ne": true } } },
-    //                     doc! { "$project": { "degree": 1, "phrase": 1 } }
-    //                 ]
-    //             }
-    //         },
-    //         // unwind the results
-    //         doc! { "$project": { "userDegreeProofs": 1, "relationshipDegreeProofs": 1 } },
-    //         doc! { "$unwind": "$relationshipDegreeProofs" },
-    //         // find the lowest degree proof in each chain from relationship proofs and reference user proofs in this chain if exists
-    //         doc! {
-    //             "$group": {
-    //                 "_id": "$relationshipDegreeProofs.phrase",
-    //                 "originalId": { "$first": "$relationshipDegreeProofs._id" },
-    //                 "degree": { "$min": "$relationshipDegreeProofs.degree" },
-    //                 "userProof": {
-    //                     "$first": {
-    //                         "$arrayElemAt": [{
-    //                             "$filter": {
-    //                                 "input": "$userDegreeProofs",
-    //                                 "as": "userProof",
-    //                                 "cond": { "$eq": ["$$userProof.phrase", "$relationshipDegreeProofs.phrase"] }
-    //                             }
-    //                         }, 0]
-    //                     }
-    //                 }
-    //             }
-    //         },
-    //         // remove the proofs that do not offer improved degrees of separation from existing user proofs
-    //         doc! {
-    //             "$match": {
-    //                 "$expr": {
-    //                     "$or": [
-    //                         { "$gte": ["$userProof.degree", { "$add": ["$degree", 2] }] },
-    //                         { "$eq": ["$userProof", null] }
-    //                     ]
-    //                 }
-    //             }
-    //         },
-    //         // project only the ids of the proofs the user can build from
-    //         doc! { "$project": { "_id": "$originalId" } },
-    //     ];
-    //     // get the OID's of degree proofs the user can build from
-    //     let mut proofs: Vec<String> = vec![];
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let oid = document
-    //                     .get("_id")
-    //                     .and_then(|id| id.as_object_id())
-    //                     .unwrap();
-    //                 proofs.push(oid.to_string());
-    //             }
-    //             Err(e) => println!("Error: {}", e),
-    //         }
-    //     }
-
-    //     proofs
-    // }
+        proofs
+    }
 
     // /**
     //  * Get all degree proofs created by a specific user
@@ -1300,86 +1406,132 @@ impl GrapevineDB {
     //     Some(degrees)
     // }
 
-    // /**
-    //  * Get a proof from the server with all info needed to prove a degree of separation as a given user
-    //  *
-    //  * @param username - the username of the user proving a degree of separation
-    //  * @param oid - the id of the proof to get
-    //  */
-    // pub async fn get_proof_and_data(
-    //     &self,
-    //     username: String,
-    //     proof: ObjectId,
-    // ) -> Option<ProvingData> {
-    //     // @todo: aggregation pipeline
-    //     // get the proof
-    //     let filter = doc! { "_id": proof };
-    //     let projection = doc! { "user": 1, "degree": 1, "proof": 1, "phrase": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let proof = self
-    //         .degree_proofs
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
-    //     // look up the phrase info
-    //     let filter = doc! { "_id": proof.phrase.unwrap() };
-    //     let projection = doc! { "index": 1, "hash": 1, "description": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let phrase = self
-    //         .phrases
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
-    //     // get the username of the user who made the proof
-    //     let proof_creator = proof.user.unwrap();
-    //     let filter = doc! { "_id": proof_creator };
-    //     let projection = doc! { "username": 1, "pubkey": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let proof_creator_username = self
-    //         .users
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap()
-    //         .username
-    //         .unwrap();
-    //     // get the oid of message sender
-    //     let filter = doc! { "username": username };
-    //     let projection = doc! { "_id": 1, "pubkey": 1 };
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let caller = self
-    //         .users
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap()
-    //         .id
-    //         .unwrap();
-    //     // look up relationship with sender and recipient
-    //     let filter = doc! { "sender": proof_creator, "recipient": caller };
-    //     let projection = doc! { "ephemeral_key": 1, "ciphertext": 1};
-    //     let find_options = FindOneOptions::builder().projection(projection).build();
-    //     let relationship = self
-    //         .relationships
-    //         .find_one(filter, Some(find_options))
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
+    /**
+     * Get a proof from the server with all info needed to prove a degree of separation as a given user
+     *
+     * @param username - the username of the user proving a degree of separation
+     * @param oid - the id of the proof to get
+     */
+    pub async fn get_proof_and_data(
+        &self,
+        username: String,
+        proof: ObjectId,
+    ) -> Option<ProvingData> {
+        let pipeline = vec![
+            // 1. Find the matching proof
+            doc! { "$match": { "_id": proof }},
+            // 2. Look up the pubkey of the proof creator
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "relation",
+                    "foreignField": "_id",
+                    "as": "relation_pubkey",
+                    "pipeline": [{ "$project": { "_id": 0, "pubkey": 1 }}]
+                }
+            },
+            doc! { "$unwind": "$relation_pubkey" },
+            doc! { "$set": { "relation_pubkey": "$relation_pubkey.pubkey" }},
+            // 3. Look up the OID of the user requesting proof data given the username
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "let": { "username": username },
+                    "pipeline": [
+                        {"$match": { "$expr": { "$eq": [ "$username", "$$username" ] }}},
+                        { "$project": { "_id": 1 }}
+                    ],
+                    "as": "user_id"
+                }
+            },
+            doc! { "$unwind": "$user_id" },
+            doc! { "$set": { "user_id": "$user_id._id" }},
+            // 4. Look up the nullifier and auth signature for the given relationship
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "sender": "$user_id", "recipient": "$relation" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": [ "$sender", "$$sender" ] },
+                                        { "$eq": [ "$recipient", "$$recipient" ] }
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "encrypted_nullifier": 1,
+                                "encrypted_auth_signature": 1,
+                                "ephemeral_key": 1
+                            }
+                        }
+                    ],
+                    "as": "relationship"
+                }
+            },
+            doc! { "$unwind": "$relationship" },
+            // 5: Project only necessary fields
+            doc! {
+                "$project": {
+                    "_id": 0,
+                    "proof": 1,
+                    "relation_pubkey": 1,
+                    "encrypted_nullifier": "$relationship.encrypted_nullifier",
+                    "encrypted_auth_signature": "$relationship.encrypted_auth_signature",
+                    "ephemeral_key": "$relationship.ephemeral_key"
+                }
+            },
+        ];
 
-    //     // return the proof data
-    //     Some(ProvingData {
-    //         description: phrase.description.unwrap(),
-    //         phrase_index: phrase.index.unwrap(),
-    //         phrase_hash: phrase.hash.unwrap(),
-    //         degree: proof.degree.unwrap(),
-    //         proof: proof.proof.unwrap(),
-    //         username: proof_creator_username,
-    //         ephemeral_key: relationship.ephemeral_key.unwrap(),
-    //         ciphertext: relationship.ciphertext.unwrap(),
-    //     })
-    // }
+        // Get the proving data
+        let mut cursor = self.proofs.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let mut proof: Vec<u8> = vec![];
+                    let mut relation_pubkey: [u8; 32] = [0; 32];
+                    let mut ephemeral_key: [u8; 32] = [0; 32];
+                    let mut encrypted_auth_signature: [u8; 80] = [0; 80];
+                    let mut encrypted_nullifier: [u8; 48] = [0; 48];
+                    if let Some(Bson::Binary(binary)) = document.get("proof") {
+                        proof = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("relation_pubkey") {
+                        relation_pubkey = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("ephemeral_key") {
+                        ephemeral_key = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("encrypted_auth_signature") {
+                        encrypted_auth_signature = binary.bytes.clone().try_into().unwrap();
+                    };
+                    if let Some(Bson::Binary(binary)) = document.get("encrypted_nullifier") {
+                        encrypted_nullifier = binary.bytes.clone().try_into().unwrap();
+                    };
+
+                    Some(ProvingData {
+                        proof,
+                        relation_pubkey,
+                        ephemeral_key,
+                        signature_ciphertext: encrypted_auth_signature,
+                        nullifier_ciphertext: encrypted_nullifier,
+                    })
+                }
+                Err(_) => {
+                    println!("Error");
+                    None
+                }
+            }
+        } else {
+            println!("No doc found");
+            None
+        }
+    }
 
     // /**
     // * Get details on account:

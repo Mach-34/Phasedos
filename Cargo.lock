@@ -1366,6 +1366,7 @@ dependencies = [
  "babyjubjub-rs",
  "bincode",
  "dotenv",
+ "ff",
  "futures",
  "grapevine_circuits",
  "grapevine_common",
