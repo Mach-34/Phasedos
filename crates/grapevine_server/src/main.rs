@@ -59,6 +59,7 @@ mod test_rocket {
     use grapevine_common::{
         account::GrapevineAccount,
         auth_signature::AuthSignatureEncrypted,
+        compat::ff_ce_to_le_bytes,
         http::{
             requests::{
                 CreateUserRequest, DegreeProofRequest, NewRelationshipRequest, PhraseRequest,
@@ -76,8 +77,8 @@ mod test_rocket {
     };
     use std::sync::Mutex;
     use test_helper::{
-        build_create_user_request, http_add_relationship, http_create_user,
-        http_get_nullifier_secret,
+        build_create_user_request, http_add_relationship, http_create_user, http_emit_nullifier,
+        http_get_nullifier_secret, http_get_relationship,
     };
 
     lazy_static! {
@@ -120,7 +121,8 @@ mod test_rocket {
         use super::*;
         use grapevine_circuits::{inputs::GrapevineInputs, utils::compress_proof};
         use grapevine_common::{
-            account::GrapevineAccount, http::requests::CreateUserRequest, models::{AvailableProofs, ProvingData, Relationship},
+            account::GrapevineAccount, models::{AvailableProofs, ProvingData, Relationship},
+            http::requests::{CreateUserRequest, EmitNullifierRequest},
             NovaProof,
         };
 
@@ -183,6 +185,14 @@ mod test_rocket {
             (code, message)
         }
 
+        /**
+         * Mock http request to create a new relationship
+         *
+         * @param context - the mocked rocket http server context
+         * @param from - the account sending the relationship creation request
+         * @param payload - the body of the request
+         * @return - (http status code, returned message)
+         */
         pub async fn http_add_relationship(
             context: &GrapevineTestContext,
             from: &mut GrapevineAccount,
@@ -210,26 +220,103 @@ mod test_rocket {
             (code, message)
         }
 
+        /**
+         * Mock http request to emit a nullifier to terminate a relationship
+         *
+         * @param context - the mocked rocket http server context
+         * @param nullifier - plaintext nullifier to terminate relationship
+         * @param sender - account terminating relationship
+         * @param recipient - username of recipient account
+         * @return - http status code
+         */
+        pub async fn http_emit_nullifier(
+            context: &GrapevineTestContext,
+            nullifier: [u8; 32],
+            sender: &mut GrapevineAccount,
+            recipient: &String,
+        ) -> u16 {
+            let username = sender.username().clone();
+            let signature = generate_nonce_signature(sender);
+
+            let payload = EmitNullifierRequest {
+                nullifier,
+                recipient: recipient.to_string(),
+            };
+
+            let serialized = bincode::serialize(&payload).unwrap();
+
+            let res = context
+                .client
+                .post("/user/relationship/emit-nullifier")
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .body(serialized)
+                .dispatch()
+                .await;
+
+            // Increment nonce after request
+            let _ = sender.increment_nonce(None);
+
+            res.status().code
+        }
+
+        /**
+         * Mock http request to get an encrypted nullifier secret from db
+         *
+         * @param context - the mocked rocket http server context
+         * @param from - account retrieving their nullifier secret
+         * @param recipient - username of recipient user in relationship
+         * @return - encrypted nullifier secret
+         */
         pub async fn http_get_nullifier_secret(
             context: &GrapevineTestContext,
             from: &mut GrapevineAccount,
             recipient: &String,
-        ) -> Relationship {
+        ) -> [u8; 48] {
             let username = from.username().clone();
             let signature = generate_nonce_signature(from);
 
             // mock transmit the request
-            let res = context
+            let encrypted_nullifier_secret: [u8; 48] = context
                 .client
-                .get(format!("/user/relationship/nullifier-secret/{}", recipient))
+                .get(format!("/user/nullifier-secret/{}", recipient))
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .dispatch()
                 .await
-                .into_json::<Relationship>()
-                .await;
+                .into_bytes()
+                .await
+                .unwrap()
+                .try_into()
+                .unwrap();
 
-            res.unwrap()
+            // Increment nonce after request
+            let _ = from.increment_nonce(None);
+
+            encrypted_nullifier_secret
+        }
+
+        /**
+         * Mock http request to get a relationship between a sender and recipient
+         *
+         * @param context - the mocked rocket http server context
+         * @param sender - username of sender in relationship
+         * @param recipient - username of recipient in relationship
+         * @return - relationship struct
+         */
+        pub async fn http_get_relationship(
+            context: &GrapevineTestContext,
+            sender: &String,
+            recipient: &String,
+        ) -> Relationship {
+            context
+                .client
+                .get(format!("/user/relationship/{}/{}", recipient, sender))
+                .dispatch()
+                .await
+                .into_json::<Relationship>()
+                .await
+                .unwrap()
         }
 
         pub async fn http_get_available_proofs(
@@ -277,6 +364,29 @@ mod test_rocket {
             let _ = user.increment_nonce(None);
             res.unwrap()
         }
+        
+        // async fn http_get_relationships(
+        //     context: &GrapevineTestContext,
+        //     user: &mut GrapevineAccount,
+        //     active: bool,
+        // ) -> Option<Vec<String>> {
+        //     let username = user.username().clone();
+        //     let signature = generate_nonce_signature(user);
+        //     let route = if active { "active" } else { "pending" };
+        //     let res = context
+        //         .client
+        //         .get(format!("/user/relationship/{}", route))
+        //         .header(Header::new("X-Authorization", signature))
+        //         .header(Header::new("X-Username", username))
+        //         .dispatch()
+        //         .await
+        //         .into_json::<Vec<String>>()
+        //         .await;
+
+        //     // Increment nonce after request
+        //     let _ = user.increment_nonce(None);
+        //     res
+        // }
     }
 
     #[cfg(test)]
@@ -394,12 +504,65 @@ mod test_rocket {
 
             http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
 
-            let relationship =
+            let encrypted_nullifier_secret =
                 http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
 
-            println!(
-                "Decrypted: {:?}",
-                user_b.decrypt_nullifier_secret(relationship.encrypted_nullifier_secret.unwrap())
+            let decrypted_local = user_b
+                .decrypt_nullifier_secret(user_b_relationship_request.encrypted_nullifier_secret);
+            let decrypted_server = user_b.decrypt_nullifier_secret(encrypted_nullifier_secret);
+            assert_eq!(decrypted_local, decrypted_server);
+        }
+
+        #[rocket::async_test]
+        pub async fn test_nullifier_emission() {
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // Create a request where proof creator is different from asserted pubkey
+            let mut user_a = GrapevineAccount::new("User_Wombat".into());
+
+            let mut user_b = GrapevineAccount::new("User_SucklingPig".into());
+
+            let user_request_a = build_create_user_request(&user_a);
+            let user_request_b = build_create_user_request(&user_b);
+            http_create_user(&context, &user_request_a).await;
+            http_create_user(&context, &user_request_b).await;
+
+            // add relationship as user_a to user_b
+            let user_a_relationship_request =
+                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+            // accept relation from user_a as user_b
+            let user_b_relationship_request =
+                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+            let encrypted_nullifier_secret =
+                http_get_nullifier_secret(&context, &mut user_a, user_b.username()).await;
+
+            let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+            // recompute nullifier to pass to server
+            let nullifier = user_a.compute_nullifier(nullifier_secret);
+
+            // emit nullifier as user_a
+            let code = http_emit_nullifier(
+                &context,
+                ff_ce_to_le_bytes(&nullifier),
+                &mut user_a,
+                user_b.username(),
+            )
+            .await;
+            assert!(code == 200, "Nullifier emission call failed.");
+
+            // confirm relationship now has emitted nullifier
+            let relationship =
+                http_get_relationship(&context, user_b.username(), user_a.username()).await;
+            assert!(
+                relationship.emitted_nullifier.is_some(),
+                "No nullifier emitted"
             );
         }
     }
@@ -772,29 +935,6 @@ mod test_rocket {
     //             .await
     //             .into_json::<User>()
     //             .await
-    //     }
-
-    //     async fn get_relationships_request(
-    //         context: &GrapevineTestContext,
-    //         user: &mut GrapevineAccount,
-    //         active: bool,
-    //     ) -> Option<Vec<String>> {
-    //         let username = user.username().clone();
-    //         let signature = generate_nonce_signature(user);
-    //         let route = if active { "active" } else { "pending" };
-    //         let res = context
-    //             .client
-    //             .get(format!("/user/relationship/{}", route))
-    //             .header(Header::new("X-Authorization", signature))
-    //             .header(Header::new("X-Username", username))
-    //             .dispatch()
-    //             .await
-    //             .into_json::<Vec<String>>()
-    //             .await;
-
-    //         // Increment nonce after request
-    //         let _ = user.increment_nonce(None);
-    //         res
     //     }
 
     //     async fn reject_relationship_request(

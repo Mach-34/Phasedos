@@ -3,7 +3,7 @@ use crate::guards::AuthenticatedUser;
 use crate::mongo::GrapevineDB;
 use babyjubjub_rs::{decompress_point, decompress_signature, verify};
 use grapevine_common::errors::GrapevineError;
-use grapevine_common::http::requests::GetNonceRequest;
+use grapevine_common::http::requests::{EmitNullifierRequest, GetNonceRequest};
 use grapevine_common::http::{requests::CreateUserRequest, responses::DegreeData};
 use grapevine_common::utils::convert_username_to_fr;
 use grapevine_common::MAX_USERNAME_CHARS;
@@ -162,12 +162,12 @@ pub async fn add_relationship(
         Ok(req) => req,
         Err(e) => {
             println!(
-                "Error deserializing body from binary to CreateUserRequest: {:?}",
+                "Error deserializing body from binary to NewRelationshipRequest: {:?}",
                 e
             );
             return Err(GrapevineResponse::BadRequest(ErrorMessage(
                 Some(GrapevineError::SerdeError(String::from(
-                    "CreateUserRequest",
+                    "NewRelationshipRequest",
                 ))),
                 None,
             )));
@@ -239,6 +239,7 @@ pub async fn add_relationship(
         encrypted_nullifier: None,
         ephemeral_key: None,
         encrypted_auth_signature: None,
+        emitted_nullifier: None,
         active: Some(activate),
     };
 
@@ -250,6 +251,7 @@ pub async fn add_relationship(
         ephemeral_key: Some(request.ephemeral_key),
         encrypted_auth_signature: Some(request.encrypted_auth_signature),
         encrypted_nullifier: Some(request.encrypted_nullifier),
+        emitted_nullifier: None,
         active: Some(activate),
     };
 
@@ -286,16 +288,108 @@ pub async fn add_relationship(
     }
 }
 
-#[get("/relationship/nullifier-secret/<recipient>")]
+/**
+ * Gets the nullfier secret of a given relationship
+ *
+ * @param recipient - username of the nullifier recipient in relationship
+ *
+ * @return status:
+ *            * 201 if success
+ *            * 401 if relationship is not found   
+ *            * 500 if db fails or other unknown issue    
+ */
+// relationship prefix removed for now due to route collision with get_relationship
+#[get("/nullifier-secret/<recipient>")]
 pub async fn get_nullifier_secret(
     recipient: String,
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<Relationship>, GrapevineResponse> {
+) -> Result<Vec<u8>, GrapevineResponse> {
     // TODO: Need to throw error if from is user
     match db.get_relationship(&user.0, &recipient).await {
         // TODO: Solve rocket response error so we can return just encrypted nullifier secret
-        Ok(relationship) => Ok(Json(relationship)),
+        Ok(relationship) => Ok(relationship.encrypted_nullifier_secret.unwrap().to_vec()),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
+}
+
+/**
+ * Emits a nullifier for a specified relationship, terminating it
+ *
+ * @param data - the EmitNullifierRequest containing:
+ *           * nullifier: nullifier of the sender
+ *           * recipient: the username of the recipient
+ *
+ * @return status:
+ *            * 201 if success
+ *            * 401 if relationship is not found   
+ *            * 500 if db fails or other unknown issue    
+ */
+#[post("/relationship/emit-nullifier", data = "<data>")]
+pub async fn emit_nullifier(
+    user: AuthenticatedUser,
+    data: Data<'_>,
+    db: &State<GrapevineDB>,
+) -> Result<(), GrapevineResponse> {
+    // stream in data
+    let mut buffer = Vec::new();
+    let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
+    if let Err(e) = stream.read_to_end(&mut buffer).await {
+        println!("Error reading request body: {:?}", e);
+        return Err(GrapevineResponse::TooLarge(
+            "Request body execeeds 2 MiB".to_string(),
+        ));
+    }
+    let request = match bincode::deserialize::<EmitNullifierRequest>(&buffer) {
+        Ok(req) => req,
+        Err(e) => {
+            println!(
+                "Error deserializing body from binary to EmitNullifierRequest: {:?}",
+                e
+            );
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(
+                Some(GrapevineError::SerdeError(String::from(
+                    "EmitNullifierRequest",
+                ))),
+                None,
+            )));
+        }
+    };
+
+    match db
+        .terminate_relationship(request.nullifier, &user.0, &request.recipient)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
+}
+
+/**
+ * Route used to fetch a relationship while testing
+ *
+ * @param recipient - recipient username
+ * @param sender
+ *
+ * @return status:
+ *            * 201 if success
+ *            * 401 if relationship is not found   
+ *            * 500 if db fails or other unknown issue    
+ */
+#[get("/relationship/<recipient>/<sender>")]
+pub async fn get_relationship(
+    recipient: String,
+    sender: String,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Relationship>, GrapevineResponse> {
+    match db.get_relationship(&sender, &recipient).await {
+        Ok(res) => Ok(Json(res)),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),
             None,
@@ -338,39 +432,35 @@ pub async fn get_nullifier_secret(
 //         ))),
 //     }
 // }
-
-// #[get("/relationship/active")]
-// pub async fn get_active_relationships(
-//     user: AuthenticatedUser,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<Vec<String>>, GrapevineResponse> {
-//     match db.get_relationships(&user.0, true).await {
-//         Ok(relationships) => Ok(Json(relationships)),
-//         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(e),
-//             None,
-//         ))),
-//     }
-// }
+#[get("/relationship/active")]
+pub async fn get_active_relationships(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<String>>, GrapevineResponse> {
+    match db.get_relationships(&user.0, true).await {
+        Ok(relationships) => Ok(Json(relationships)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
+}
 
 // /// GET REQUESTS ///
 
-// /**
-//  * @todo: remove / replace with get nonce
-//  */
-// // #[get("/<username>")]
-// // pub async fn get_user(
-// //     username: String,
-// //     db: &State<GrapevineDB>,
-// // ) -> Result<Json<User>, GrapevineResponse> {
-// //     match db.get_user(&username).await {
-// //         Some(user) => Ok(Json(user)),
-// //         None => Err(GrapevineResponse::NotFound(format!(
-// //             "User {} does not exist.",
-// //             username
-// //         ))),
-// //     }
-// // }
+// #[get("/<username>")]
+// pub async fn get_user(
+//     username: String,
+//     db: &State<GrapevineDB>,
+// ) -> Result<Json<User>, GrapevineResponse> {
+//     match db.get_user(&username).await {
+//         Some(user) => Ok(Json(user)),
+//         None => Err(GrapevineResponse::NotFound(format!(
+//             "User {} does not exist.",
+//             username
+//         ))),
+//     }
+// }
 
 // // #[post("/nonce", format = "json", data = "<request>")]
 // // pub async fn get_nonce(

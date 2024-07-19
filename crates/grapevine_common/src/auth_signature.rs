@@ -88,6 +88,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
             .try_into()
             .unwrap();
 
+        // encrypt the nullifier
         let mut null_buf = [0u8; 48];
         null_buf[..nullifier_bytes.len()].copy_from_slice(&nullifier_bytes);
         let nullifier_ciphertext: [u8; 48] =
