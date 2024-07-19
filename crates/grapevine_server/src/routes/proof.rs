@@ -2,20 +2,23 @@ use crate::catchers::ErrorMessage;
 use crate::mongo::GrapevineDB;
 use crate::utils::PUBLIC_PARAMS;
 use crate::{catchers::GrapevineResponse, guards::AuthenticatedUser};
-use grapevine_circuits::{nova::verify_grapevine_proof, utils::decompress_proof, inputs::GrapevineOutputs};
+use babyjubjub_rs::decompress_point;
+use ff::PrimeField;
+use grapevine_circuits::{
+    inputs::GrapevineOutputs, nova::verify_grapevine_proof, utils::decompress_proof,
+};
+use grapevine_common::compat::convert_ff_ce_to_ff;
 use grapevine_common::models::{AvailableProofs, ProvingData};
 use grapevine_common::{
-    Fr, MAX_USERNAME_CHARS,
+    crypto::pubkey_to_address,
+    errors::GrapevineError,
     http::{
         requests::{CreateUserRequest, DegreeProofRequest, PhraseRequest},
         responses::{DegreeData, PhraseCreationResponse},
     },
-    models::{User, GrapevineProof},
-    errors::GrapevineError,
-    crypto::pubkey_to_address
+    models::{GrapevineProof, User},
+    Fr, MAX_USERNAME_CHARS,
 };
-use grapevine_common::compat::convert_ff_ce_to_ff;
-use babyjubjub_rs::decompress_point;
 use mongodb::bson::oid::ObjectId;
 use rocket::{
     data::ToByteUnit, http::Status, serde::json::Json, tokio::io::AsyncReadExt, Data, State,
@@ -110,7 +113,9 @@ pub async fn prove_identity(
         Err(e) => {
             println!("Proof verification failed: {:?}", e);
             return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::ProofFailed(String::from("Given proof is not verifiable"))),
+                Some(GrapevineError::ProofFailed(String::from(
+                    "Given proof is not verifiable",
+                ))),
                 None,
             )));
         }
@@ -120,15 +125,21 @@ pub async fn prove_identity(
     if Fr::zero().ne(&output.degree) {
         verify_err = Some(String::from("Expected degree = 0"));
     } else if *&address.ne(&output.scope) {
-        verify_err = Some(format!("Expected identity scope to equal 0x{}", hex::encode(&address_bytes)));
+        verify_err = Some(format!(
+            "Expected identity scope to equal 0x{}",
+            hex::encode(&address_bytes)
+        ));
     } else if *&address.ne(&output.relation) {
-        verify_err = Some(format!("Expected relation to equal 0x{}", hex::encode(&address_bytes)));
+        verify_err = Some(format!(
+            "Expected relation to equal 0x{}",
+            hex::encode(&address_bytes)
+        ));
     }
     if verify_err.is_some() {
         return Err(GrapevineResponse::BadRequest(ErrorMessage(
             Some(GrapevineError::ProofFailed(verify_err.unwrap())),
-            None
-        )))
+            None,
+        )));
     }
 
     // create the User document in the db
@@ -137,13 +148,18 @@ pub async fn prove_identity(
         nonce: Some(0),
         username: Some(request.username.clone()),
         pubkey: Some(request.pubkey),
-        address: Some(address_bytes)
+        address: Some(address_bytes),
     };
     let user_oid = match db.create_user(user_doc).await {
         Ok(oid) => oid,
-        Err(e) => return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e), None)))
+        Err(e) => {
+            return Err(GrapevineResponse::InternalError(ErrorMessage(
+                Some(e),
+                None,
+            )))
+        }
     };
-    
+
     // add the proof
     let proof_doc = GrapevineProof {
         id: None,
@@ -156,8 +172,14 @@ pub async fn prove_identity(
         inactive: Some(false),
     };
     match db.add_identity_proof(&user_oid, proof_doc).await {
-        Ok(_) => Ok(GrapevineResponse::Created(format!("Created user {}", request.username))),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e), None)))
+        Ok(_) => Ok(GrapevineResponse::Created(format!(
+            "Created user {}",
+            request.username
+        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
     }
 }
 
@@ -206,19 +228,19 @@ pub async fn prove_identity(
 //     }
 // };
 
-    // // verify the proof
-    // let decompressed_proof = decompress_proof(&request.proof);
-    // let verify_res = verify_grapevine_proof(&decompressed_proof, &*PUBLIC_PARAMS, 3);
-    // let (phrase_hash, auth_hash) = match verify_res {
-    //     Ok(res) => (res.0[3].to_bytes(), res.0[2].to_bytes()),
-    //     Err(e) => {
-    //         println!("Proof verification failed: {:?}", e);
-    //         return Err(GrapevineResponse::BadRequest(ErrorMessage(
-    //             Some(GrapevineError::DegreeProofVerificationFailed),
-    //             None,
-    //         )));
-    //     }
-    // };
+// // verify the proof
+// let decompressed_proof = decompress_proof(&request.proof);
+// let verify_res = verify_grapevine_proof(&decompressed_proof, &*PUBLIC_PARAMS, 3);
+// let (phrase_hash, auth_hash) = match verify_res {
+//     Ok(res) => (res.0[3].to_bytes(), res.0[2].to_bytes()),
+//     Err(e) => {
+//         println!("Proof verification failed: {:?}", e);
+//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
+//             Some(GrapevineError::DegreeProofVerificationFailed),
+//             None,
+//         )));
+//     }
+// };
 
 //     // check if phrase exists in db
 //     let mut phrase_oid: Option<ObjectId> = match db.get_phrase_by_hash(&phrase_hash).await {
@@ -326,128 +348,144 @@ pub async fn prove_identity(
 //     }
 // }
 
-// /**
-//  * Build from a previous degree of connection proof and add it to the database
-//  *
-//  * @param data - binary serialized DegreeProofRequest containing:
-//  *             * username: the username of the user adding a proof of degree of connection
-//  *             * proof: the gzip-compressed fold proof
-//  *             * previous: the stringified OID of the previous proof to continue IVC from
-//  *             * degree: the separation degree of the given proof
-//  * @return status:
-//  *             * 201 if successful proof update
-//  *             * 400 if proof verification failed, deserialization fails, or proof decompression
-//  *               fails
-//  *             * 401 if signature mismatch or nonce mismatch
-//  *             * 404 if user or previous proof not found not found
-//  *             * 500 if db fails or other unknown issue
-//  */
-// #[post("/degree", data = "<data>")]
-// pub async fn degree_proof(
-//     user: AuthenticatedUser,
-//     data: Data<'_>,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Status, GrapevineResponse> {
-//     // stream in data
-//     // todo: implement FromData trait on DegreeProofRequest
-//     let mut buffer = Vec::new();
-//     let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
-//     if let Err(_) = stream.read_to_end(&mut buffer).await {
-//         return Err(GrapevineResponse::TooLarge(
-//             "Request body execeeds 2 MiB".to_string(),
-//         ));
-//     }
-//     let request = match bincode::deserialize::<DegreeProofRequest>(&buffer) {
-//         Ok(req) => req,
-//         Err(_) => {
-//             return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//                 Some(GrapevineError::SerdeError(String::from(
-//                     "DegreeProofRequest",
-//                 ))),
-//                 None,
-//             )))
-//         }
-//     };
+/**
+ * Build from a previous degree of connection proof and add it to the database
+ *
+ * @param data - binary serialized DegreeProofRequest containing:
+ *             * username: the username of the user adding a proof of degree of connection
+ *             * proof: the gzip-compressed fold proof
+ *             * previous: the stringified OID of the previous proof to continue IVC from
+ *             * degree: the separation degree of the given proof
+ * @return status:
+ *             * 201 if successful proof update
+ *             * 400 if proof verification failed, deserialization fails, or proof decompression
+ *               fails
+ *             * 401 if signature mismatch or nonce mismatch
+ *             * 404 if user or previous proof not found not found
+ *             * 500 if db fails or other unknown issue
+ */
+#[post("/degree", data = "<data>")]
+pub async fn degree_proof(
+    user: AuthenticatedUser,
+    data: Data<'_>,
+    db: &State<GrapevineDB>,
+) -> Result<Status, GrapevineResponse> {
+    // stream in data
+    // todo: implement FromData trait on DegreeProofRequest
+    let mut buffer = Vec::new();
+    let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
+    if let Err(_) = stream.read_to_end(&mut buffer).await {
+        return Err(GrapevineResponse::TooLarge(
+            "Request body execeeds 2 MiB".to_string(),
+        ));
+    }
+    let request = match bincode::deserialize::<DegreeProofRequest>(&buffer) {
+        Ok(req) => req,
+        Err(_) => {
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(
+                Some(GrapevineError::SerdeError(String::from(
+                    "DegreeProofRequest",
+                ))),
+                None,
+            )))
+        }
+    };
 
-//     // verify the proof
-//     let decompressed_proof = decompress_proof(&request.proof);
-//     let verify_res = verify_grapevine_proof(
-//         &decompressed_proof,
-//         &*PUBLIC_PARAMS,
-//         1 + (request.degree * 2) as usize,
-//     );
-//     let (phrase_hash, auth_hash) = match verify_res {
-//         Ok(res) => (res.0[3].to_bytes(), res.0[2].to_bytes()),
-//         Err(e) => {
-//             println!("Proof verification failed: {:?}", e);
-//             return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//                 Some(GrapevineError::DegreeProofVerificationFailed),
-//                 None,
-//             )));
-//         }
-//     };
+    // verify the proof
+    let decompressed_proof = decompress_proof(&request.proof);
 
-//     // get the phrase oid from the hash
-//     let phrase_oid = match db.get_phrase_by_hash(&phrase_hash).await {
-//         Ok(phrase) => phrase,
-//         Err(_) => {
-//             return Err(GrapevineResponse::NotFound(format!(
-//                 "No phrase found with hash {:?}",
-//                 &phrase_hash
-//             )))
-//         }
-//     };
+    let proof_verify_res = verify_grapevine_proof(
+        &decompressed_proof,
+        &*PUBLIC_PARAMS,
+        request.degree as usize,
+    );
+    let output = match proof_verify_res {
+        Ok(res) => GrapevineOutputs::try_from(res.0).unwrap(),
+        Err(e) => {
+            println!("Proof verification failed: {:?}", e);
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(
+                Some(GrapevineError::ProofFailed(String::from(
+                    "Given proof is not verifiable",
+                ))),
+                None,
+            )));
+        }
+    };
 
-//     // get user doc
-//     let user = db.get_user(&user.0).await.unwrap();
-//     // @TODO: needs to delete a previous proof by same user on same phrase hash if exists, including removing from last proof's previous field
-//     // build DegreeProof struct
-//     let proof_doc = DegreeProof {
-//         id: None,
-//         inactive: Some(false),
-//         phrase: Some(phrase_oid),
-//         auth_hash: Some(auth_hash),
-//         user: Some(user.id.unwrap()),
-//         degree: Some(request.degree),
-//         ciphertext: None,
-//         proof: Some(request.proof.clone()),
-//         preceding: Some(ObjectId::from_str(&request.previous).unwrap()),
-//         proceeding: Some(vec![]),
-//     };
+    // get all degree data needed to authorize this proof
+    let previous_proof_oid = ObjectId::from_str(&request.previous).unwrap();
+    let validation_data = match db.get_degree_data(&user.0, &previous_proof_oid).await {
+        Some(data) => data,
+        None => {
+            return Err(GrapevineResponse::NotFound(format!(
+                "No proof found with oid {}",
+                request.previous.clone()
+            )));
+        }
+    };
+    // validate prover address
+    let mut verify_err: Option<String> = None;
+    let prover_address = Fr::from_repr(validation_data.prover_address).unwrap();
+    let prev_nullifiers: Vec<Fr> = validation_data
+        .nullifiers
+        .iter()
+        .map(|n| Fr::from_repr(*n).unwrap())
+        .collect();
+    let scope = Fr::from_repr(validation_data.scope).unwrap();
+    let prev_degree = Fr::from(validation_data.degree as u64);
+    let new_nullifier = &output.nullifiers[prev_nullifiers.len()];
+    if prover_address.ne(&output.relation) {
+        verify_err = Some(String::from("Relation does not match caller"))
+    } else if scope.ne(&output.scope) {
+        verify_err = Some(String::from("Scope does not match previous proof"))
+    } else if Fr::from(8u64).lt(&output.degree) {
+        verify_err = Some(String::from("Degree is greater than 8"))
+    } else if prev_degree.add(&Fr::from(1u64)).ne(&output.degree) {
+        verify_err = Some(String::from("Expected degree not found"))
+    } else if new_nullifier.eq(&Fr::zero()) {
+        verify_err = Some(String::from("New nullifier is not set"))
+    }
+    for i in 0..prev_nullifiers.len() {
+        if (&prev_nullifiers[i]).ne(&output.nullifiers[i]) {
+            verify_err = Some(String::from("Nullifiers do not match"))
+        }
+    };
+    if verify_err.is_some() {
+        return Err(GrapevineResponse::BadRequest(ErrorMessage(
+            Some(GrapevineError::ProofFailed(verify_err.unwrap())),
+            None,
+        )));
+    }
 
-//     // check to see that degree proof doesn't already exist between two accounts
-//     match db.check_degree_exists(&proof_doc).await {
-//         Ok(exists) => match exists {
-//             true => {
-//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
-//                     Some(GrapevineError::DegreeProofExists),
-//                     None,
-//                 )))
-//             }
-//             false => (),
-//         },
-//         Err(e) => {
-//             return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                 Some(e),
-//                 None,
-//             )));
-//         }
-//     }
+    // build new proof
+    let proof_doc = GrapevineProof {
+        id: None,
+        scope: Some(validation_data.scope_oid),
+        relation: Some(validation_data.prover_oid),
+        degree: Some(request.degree),
+        nullifiers: Some(output.nullifiers.iter().map(|n| n.to_bytes()).collect()),
+        proof: Some(request.proof),
+        preceding: Some(previous_proof_oid),
+        inactive: Some(false)
+    };
 
-//     // add proof to db and update references
-//     match db.add_proof(&user.id.unwrap(), &proof_doc).await {
-//         Ok(_) => Ok(Status::Created),
-//         Err(e) => {
-//             println!("Error adding proof: {:?}", e);
-//             Err(GrapevineResponse::InternalError(ErrorMessage(
-//                 Some(GrapevineError::MongoError(String::from(
-//                     "Failed to add proof to db",
-//                 ))),
-//                 None,
-//             )))
-//         }
-//     }
-// }
+    // TODO: Check that existing proof does not already exist in db at same degree and scope
+    // Maybe include this check in validation data?
+
+    // add proof to db and update references
+    match db.add_degree_proof(&proof_doc).await {
+        Ok(_) => Ok(Status::Created),
+        Err(e) => {
+            println!("Error adding proof: {:?}", e);
+            Err(GrapevineResponse::InternalError(ErrorMessage(
+                Some(GrapevineError::MongoError(String::from(
+                    "Failed to add proof to db",
+                ))),
+                None,
+            )))
+        }
+    }
+}
 
 // /// GET REQUESTS ///
 
@@ -505,25 +543,6 @@ pub async fn get_proof_with_params(
         ))),
     }
 }
-
-// /**
-//  * Get all created phrases
-//  */
-// #[get("/known")]
-// pub async fn get_known_phrases(
-//     user: AuthenticatedUser,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<Vec<DegreeData>>, GrapevineResponse> {
-//     match db.get_known(user.0).await {
-//         Some(proofs) => Ok(Json(proofs)),
-//         None => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(GrapevineError::MongoError(String::from(
-//                 "Error retrieving degrees in db",
-//             ))),
-//             None,
-//         ))),
-//     }
-// }
 
 // /**
 //  * Get total number of connections and

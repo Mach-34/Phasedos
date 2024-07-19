@@ -23,6 +23,20 @@ pub struct AvailableProofs {
     pub relation: String
 }
 
+// todo: maybe move this somewhere else? is not used in transport
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DegreeProofValidationData {
+    #[serde(default, with = "serde_bytes")]
+    pub prover_address: [u8; 32],
+    pub prover_oid: ObjectId,
+    #[serde(default, with = "serde_bytes")]
+    pub scope: [u8; 32],
+    pub scope_oid: ObjectId,
+    pub nullifiers: Vec<[u8; 32]>,
+    pub degree: u8,
+    pub inactive: bool
+}
+
 // all data needed from server to prove a degree of separation
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProvingData {
