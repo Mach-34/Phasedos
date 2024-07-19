@@ -286,6 +286,16 @@ pub async fn add_relationship(
     }
 }
 
+/**
+ * Gets the nullfier secret of a given relationship
+ *
+ * @param recipient - username of the nullifier recipient in relationship
+ *
+ * @return status:
+ *            * 201 if success
+ *            * 401 if relationship is not found   
+ *            * 500 if db fails or other unknown issue    
+ */
 #[get("/relationship/nullifier-secret/<recipient>")]
 pub async fn get_nullifier_secret(
     recipient: String,
@@ -303,6 +313,18 @@ pub async fn get_nullifier_secret(
     }
 }
 
+/**
+ * Emits a nullifier for a specified relationship, terminating it
+ *
+ * @param data - the EmitNullifierRequest containing:
+ *           * nullifier: nullifier of the sender
+ *           * recipient: the username of the recipient
+ *
+ * @return status:
+ *            * 201 if success
+ *            * 401 if relationship is not found   
+ *            * 500 if db fails or other unknown issue    
+ */
 #[post("/relationship/emit-nullifier", data = "<data>")]
 pub async fn emit_nullifier(
     user: AuthenticatedUser,

@@ -108,7 +108,8 @@ impl GrapevineAccount {
      * Generates encrypted auth signature over recipient private key
      *
      * @param message - the encrypted auth signature
-     * @returns - the decrypted auth signature
+     * @param nullifier - nullifier to terminate relationship
+     * @returns - the encrypted auth signature
      */
     pub fn generate_auth_signature(
         &self,
@@ -118,6 +119,7 @@ impl GrapevineAccount {
         // generate recipient address from recipient pubkey
         let address = pubkey_to_address(&recipient);
         let hasher = Poseidon::new();
+        // hash nullifier and address together
         let hash = hasher.hash(vec![nullifier, address]).unwrap();
 
         // sign pubkey hash
@@ -171,6 +173,9 @@ impl GrapevineAccount {
         String::from_utf8(ptr[..end].to_vec()).unwrap()
     }
 
+    /**
+     * Decrypt nullifier secret for this account
+     */
     pub fn decrypt_nullifier_secret(&self, encrypted_nullifier_secret: [u8; 48]) -> Fr {
         let mut null_buf = encrypted_nullifier_secret;
         let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());

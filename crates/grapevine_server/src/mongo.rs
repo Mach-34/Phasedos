@@ -139,6 +139,12 @@ impl GrapevineDB {
         }
     }
 
+    /**
+     * Returns a user from a provided username
+     *
+     * @param username - username of the inteded user to fetch
+     * @returns - user or none
+     */
     pub async fn get_user(&self, username: &String) -> Option<User> {
         let filter = doc! { "username": username };
         let projection = doc! { "degree_proofs": 0 };
@@ -164,6 +170,12 @@ impl GrapevineDB {
     //     }
     // }
 
+    /**
+     * Adds a pending relationship to the relationship collection
+     *
+     * @param - relationship to add
+     * @returns - empty result on success and error on failure
+     */
     pub async fn add_pending_relationship(
         &self,
         relationship: &Relationship,
@@ -385,6 +397,14 @@ impl GrapevineDB {
     //     Ok(())
     // }
 
+    /**
+     * Returns a relationship from a specified sender and recipient username
+     *
+     * @param sender - username of the sender
+     * @param recipient - username of the recipient
+     *
+     * @returns - relationship on success or error
+     */
     pub async fn get_relationship(
         &self,
         sender: &String,
