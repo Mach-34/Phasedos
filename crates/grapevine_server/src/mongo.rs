@@ -7,6 +7,7 @@ use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
 use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
 use mongodb::{Client, Collection};
 
+use crate::utils::serialize_bytes_to_bson;
 use crate::MONGODB_URI;
 
 pub struct GrapevineDB {
@@ -138,6 +139,12 @@ impl GrapevineDB {
         }
     }
 
+    /**
+     * Returns a user from a provided username
+     *
+     * @param username - username of the inteded user to fetch
+     * @returns - user or none
+     */
     pub async fn get_user(&self, username: &String) -> Option<User> {
         let filter = doc! { "username": username };
         let projection = doc! { "degree_proofs": 0 };
@@ -163,6 +170,12 @@ impl GrapevineDB {
     //     }
     // }
 
+    /**
+     * Adds a pending relationship to the relationship collection
+     *
+     * @param - relationship to add
+     * @returns - empty result on success and error on failure
+     */
     pub async fn add_pending_relationship(
         &self,
         relationship: &Relationship,
@@ -384,6 +397,14 @@ impl GrapevineDB {
     //     Ok(())
     // }
 
+    /**
+     * Returns a relationship from a specified sender and recipient username
+     *
+     * @param sender - username of the sender
+     * @param recipient - username of the recipient
+     *
+     * @returns - relationship on success or error
+     */
     pub async fn get_relationship(
         &self,
         sender: &String,
@@ -429,68 +450,158 @@ impl GrapevineDB {
         }
     }
 
-    // /**
-    //  * Find all (pending or active) relationships for a user
-    //  *
-    //  * @param user - the username of the user to find relationships for
-    //  * @param active - whether to find active or pending relationships
-    //  * @returns - a list of usernames of the users the user has relationships with
-    //  */
-    // pub async fn get_relationships(
-    //     &self,
-    //     user: &String,
-    //     active: bool,
-    // ) -> Result<Vec<String>, GrapevineError> {
-    //     // setup aggregation pipeline for finding usernames of relationships
-    //     let pipeline = vec![
-    //         // get the ObjectID of the user doc for the given username
-    //         doc! { "$match": { "username": user } },
-    //         doc! { "$project": { "_id": 1 } },
-    //         // lookup all (pending/ active) relationships for the user
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "relationships",
-    //                 "localField": "_id",
-    //                 "foreignField": "recipient",
-    //                 "as": "relationships",
-    //                 "pipeline": [
-    //                     doc! { "$match": { "$expr": { "$eq": ["$active", active] } } },
-    //                     doc! { "$project": { "sender": 1, "_id": 0 } },
-    //                 ],
-    //             }
-    //         },
-    //         doc! { "$unwind": "$relationships" },
-    //         // lookup the usernames of the relationships by the ObjectID found in the relationship docs
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "users",
-    //                 "localField": "relationships.sender",
-    //                 "foreignField": "_id",
-    //                 "as": "relationships",
-    //                 "pipeline": [
-    //                     doc! { "$project": { "username": 1, "_id": 0 } },
-    //                 ],
-    //             }
-    //         },
-    //         doc! { "$unwind": "$relationships" },
-    //         // project only the usernames of the relationships
-    //         doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
-    //     ];
+    pub async fn terminate_relationship(
+        &self,
+        nullifier: [u8; 32],
+        sender: &String,
+        recipient: &String,
+    ) -> Result<(), GrapevineError> {
+        // setup aggregation pipeline for finding usernames of relationships
+        let pipeline = vec![
+            // get the ObjectID of the user doc for the given username
+            doc! {
+                "$match": {
+                    "username": { "$in": [recipient, sender] }
+                }
+            },
+            doc! {
+                "$project": {
+                    "_id": 0,
+                    // TODO; This may need to change cause of relationship confusion???
+                    "sender": {
+                        "$cond": { "if": { "$eq": ["$username", recipient] }, "then": "$_id", "else": "$$REMOVE" }
+                    },
+                    "recipient": {
+                        "$cond": { "if": { "$eq": ["$username", sender] }, "then": "$_id", "else": "$$REMOVE" }
+                    }
+                }
+            },
+            doc! {
+                "$group": {
+                    "_id": 0,
+                    "recipient": { "$max": "$recipient" },
+                    "sender": { "$max": "$sender" }
+                }
+            },
+            // query relationship document
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "sender_user": "$sender", "recipient_user": "$recipient" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": ["$sender", "$$sender_user"] },
+                                        { "$eq": ["$recipient", "$$recipient_user"] },
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    "as": "relationship"
+                }
+            },
+            doc! {
+                "$unwind": "$relationship"
+            },
+            doc! {
+                "$replaceRoot": {
+                    "newRoot": "$relationship"
+                }
+            },
+        ];
 
-    //     // get the OID's of degree proofs the user can build from
-    //     let mut relationships: Vec<String> = vec![];
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let username = document.get("username").unwrap().as_str().unwrap();
-    //                 relationships.push(username.to_string());
-    //             }
-    //             Err(e) => println!("Error: {}", e),
-    //         }
-    //     }
-    //     Ok(relationships)
-    // }
+        // get oid for relationship
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let relationship_id = document.get("_id").unwrap();
+
+                    // update relationship document by adding emitted nullifier
+                    let query = doc! {"_id": relationship_id};
+                    let update =
+                        doc! {"$set": {"emitted_nullifier": serialize_bytes_to_bson(&nullifier)}};
+                    match self.relationships.update_one(query, update, None).await {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+                    }
+                }
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+            }
+        } else {
+            // TODO: Create relationship not found type
+            return Err(GrapevineError::MongoError(
+                "Relationship not found".to_string(),
+            ));
+        }
+    }
+
+    /**
+     * Find all (pending or active) relationships for a user
+     *
+     * @param user - the username of the user to find relationships for
+     * @param active - whether to find active or pending relationships
+     * @returns - a list of usernames of the users the user has relationships with
+     */
+    pub async fn get_relationships(
+        &self,
+        user: &String,
+        active: bool,
+    ) -> Result<Vec<String>, GrapevineError> {
+        // setup aggregation pipeline for finding usernames of relationships
+        let pipeline = vec![
+            // get the ObjectID of the user doc for the given username
+            doc! { "$match": { "username": user } },
+            doc! { "$project": { "_id": 1 } },
+            // lookup all (pending/ active) relationships for the user
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "localField": "_id",
+                    "foreignField": "recipient",
+                    "as": "relationships",
+                    "pipeline": [
+                        doc! { "$match": { "$expr": { "$eq": ["$active", active] } } },
+                        doc! { "$project": { "sender": 1, "_id": 0 } },
+                    ],
+                }
+            },
+            doc! { "$unwind": "$relationships" },
+            // lookup the usernames of the relationships by the ObjectID found in the relationship docs
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "relationships.sender",
+                    "foreignField": "_id",
+                    "as": "relationships",
+                    "pipeline": [
+                        doc! { "$project": { "username": 1, "_id": 0 } },
+                    ],
+                }
+            },
+            doc! { "$unwind": "$relationships" },
+            // project only the usernames of the relationships
+            doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
+        ];
+
+        // get the OID's of degree proofs the user can build from
+        let mut relationships: Vec<String> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let username = document.get("username").unwrap().as_str().unwrap();
+                    relationships.push(username.to_string());
+                }
+                Err(e) => println!("Error: {}", e),
+            }
+        }
+        Ok(relationships)
+    }
 
     /**
      * Attempts to find a relationship between to users

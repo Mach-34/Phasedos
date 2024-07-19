@@ -45,6 +45,8 @@ pub struct Relationship {
     pub ephemeral_key: Option<[u8; 32]>,
     #[serde(default, with = "serde_bytes")]
     pub encrypted_auth_signature: Option<[u8; 80]>,
+    #[serde(default, with = "serde_bytes")]
+    pub emitted_nullifier: Option<[u8; 32]>,
     pub active: Option<bool>, // true if both users have accepted, false if pending
 }
 
