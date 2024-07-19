@@ -1245,7 +1245,7 @@ impl GrapevineDB {
             doc! {
                 "$lookup": {
                     "from": "users",
-                    "let": { "username": "user_a" },
+                    "let": { "username": username },
                     "pipeline": [
                         {"$match": { "$expr": { "$eq": [ "$username", "$$username" ] }}},
                         { "$project": { "_id": 1 }}
@@ -1259,7 +1259,7 @@ impl GrapevineDB {
             doc! {
                 "$lookup": {
                     "from": "relationships",
-                    "let": { "sender": "$relation", "recipient": "$user_id" },
+                    "let": { "sender": "$user_id", "recipient": "$relation" },
                     "pipeline": [
                         {
                             "$match": {
@@ -1298,7 +1298,7 @@ impl GrapevineDB {
         ];
 
         // Get the proving data
-        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        let mut cursor = self.proofs.aggregate(pipeline, None).await.unwrap();
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
@@ -1331,9 +1331,13 @@ impl GrapevineDB {
                         nullifier_ciphertext: encrypted_nullifier
                     })
                 }
-                Err(_) => None,
+                Err(_) => {
+                    println!("Error");
+                    None
+                }
             }
         } else {
+            println!("No doc found");
             None
         }
     }

@@ -29,6 +29,9 @@ tracing = "0.1.40"
 rocket = { version = "0.5.0", features = ["json", "tls"] }
 futures = "0.3.30"
 
+[dev-dependencies]
+ff.workspace = true
+
 [build-dependencies]
 dotenv.workspace = true
 
