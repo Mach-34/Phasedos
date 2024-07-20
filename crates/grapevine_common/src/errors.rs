@@ -10,6 +10,7 @@ pub enum GrapevineError {
     PubkeyExists(String),
     UserExists(String),
     PhraseTooLong,
+    NoRelationship(String, String),
     NoPendingRelationship(String, String),
     PendingRelationshipExists(String, String),
     ActiveRelationshipExists(String, String),
@@ -67,6 +68,13 @@ impl std::fmt::Display for GrapevineError {
                 write!(
                     f,
                     "No pending relationship exists from {} to {}",
+                    sender, recipient
+                )
+            },
+            GrapevineError::NoRelationship(sender, recipient) => {
+                write!(
+                    f,
+                    "No relationship exists from {} to {}",
                     sender, recipient
                 )
             }

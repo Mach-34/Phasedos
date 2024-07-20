@@ -489,43 +489,53 @@ impl GrapevineDB {
         sender: &String,
         recipient: &String,
     ) -> Result<Relationship, GrapevineError> {
-        // TODO: Make this into aggregation pipeline
-        let find_options = FindOptions::builder()
-            .projection(doc! {"_id": 1, "username": 1, "pubkey": 1, "address": 1 })
-            .build();
-        let usernames = [sender, recipient];
-        let bson_usernames: Vec<Bson> = usernames
-            .iter()
-            .map(|u| Bson::String(u.to_string()))
-            .collect();
-        // Get sender and recipient oids
-        let mut cursor = self
-            .users
-            .find(doc! {"username": {"$in": bson_usernames}}, find_options)
-            .await
-            .unwrap();
-
-        let mut user_oids: Vec<(String, ObjectId)> = vec![];
-
-        while let Some(result) = cursor.next().await {
-            match result {
-                Ok(document) => {
-                    user_oids.push((document.username.unwrap(), document.id.unwrap()));
+        // find a relationship document given a sender and recipient username
+        let pipeline = vec![
+            doc! {
+                "$facet": {
+                    "sender": [
+                        { "$match": { "username": "user_a" } },
+                        { "$project": { "sender": "$_id" } }
+                    ],
+                    "recipient": [
+                        { "$match": { "username": "user_b" } },
+                        { "$project": { "recipient": "$_id" } }
+                    ]
                 }
+            },
+            doc! {
+                "$project": {
+                    "sender": { "$arrayElemAt": ["$sender.sender", 0] },
+                    "recipient": { "$arrayElemAt": ["$recipient.recipient", 0] }
+                }
+            },
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "senderId": "$sender", "recipientId": "$recipient" },
+                    "pipeline": [
+                        { "$match": { "$expr": { "$and": [
+                            { "$eq": ["$sender", "$$senderId"] },
+                            { "$eq": ["$recipient", "$$recipientId"] }
+                        ]}}}
+                    ],
+                    "as": "relationship"
+                }
+            },
+            doc! { "$unwind": "$relationship" },
+            doc! { "$replaceRoot": { "newRoot": "$relationship" }},
+        ];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => Ok(bson::from_bson(bson::Bson::Document(document)).unwrap()),
                 Err(e) => {
                     println!("Error: {:?}", e);
+                    return Err(GrapevineError::MongoError(e.to_string()));
                 }
             }
-        }
-
-        let relationship_query = match user_oids[0].0 == *sender {
-            true => doc! { "sender": user_oids[0].1, "recipient": user_oids[1].1},
-            false => doc! { "sender": user_oids[1].1, "recipient": user_oids[0].1},
-        };
-
-        match self.relationships.find_one(relationship_query, None).await {
-            Ok(res) => Ok(res.unwrap()),
-            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        } else {
+            return Err(GrapevineError::NoRelationship(sender.clone(), recipient.clone()));
         }
     }
 
