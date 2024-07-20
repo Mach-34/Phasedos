@@ -58,7 +58,7 @@ mod test_rocket {
     };
     use grapevine_common::{
         account::GrapevineAccount,
-        auth_signature::AuthSignatureEncrypted,
+        auth_secret::AuthSignatureEncrypted,
         compat::ff_ce_to_le_bytes,
         http::{
             requests::{
@@ -601,7 +601,7 @@ mod test_rocket {
             inputs::{GrapevineInputs, GrapevineOutputs},
             nova::{degree_proof, verify_grapevine_proof},
         };
-        use grapevine_common::{auth_signature::AuthSignatureEncryptedUser, Fr};
+        use grapevine_common::{auth_secret::AuthSignatureEncryptedUser, Fr};
 
         use super::*;
         use crate::test_rocket::test_helper::*;

@@ -235,7 +235,9 @@ pub async fn add_relationship(
         id: None,
         sender: Some(sender.id.unwrap()),
         recipient: Some(recipient.id.unwrap()),
-        encrypted_nullifier_secret: Some(request.encrypted_nullifier_secret),
+        // @TODO
+        // encrypted_nullifier_secret: Some(request.encrypted_nullifier_secret),
+        encrypted_nullifier_secret: None,
         encrypted_nullifier: None,
         ephemeral_key: None,
         encrypted_auth_signature: None,
@@ -249,8 +251,11 @@ pub async fn add_relationship(
         recipient: Some(sender.id.unwrap()),
         encrypted_nullifier_secret: None,
         ephemeral_key: Some(request.ephemeral_key),
-        encrypted_auth_signature: Some(request.encrypted_auth_signature),
-        encrypted_nullifier: Some(request.encrypted_nullifier),
+        // @TODO
+        // encrypted_auth_signature: Some(request.encrypted_auth_signature),
+        encrypted_auth_signature: None,
+        // encrypted_nullifier: Some(request.encrypted_nullifier),
+        encrypted_nullifier: None,
         emitted_nullifier: None,
         active: Some(activate),
     };
