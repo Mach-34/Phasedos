@@ -31,15 +31,15 @@ pub struct TestProofCompressionRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewRelationshipRequest {
-    #[serde(with = "serde_bytes")]
-    pub encrypted_nullifier: [u8; 48],
-    #[serde(with = "serde_bytes")]
-    pub encrypted_nullifier_secret: [u8; 48],
     pub to: String,
     #[serde(with = "serde_bytes")]
     pub ephemeral_key: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub encrypted_auth_signature: [u8; 80],
+    pub signature_ciphertext: [u8; 80],
+    #[serde(with = "serde_bytes")]
+    pub nullifier_ciphertext: [u8; 48],
+    #[serde(with = "serde_bytes")]
+    pub nullifier_secret_ciphertext: [u8; 48],
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

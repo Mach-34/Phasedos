@@ -1,10 +1,10 @@
-use crate::auth_signature::{AuthSignature, AuthSignatureEncrypted, AuthSignatureEncryptedUser};
+use crate::auth_secret::{AuthSecret, AuthSecretEncrypted};
 use crate::compat::{
     convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_from_le_bytes, ff_ce_to_le_bytes,
 };
 use crate::crypto::{gen_aes_key, new_private_key, nonce_hash, pubkey_to_address};
 use crate::http::requests::{CreateUserRequest, GetNonceRequest, NewRelationshipRequest};
-use crate::utils::{convert_username_to_fr, random_fr};
+use crate::utils::{convert_username_to_fr, random_fr, random_fr_ce};
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use babyjubjub_rs::{Point, PrivateKey, Signature};
 use num_bigint::{BigInt, Sign};
@@ -92,85 +92,40 @@ impl GrapevineAccount {
         Ok(())
     }
 
-    /// AUTH SIGNATURE METHODS ///
+    /// AUTH SECRET METHODS ///
 
     /**
-     * Decrypt an encrypted auth signature that should be encrypted with this account's public key
+     * Decrypt an encrypted auth secret that should be encrypted with this account's public key
      *
-     * @param message - the encrypted auth signature
-     * @returns - the decrypted auth signature
+     * @param message - the encrypted auth secret
+     * @returns - the decrypted auth secret
      */
-    pub fn decrypt_auth_signature(&self, message: AuthSignatureEncrypted) -> AuthSignature {
+    pub fn decrypt_auth_signature(&self, message: AuthSecretEncrypted) -> AuthSecret {
         message.decrypt(self.private_key())
     }
 
     /**
-     * Generates encrypted auth signature over recipient private key
+     * Generates encrypted auth secret over recipient private key
      *
-     * @param message - the encrypted auth signature
-     * @param nullifier - nullifier to terminate relationship
-     * @returns - the encrypted auth signature
+     * @param message - the encrypted auth secret
+     * @returns - (encrypted auth secret, encrypted nullifier secret)
      */
-    pub fn generate_auth_signature(
-        &self,
-        recipient: Point,
-        nullifier: Fr,
-    ) -> AuthSignatureEncrypted {
-        // generate recipient address from recipient pubkey
-        let address = pubkey_to_address(&recipient);
-        let hasher = Poseidon::new();
-        // hash nullifier and address together
-        let hash = hasher.hash(vec![nullifier, address]).unwrap();
+    pub fn generate_auth_secret(&self, recipient: Point) -> (AuthSecretEncrypted, [u8; 48]) {
+        // derive the nullifier & encrypt nullifier secret
+        let (nullifier, nullifier_secret) = self.generate_nullifier();
+        let nullifier_ce = convert_ff_ce_to_ff(&nullifier);
 
-        // sign pubkey hash
+        // generate auth signature (sig|hash|nullifier, recipient_address||)
+        let hasher = Poseidon::new();
+        let recipient_address = pubkey_to_address(&recipient);
+        let hash = hasher.hash(vec![nullifier, recipient_address]).unwrap();
         let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&hash));
         let signature: Signature = self.private_key().sign(message).unwrap();
 
-        AuthSignatureEncrypted::new(
-            self.username.clone(),
-            signature,
-            convert_ff_ce_to_ff(&nullifier),
-            recipient,
-        )
-    }
+        // encrypt auth secret
+        let auth_secret = AuthSecretEncrypted::encrypt(&signature, &nullifier_ce, &recipient);
 
-    /// PHRASE ENCRYPTION METHODS ///
-
-    /**
-     * Encrypt a phrase for this account
-     */
-    pub fn encrypt_phrase(&self, phrase: &String) -> [u8; 192] {
-        // convert phrase to binary
-        let mut bytes = phrase.as_bytes().to_vec();
-        bytes.resize(180, 0);
-        let mut buf = [0u8; 192];
-        buf[..bytes.len()].copy_from_slice(&bytes);
-        // generate encryption key
-        let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());
-        // encrypt padded phrase
-        Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
-            .encrypt_padded_mut::<Pkcs7>(&mut buf, bytes.len())
-            .unwrap()
-            .try_into()
-            .unwrap()
-    }
-
-    /**
-     * Decrypt a phrase for this account
-     */
-    pub fn decrypt_phrase(&self, ciphertext: &[u8; 192]) -> String {
-        // derive asymmetric key key
-        let (aes_key, aes_iv) = gen_aes_key(self.private_key(), self.pubkey());
-        // decrypt ciphertext
-        let mut buf = ciphertext.clone();
-        let ptr: [u8; 180] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
-            .decrypt_padded_mut::<Pkcs7>(&mut buf)
-            .unwrap()
-            .try_into()
-            .unwrap();
-        // return the string
-        let end = ptr.iter().position(|&r| r == 0).unwrap_or(ptr.len());
-        String::from_utf8(ptr[..end].to_vec()).unwrap()
+        (auth_secret, nullifier_secret)
     }
 
     /**
@@ -268,17 +223,16 @@ impl GrapevineAccount {
         username: &String,
         pubkey: &Point,
     ) -> NewRelationshipRequest {
-        // generate a nullifier for relationship
-        let (nullifier, encrypted_nullifier_secret) = self.generate_nullifier();
         // encrypt the auth signature and nullifier with the target pubkey
-        let encrypted_auth_secret = self.generate_auth_signature(pubkey.clone(), nullifier);
+        let (auth_secret_encrypted, nullifier_secret_ciphertext) =
+            self.generate_auth_secret(pubkey.clone());
 
         NewRelationshipRequest {
-            encrypted_nullifier_secret: encrypted_nullifier_secret,
             to: username.clone(),
-            ephemeral_key: encrypted_auth_secret.ephemeral_key,
-            encrypted_auth_signature: encrypted_auth_secret.signature_ciphertext,
-            encrypted_nullifier: encrypted_auth_secret.nullifier_ciphertext,
+            ephemeral_key: auth_secret_encrypted.ephemeral_key,
+            signature_ciphertext: auth_secret_encrypted.signature_ciphertext,
+            nullifier_ciphertext: auth_secret_encrypted.nullifier_ciphertext,
+            nullifier_secret_ciphertext
         }
     }
 
@@ -348,15 +302,5 @@ mod test {
         let deserialized = serde_json::from_str::<GrapevineAccount>(&json).unwrap();
         let deserialized_key = hex::encode(deserialized.private_key);
         assert_eq!(deserialized_key, hex::encode(account.private_key));
-    }
-
-    #[test]
-    fn test_phrase_encryption() {
-        let username = String::from("JP4G");
-        let account = GrapevineAccount::new(username);
-        let phrase = String::from("This is a test phrase");
-        let ciphertext = account.encrypt_phrase(&phrase);
-        let decrypted = account.decrypt_phrase(&ciphertext);
-        assert_eq!(decrypted, phrase);
     }
 }
