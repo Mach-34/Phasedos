@@ -1,40 +1,40 @@
-// use clap::{Parser, Subcommand};
-// mod controllers;
-// mod http;
-// mod utils;
+use clap::{Parser, Subcommand};
+mod controllers;
+mod http;
+mod utils;
 
-// ///    ______                           _           
-// ///   / ____/________ _____  ___ _   __(_)___  ___  
-// ///  / / __/ ___/ __ `/ __ \/ _ \ | / / / __ \/ _ \
-// /// / /_/ / /  / /_/ / /_/ /  __/ |/ / / / / /  __/
-// /// \____/_/   \__,_/ .___/\___/|___/_/_/ /_/\___/  
-// ///                /_/                              
-// ///                                                 
-// #[derive(Parser)]
-// #[command(author, version, about, long_about = None, verbatim_doc_comment)]
-// #[command(propagate_version = true)]
-// struct Cli {
-//     #[command(subcommand)]
-//     command: Commands,
-// }
+///    ______                           _
+///   / ____/________ _____  ___ _   __(_)___  ___
+///  / / __/ ___/ __ `/ __ \/ _ \ | / / / __ \/ _ \
+/// / /_/ / /  / /_/ / /_/ /  __/ |/ / / / / /  __/
+/// \____/_/   \__,_/ .___/\___/|___/_/_/ /_/\___/
+///                /_/
+///
+#[derive(Parser)]
+#[command(author, version, about, long_about = None, verbatim_doc_comment)]
+#[command(propagate_version = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
-// #[derive(Subcommand)]
-// #[command(verbatim_doc_comment)]
-// enum Commands {
-//     /// Test the connection to the Grapevine server
-//     /// usage: `grapevine health`
-//     #[command(verbatim_doc_comment)]
-//     Health,
-//     /// Commands for managing your Grapevine account
-//     #[command(subcommand, verbatim_doc_comment)]
-//     Account(AccountCommands),
-//     /// Commands for managing relationships
-//     #[command(subcommand, verbatim_doc_comment)]
-//     Relationship(RelationshipCommands),
-//     /// Commands for interacting with phrases and degree proofs
-//     #[command(subcommand, verbatim_doc_comment)]
-//     Phrase(PhraseCommands),
-// }
+#[derive(Subcommand)]
+#[command(verbatim_doc_comment)]
+enum Commands {
+    /// Test the connection to the Grapevine server
+    /// usage: `grapevine health`
+    #[command(verbatim_doc_comment)]
+    Health,
+    // /// Commands for managing your Grapevine account
+    // #[command(subcommand, verbatim_doc_comment)]
+    // Account(AccountCommands),
+    // /// Commands for managing relationships
+    // #[command(subcommand, verbatim_doc_comment)]
+    // Relationship(RelationshipCommands),
+    // /// Commands for interacting with phrases and degree proofs
+    // #[command(subcommand, verbatim_doc_comment)]
+    // Phrase(PhraseCommands),
+}
 
 // #[derive(Subcommand)]
 // enum RelationshipCommands {
@@ -103,50 +103,46 @@
 //     Degrees,
 // }
 
-// /**
-//  * CLI for Grapevine
-//  */
-// #[tokio::main]
-// pub async fn main() {
-//     let cli = Cli::parse();
+/**
+ * CLI for Grapevine
+ */
+#[tokio::main]
+pub async fn main() {
+    let cli = Cli::parse();
 
-//     let result = match &cli.command {
-//         Commands::Health => controllers::health().await,
-//         Commands::Account(cmd) => match cmd {
-//             AccountCommands::Register { username } => controllers::register(username).await,
-//             AccountCommands::Info => controllers::account_details().await,
-//             AccountCommands::Export => controllers::export_key(),
-//         },
-//         Commands::Relationship(cmd) => match cmd {
-//             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
-//             RelationshipCommands::Pending => controllers::get_relationships(false).await,
-//             RelationshipCommands::Reject { username } => {
-//                 controllers::reject_relationship(username).await
-//             }
-//             RelationshipCommands::List => controllers::get_relationships(true).await,
-//         },
-//         Commands::Phrase(cmd) => match cmd {
-//             PhraseCommands::Prove {
-//                 phrase,
-//                 description,
-//             } => controllers::prove_phrase(phrase, description).await,
-//             PhraseCommands::Sync => controllers::prove_all_available().await,
-//             PhraseCommands::Get { index } => controllers::get_phrase(*index).await,
-//             PhraseCommands::Known => controllers::get_known_phrases().await,
-//             PhraseCommands::Degrees => controllers::get_my_proofs().await,
-//         },
-//     };
+    let result = match &cli.command {
+        Commands::Health => controllers::health().await,
+        //     Commands::Account(cmd) => match cmd {
+        //         AccountCommands::Register { username } => controllers::register(username).await,
+        //         AccountCommands::Info => controllers::account_details().await,
+        //         AccountCommands::Export => controllers::export_key(),
+        //     },
+        //     Commands::Relationship(cmd) => match cmd {
+        //         RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
+        //         RelationshipCommands::Pending => controllers::get_relationships(false).await,
+        //         RelationshipCommands::Reject { username } => {
+        //             controllers::reject_relationship(username).await
+        //         }
+        //         RelationshipCommands::List => controllers::get_relationships(true).await,
+        //     },
+        //     Commands::Phrase(cmd) => match cmd {
+        //         PhraseCommands::Prove {
+        //             phrase,
+        //             description,
+        //         } => controllers::prove_phrase(phrase, description).await,
+        //         PhraseCommands::Sync => controllers::prove_all_available().await,
+        //         PhraseCommands::Get { index } => controllers::get_phrase(*index).await,
+        //         PhraseCommands::Known => controllers::get_known_phrases().await,
+        //         PhraseCommands::Degrees => controllers::get_my_proofs().await,
+        //     },
+    };
 
-//     match result {
-//         Ok(message) => {
-//             println!("{}", message);
-//         }
-//         Err(e) => {
-//             println!("Error: {}", e);
-//         }
-//     };
-// }
-
-pub fn main() {
-    println!("X");
+    match result {
+        Ok(message) => {
+            println!("{}", message);
+        }
+        Err(e) => {
+            println!("Error: {}", e);
+        }
+    };
 }
