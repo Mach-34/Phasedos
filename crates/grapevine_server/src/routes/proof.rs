@@ -35,6 +35,7 @@ pub async fn prove_identity(
     data: Data<'_>,
     db: &State<GrapevineDB>,
 ) -> Result<GrapevineResponse, GrapevineResponse> {
+
     // stream in data
     let mut buffer = Vec::new();
     let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
@@ -59,6 +60,7 @@ pub async fn prove_identity(
             )));
         }
     };
+
     // validate given username
     if request.username.len() > MAX_USERNAME_CHARS {
         return Err(GrapevineResponse::BadRequest(ErrorMessage(

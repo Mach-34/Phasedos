@@ -6,6 +6,8 @@ use crate::http::{
 };
 use crate::utils::artifacts_guard;
 use crate::utils::fs::{use_public_params, use_r1cs, use_wasm, ACCOUNT_PATH};
+use grapevine_circuits::inputs::{GrapevineArtifacts, GrapevineInputs};
+use grapevine_circuits::nova::identity_proof;
 // use grapevine_circuits::nova::{continue_nova_proof, nova_proof, verify_nova_proof};
 use grapevine_circuits::utils::{compress_proof, decompress_proof};
 use grapevine_common::account::GrapevineAccount;
@@ -71,26 +73,40 @@ pub fn export_key() -> Result<String, GrapevineError> {
  *
  * @param username - the username to register
  */
-// pub async fn register(username: &String) -> Result<String, GrapevineError> {
-//     // check username is < 30 chars
-//     if username.len() > 30 {
-//         return Err(GrapevineError::UsernameTooLong(username.clone()));
-//     }
-//     // check username is ascii
-//     if !username.is_ascii() {
-//         return Err(GrapevineError::UsernameNotAscii(username.clone()));
-//     }
-//     // make account (or retrieve from fs)
-//     let account = make_or_get_account(username.clone())?;
-//     // build request body
-//     let body = account.create_user_request();
-//     // send create user request
-//     let res = create_user_req(body).await;
-//     match res {
-//         Ok(_) => Ok(format!("Success: registered account for \"{}\"", username)),
-//         Err(e) => Err(e),
-//     }
-// }
+pub async fn register(username: &String) -> Result<String, GrapevineError> {
+    // check username is < 30 chars
+    if username.len() > 30 {
+        return Err(GrapevineError::UsernameTooLong(username.clone()));
+    }
+    // check username is ascii
+    if !username.is_ascii() {
+        return Err(GrapevineError::UsernameNotAscii(username.clone()));
+    }
+    // make account (or retrieve from fs)
+    let account = make_or_get_account(username.clone())?;
+    // generate identity proof
+    let private_key = account.private_key();
+    let identity_inputs = GrapevineInputs::identity_step(&private_key);
+
+    artifacts_guard().await.unwrap();
+
+    let artifacts = GrapevineArtifacts {
+        params: use_public_params().unwrap(),
+        r1cs: use_r1cs().unwrap(),
+        wasm_path: use_wasm().unwrap(),
+    };
+
+    let proof = identity_proof(&artifacts, &identity_inputs).unwrap();
+    let compressed = compress_proof(&proof);
+    // build request body
+    let body = account.create_user_request(compressed);
+    // send create user request
+    let res = create_user_req(body).await;
+    match res {
+        Ok(_) => Ok(format!("Success: registered account for \"{}\"", username)),
+        Err(e) => Err(e),
+    }
+}
 
 /**
  * Add a connection to another user by creating an auth signature by signing their pubkey

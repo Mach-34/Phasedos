@@ -1,9 +1,12 @@
+use crate::inputs::GrapevineInputs;
+use crate::nova::identity_proof;
 use crate::ZERO;
 use babyjubjub_rs::{new_key, Point, Signature};
 use ff_ce::PrimeField;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use grapevine_common::account::GrapevineAccount;
 use grapevine_common::compat::{convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_from_le_bytes};
 use grapevine_common::utils::{convert_phrase_to_fr, convert_username_to_fr, random_fr};
 use grapevine_common::{auth_signature, Fr, NovaProof, Params};

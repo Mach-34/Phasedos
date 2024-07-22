@@ -25,9 +25,9 @@ enum Commands {
     /// usage: `grapevine health`
     #[command(verbatim_doc_comment)]
     Health,
-    // /// Commands for managing your Grapevine account
-    // #[command(subcommand, verbatim_doc_comment)]
-    // Account(AccountCommands),
+    /// Commands for managing your Grapevine account
+    #[command(subcommand, verbatim_doc_comment)]
+    Account(AccountCommands),
     // /// Commands for managing relationships
     // #[command(subcommand, verbatim_doc_comment)]
     // Relationship(RelationshipCommands),
@@ -58,24 +58,24 @@ enum Commands {
 //     List,
 // }
 
-// #[derive(Subcommand)]
-// enum AccountCommands {
-//     /// Register a new Grapevine account
-//     /// usage: `grapevine account register <username>`
-//     #[command(verbatim_doc_comment)]
-//     Register {
-//         #[clap(value_parser)]
-//         username: String,
-//     },
-//     /// Get information about your Grapevine account
-//     /// usage: `grapevine account info`
-//     #[command(verbatim_doc_comment)]
-//     Info,
-//     /// Export the Baby JubJub private key for your account
-//     /// usage: `grapevine account export`
-//     #[command(verbatim_doc_comment)]
-//     Export,
-// }
+#[derive(Subcommand)]
+enum AccountCommands {
+    /// Register a new Grapevine account
+    /// usage: `grapevine account register <username>`
+    #[command(verbatim_doc_comment)]
+    Register {
+        #[clap(value_parser)]
+        username: String,
+    },
+    /// Get information about your Grapevine account
+    /// usage: `grapevine account info`
+    #[command(verbatim_doc_comment)]
+    Info,
+    /// Export the Baby JubJub private key for your account
+    /// usage: `grapevine account export`
+    #[command(verbatim_doc_comment)]
+    Export,
+}
 
 // #[derive(Subcommand)]
 // enum PhraseCommands {
@@ -112,11 +112,11 @@ pub async fn main() {
 
     let result = match &cli.command {
         Commands::Health => controllers::health().await,
-        //     Commands::Account(cmd) => match cmd {
-        //         AccountCommands::Register { username } => controllers::register(username).await,
-        //         AccountCommands::Info => controllers::account_details().await,
-        //         AccountCommands::Export => controllers::export_key(),
-        //     },
+        Commands::Account(cmd) => match cmd {
+            AccountCommands::Register { username } => controllers::register(username).await,
+            AccountCommands::Info => controllers::account_details().await,
+            AccountCommands::Export => controllers::export_key(),
+        },
         //     Commands::Relationship(cmd) => match cmd {
         //         RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
         //         RelationshipCommands::Pending => controllers::get_relationships(false).await,

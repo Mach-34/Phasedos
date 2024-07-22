@@ -111,9 +111,11 @@ pub async fn get_available_proofs_req(
  * @returns - Ok if 201, or the error type otherwise
  */
 pub async fn create_user_req(body: CreateUserRequest) -> Result<(), GrapevineError> {
-    let url = format!("{}/user/create", &**SERVER_URL);
+    let url = format!("{}/proof/identity", &**SERVER_URL);
     let client = Client::new();
-    let res = client.post(&url).json(&body).send().await.unwrap();
+    // serialize body
+    let serialized = bincode::serialize(&body).unwrap();
+    let res = client.post(&url).body(serialized).send().await.unwrap();
     match res.status() {
         StatusCode::CREATED => return Ok(()),
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
