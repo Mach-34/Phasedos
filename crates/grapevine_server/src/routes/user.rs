@@ -462,41 +462,51 @@ pub async fn get_active_relationships(
 //     }
 // }
 
-// // #[post("/nonce", format = "json", data = "<request>")]
-// // pub async fn get_nonce(
-// //     request: Json<GetNonceRequest>,
-// //     db: &State<GrapevineDB>,
-// // ) -> Result<String, GrapevineResponse> {
-// //     // get pubkey & nonce for user
-// //     let (nonce, pubkey) = match db.get_nonce(&request.username).await {
-// //         Some((nonce, pubkey)) => (nonce, pubkey),
-// //         None => {
-// //             return Err(GrapevineResponse::NotFound(String::from(
-// //                 "User not does not exist.",
-// //             )))
-// //         }
-// //     };
-// //     // check the validity of the signature over the username
-// //     let message = BigInt::from_bytes_le(
-// //         Sign::Plus,
-// //         &convert_username_to_fr(&request.username).unwrap()[..],
-// //     );
-// //     let pubkey_decompressed = decompress_point(pubkey).unwrap();
-// //     let signature_decompressed = decompress_signature(&request.signature).unwrap();
-// //     match verify(pubkey_decompressed, signature_decompressed, message) {
-// //         true => (),
-// //         false => {
-// //             return Err(GrapevineResponse::BadRequest(ErrorMessage(
-// //                 Some(GrapevineError::Signature(String::from(
-// //                     "Could not verify nonce recovery signature",
-// //                 ))),
-// //                 None,
-// //             )));
-// //         }
-// //     };
-// //     // return the stringified nonce
-// //     Ok(nonce.to_string())
-// // }
+/**
+ * Return the current nonce of a given users
+ *
+ * @param request - the nonce request including the username and signature over the nonce for a given user
+ * @return - the nonce current nonce of the user
+ * @return status:
+ *            * 200 if success
+ *            * 400 if signature verification error
+ *            * 404 if user not found
+ */
+#[post("/nonce", format = "json", data = "<request>")]
+pub async fn get_nonce(
+    request: Json<GetNonceRequest>,
+    db: &State<GrapevineDB>,
+) -> Result<String, GrapevineResponse> {
+    // get pubkey & nonce for user
+    let (nonce, pubkey) = match db.get_nonce(&request.username).await {
+        Some((nonce, pubkey)) => (nonce, pubkey),
+        None => {
+            return Err(GrapevineResponse::NotFound(String::from(
+                "User not does not exist.",
+            )))
+        }
+    };
+    // check the validity of the signature over the username
+    let message = BigInt::from_bytes_le(
+        Sign::Plus,
+        &convert_username_to_fr(&request.username).unwrap()[..],
+    );
+    let pubkey_decompressed = decompress_point(pubkey).unwrap();
+    let signature_decompressed = decompress_signature(&request.signature).unwrap();
+    match verify(pubkey_decompressed, signature_decompressed, message) {
+        true => (),
+        false => {
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(
+                Some(GrapevineError::Signature(String::from(
+                    "Could not verify nonce recovery signature",
+                ))),
+                None,
+            )));
+        }
+    };
+    // return the stringified nonce
+    Ok(nonce.to_string())
+}
 
 // // /**
 // //  * Return the public key of a given user
@@ -552,39 +562,39 @@ pub async fn get_active_relationships(
 // //     }
 // // }
 
-// // /**
-// //  * Returns account details related to degree proofs
-// //  *
-// //  * @param username - the username to look up details for
-// //  * @return - count of first degree connections, second degree connections, and phrases created
-// //  * @return status:
-// //  *            * 200 if success
-// //  *            * 404 if user not found
-// //  *            * 500 if db fails or other unknown issue
-// //  */
-// // #[get("/details")]
-// // pub async fn get_account_details(
-// //     user: AuthenticatedUser,
-// //     db: &State<GrapevineDB>,
-// // ) -> Result<Json<(u64, u64, u64)>, GrapevineResponse> {
-// //     let recipient = match db.get_user(&user.0).await {
-// //         Some(user) => user,
-// //         None => {
-// //             return Err(GrapevineResponse::NotFound(String::from(
-// //                 "Recipient does not exist.".to_string(),
-// //             )));
-// //         }
-// //     };
-// //     match db.get_account_details(&recipient.id.unwrap()).await {
-// //         Some(details) => Ok(Json(details)),
-// //         None => Err(GrapevineResponse::InternalError(ErrorMessage(
-// //             Some(GrapevineError::MongoError(String::from(
-// //                 "Error user states",
-// //             ))),
-// //             None,
-// //         ))),
-// //     }
-// // }
+/**
+ * Returns account details related to degree proofs
+ *
+ * @param username - the username to look up details for
+ * @return - count of first degree connections, second degree connections, and phrases created
+ * @return status:
+ *            * 200 if success
+ *            * 404 if user not found
+ *            * 500 if db fails or other unknown issue
+ */
+#[get("/details")]
+pub async fn get_account_details(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<(u64, u64, u64)>, GrapevineResponse> {
+    let recipient = match db.get_user(&user.0).await {
+        Some(user) => user,
+        None => {
+            return Err(GrapevineResponse::NotFound(String::from(
+                "Recipient does not exist.".to_string(),
+            )));
+        }
+    };
+    match db.get_account_details(&recipient.id.unwrap()).await {
+        Some(details) => Ok(Json(details)),
+        None => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(GrapevineError::MongoError(String::from(
+                "Error user states",
+            ))),
+            None,
+        ))),
+    }
+}
 
 // // /**
 // //  * Return a list of the usernames of all direct connections by a given user

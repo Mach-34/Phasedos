@@ -1533,180 +1533,180 @@ impl GrapevineDB {
         }
     }
 
-    // /**
-    // * Get details on account:
-    //    - # of first degree connections
-    //    - # of second degree connections
-    //    - # of phrases created
-    // */
-    // pub async fn get_account_details(&self, user: &ObjectId) -> Option<(u64, u64, u64)> {
-    //     let mut cursor = self
-    //         .users
-    //         .aggregate(
-    //             vec![
-    //                 doc! {
-    //                   "$match": {
-    //                     "_id": user
-    //                   }
-    //                 },
-    //                 // Lookup to join with the relationships collection
-    //                 doc! {
-    //                     "$lookup": {
-    //                         "from": "relationships",
-    //                         "localField": "relationships",
-    //                         "foreignField": "_id",
-    //                         "as": "relationships_data",
-    //                         "pipeline": [doc! { "$project": { "_id": 0, "sender": 1 } }]
-    //                     }
-    //                 },
-    //                 // Add sender values to first degree connection array
-    //                 doc! {
-    //                     "$addFields": {
-    //                         "first_degree_connections": {
-    //                             "$map": {
-    //                                 "input": "$relationships_data",
-    //                                 "as": "relationship",
-    //                                 "in": "$$relationship.sender"
-    //                             }
-    //                         }
-    //                     }
-    //                 },
-    //                 // Lookup first degree connection senders from users colection
-    //                 doc! {
-    //                     "$lookup": {
-    //                         "from": "users",
-    //                         "localField": "first_degree_connections",
-    //                         "foreignField": "_id",
-    //                         "as": "sender_relationships"
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$unwind": {
-    //                         "path": "$sender_relationships",
-    //                         "preserveNullAndEmptyArrays": true
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$lookup": {
-    //                         "from": "relationships",
-    //                         "localField": "sender_relationships.relationships",
-    //                         "foreignField": "_id",
-    //                         "as": "sender_relationships.relationships_data"
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$group": {
-    //                         "_id": "$_id",
-    //                         "first_degree_connections": { "$first": "$first_degree_connections" },
-    //                         "sender_relationships": { "$push": "$sender_relationships" }
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$addFields": {
-    //                         "second_degree_connections": {
-    //                             "$cond": {
-    //                                 "if": { "$eq": [ "$sender_relationships", [] ] },
-    //                                 "then": [],
-    //                                 "else": {
-    //                                     "$reduce": {
-    //                                         "input": "$sender_relationships",
-    //                                         "initialValue": [],
-    //                                         "in": {
-    //                                             "$concatArrays": [
-    //                                                 "$$value",
-    //                                                 {
-    //                                                     "$filter": {
-    //                                                         "input": {
-    //                                                             "$map": {
-    //                                                                 "input": "$$this.relationships_data",
-    //                                                                 "as": "relationship",
-    //                                                                 "in": {
-    //                                                                     "$cond": [
-    //                                                                         {
-    //                                                                             "$and": [
-    //                                                                                 { "$ne": [ "$$relationship.sender", null ] },
-    //                                                                                 { "$ne": [ "$$relationship.sender", user ] },
-    //                                                                                 { "$not": { "$in": [ "$$relationship.sender", "$first_degree_connections" ] } },
-    //                                                                                 { "$not": { "$in": [ "$$relationship.sender", "$$value" ] } }
-    //                                                                             ]
-    //                                                                         },
-    //                                                                         "$$relationship.sender",
-    //                                                                         null
-    //                                                                     ]
-    //                                                                 }
-    //                                                             }
-    //                                                         },
-    //                                                         "cond": { "$ne": [ "$$this", null ] }
-    //                                                     }
-    //                                                 }
-    //                                             ]
-    //                                         }
-    //                                     }
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$addFields": {
-    //                         "second_degree_connections": {
-    //                             "$setUnion": ["$second_degree_connections", []]
-    //                         }
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$lookup": {
-    //                         "from": "degree_proofs",
-    //                         "localField": "_id",
-    //                         "foreignField": "user",
-    //                         "as": "user_degrees"
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$addFields": {
-    //                         "phrase_count": {
-    //                             "$size": {
-    //                                 "$filter": {
-    //                                     "input": "$user_degrees",
-    //                                     "as": "degree",
-    //                                     "cond": { "$eq": ["$$degree.degree", 1] }
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 },
-    //                 doc! {
-    //                     "$project": {
-    //                         "phrase_count": 1,
-    //                         "first_degree_connections": { "$size": "$first_degree_connections" },
-    //                         "second_degree_connections": { "$size": "$second_degree_connections" },
-    //                         "second_degree_connections_all":  "$second_degree_connections",
-    //                         "first_degree_connections_all":  "$first_degree_connections"
-    //                     }
-    //                 }
-    //             ],
-    //             None,
-    //         )
-    //         .await
-    //         .unwrap();
+    /**
+    * Get details on account:
+       - # of first degree connections
+       - # of second degree connections
+       - # of phrases created
+    */
+    pub async fn get_account_details(&self, user: &ObjectId) -> Option<(u64, u64, u64)> {
+        let mut cursor = self
+            .users
+            .aggregate(
+                vec![
+                    doc! {
+                      "$match": {
+                        "_id": user
+                      }
+                    },
+                    // Lookup to join with the relationships collection
+                    doc! {
+                        "$lookup": {
+                            "from": "relationships",
+                            "localField": "relationships",
+                            "foreignField": "_id",
+                            "as": "relationships_data",
+                            "pipeline": [doc! { "$project": { "_id": 0, "sender": 1 } }]
+                        }
+                    },
+                    // Add sender values to first degree connection array
+                    doc! {
+                        "$addFields": {
+                            "first_degree_connections": {
+                                "$map": {
+                                    "input": "$relationships_data",
+                                    "as": "relationship",
+                                    "in": "$$relationship.sender"
+                                }
+                            }
+                        }
+                    },
+                    // Lookup first degree connection senders from users colection
+                    doc! {
+                        "$lookup": {
+                            "from": "users",
+                            "localField": "first_degree_connections",
+                            "foreignField": "_id",
+                            "as": "sender_relationships"
+                        }
+                    },
+                    doc! {
+                        "$unwind": {
+                            "path": "$sender_relationships",
+                            "preserveNullAndEmptyArrays": true
+                        }
+                    },
+                    doc! {
+                        "$lookup": {
+                            "from": "relationships",
+                            "localField": "sender_relationships.relationships",
+                            "foreignField": "_id",
+                            "as": "sender_relationships.relationships_data"
+                        }
+                    },
+                    doc! {
+                        "$group": {
+                            "_id": "$_id",
+                            "first_degree_connections": { "$first": "$first_degree_connections" },
+                            "sender_relationships": { "$push": "$sender_relationships" }
+                        }
+                    },
+                    doc! {
+                        "$addFields": {
+                            "second_degree_connections": {
+                                "$cond": {
+                                    "if": { "$eq": [ "$sender_relationships", [] ] },
+                                    "then": [],
+                                    "else": {
+                                        "$reduce": {
+                                            "input": "$sender_relationships",
+                                            "initialValue": [],
+                                            "in": {
+                                                "$concatArrays": [
+                                                    "$$value",
+                                                    {
+                                                        "$filter": {
+                                                            "input": {
+                                                                "$map": {
+                                                                    "input": "$$this.relationships_data",
+                                                                    "as": "relationship",
+                                                                    "in": {
+                                                                        "$cond": [
+                                                                            {
+                                                                                "$and": [
+                                                                                    { "$ne": [ "$$relationship.sender", null ] },
+                                                                                    { "$ne": [ "$$relationship.sender", user ] },
+                                                                                    { "$not": { "$in": [ "$$relationship.sender", "$first_degree_connections" ] } },
+                                                                                    { "$not": { "$in": [ "$$relationship.sender", "$$value" ] } }
+                                                                                ]
+                                                                            },
+                                                                            "$$relationship.sender",
+                                                                            null
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "cond": { "$ne": [ "$$this", null ] }
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    doc! {
+                        "$addFields": {
+                            "second_degree_connections": {
+                                "$setUnion": ["$second_degree_connections", []]
+                            }
+                        }
+                    },
+                    doc! {
+                        "$lookup": {
+                            "from": "degree_proofs",
+                            "localField": "_id",
+                            "foreignField": "user",
+                            "as": "user_degrees"
+                        }
+                    },
+                    doc! {
+                        "$addFields": {
+                            "phrase_count": {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$user_degrees",
+                                        "as": "degree",
+                                        "cond": { "$eq": ["$$degree.degree", 1] }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    doc! {
+                        "$project": {
+                            "phrase_count": 1,
+                            "first_degree_connections": { "$size": "$first_degree_connections" },
+                            "second_degree_connections": { "$size": "$second_degree_connections" },
+                            "second_degree_connections_all":  "$second_degree_connections",
+                            "first_degree_connections_all":  "$first_degree_connections"
+                        }
+                    }
+                ],
+                None,
+            )
+            .await
+            .unwrap();
 
-    //     match cursor.next().await.unwrap() {
-    //         Ok(stats) => {
-    //             let phrase_count = stats.get_i32("phrase_count").unwrap();
-    //             let first_degree_connections = stats.get_i32("first_degree_connections").unwrap();
-    //             let second_degree_connections = stats.get_i32("second_degree_connections").unwrap();
-    //             return Some((
-    //                 phrase_count as u64,
-    //                 first_degree_connections as u64,
-    //                 second_degree_connections as u64,
-    //             ));
-    //         }
-    //         Err(e) => {
-    //             println!("Error: {:?}", e);
-    //             return None;
-    //         }
-    //     }
-    // }
+        match cursor.next().await.unwrap() {
+            Ok(stats) => {
+                let phrase_count = stats.get_i32("phrase_count").unwrap();
+                let first_degree_connections = stats.get_i32("first_degree_connections").unwrap();
+                let second_degree_connections = stats.get_i32("second_degree_connections").unwrap();
+                return Some((
+                    phrase_count as u64,
+                    first_degree_connections as u64,
+                    second_degree_connections as u64,
+                ));
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+                return None;
+            }
+        }
+    }
 
     // /**
     //  * Get chain of degree proofs linked to a phrase
