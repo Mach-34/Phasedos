@@ -217,8 +217,8 @@ pub async fn add_relationship(
     //     }
     // }
 
-    // check if a pending relationship from recipient to sender exists
-    let activate = match db
+    // true if a pending relationship from recipient to sender exists
+    let pending = match db
         .find_pending_relationship(&recipient.id.unwrap(), &sender.id.unwrap())
         .await
     {
@@ -231,65 +231,40 @@ pub async fn add_relationship(
         }
     };
 
-    let from_relationship_doc = Relationship {
+    // create the relationship document from sender to recipient
+    let relationship_doc = Relationship {
         id: None,
-        sender: Some(sender.id.unwrap()),
-        recipient: Some(recipient.id.unwrap()),
-        // @TODO
-        // encrypted_nullifier_secret: Some(request.encrypted_nullifier_secret),
-        encrypted_nullifier_secret: None,
-        encrypted_nullifier: None,
-        ephemeral_key: None,
-        encrypted_auth_signature: None,
-        emitted_nullifier: None,
-        active: Some(activate),
-    };
-
-    let to_relationship_doc = Relationship {
-        id: None,
-        sender: Some(recipient.id.unwrap()),
-        recipient: Some(sender.id.unwrap()),
-        encrypted_nullifier_secret: None,
+        sender: Some(sender.id.clone().unwrap()),
+        recipient: Some(recipient.id.clone().unwrap()),
         ephemeral_key: Some(request.ephemeral_key),
-        // @TODO
-        // encrypted_auth_signature: Some(request.encrypted_auth_signature),
-        encrypted_auth_signature: None,
-        // encrypted_nullifier: Some(request.encrypted_nullifier),
-        encrypted_nullifier: None,
+        signature_ciphertext: Some(request.signature_ciphertext),
+        nullifier_ciphertext: Some(request.nullifier_ciphertext),
+        nullifier_secret_ciphertext: Some(request.nullifier_secret_ciphertext),
         emitted_nullifier: None,
-        active: Some(activate),
+        active: Some(pending),
     };
 
-    let req = match activate {
-        true => {
-            db.activate_relationship(&from_relationship_doc, &to_relationship_doc)
-                .await
-        }
-        false => {
-            // TODO: Can prolly just achieve this with an "add_pending_relationships" function
-            db.add_pending_relationship(&from_relationship_doc).await;
-            db.add_pending_relationship(&to_relationship_doc).await;
-            Ok(())
+    // add relationship doc
+    let mut add_error: Option<GrapevineError> = None;
+    if let Err(e) = db.add_relationship(&relationship_doc).await {
+        add_error = Some(e);
+    } else if pending {
+        // if pending relationship exists and previous step was successful, activate (todo: transactions)
+        if let Err(e) = db.activate_relationship(&recipient.id.unwrap(), &sender.id.unwrap()).await {
+            add_error = Some(e);
         }
     };
 
-    match req {
-        Ok(_) => {
-            let msg = match activate {
-                true => "activated",
-                false => "pending",
-            };
+    // handle outcome
+    match add_error {
+        Some(err) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(err), None))),
+        None => {
+            let msg = match pending { true => "activated", false => "pending" };
             Ok(GrapevineResponse::Created(format!(
                 "Relationship from {} to {} {}!",
                 user.0, request.to, msg
             )))
         }
-        Err(_) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::MongoError(String::from(
-                "Failed to add relationship to db",
-            ))),
-            None,
-        ))),
     }
 }
 
@@ -313,7 +288,7 @@ pub async fn get_nullifier_secret(
     // TODO: Need to throw error if from is user
     match db.get_relationship(&user.0, &recipient).await {
         // TODO: Solve rocket response error so we can return just encrypted nullifier secret
-        Ok(relationship) => Ok(relationship.encrypted_nullifier_secret.unwrap().to_vec()),
+        Ok(relationship) => Ok(relationship.nullifier_secret_ciphertext.unwrap().to_vec()),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),
             None,
