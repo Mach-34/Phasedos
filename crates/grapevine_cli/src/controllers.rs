@@ -168,15 +168,21 @@ pub async fn get_relationships(active: bool) -> Result<String, GrapevineError> {
     match res {
         Ok(data) => {
             let relation_type = if active { "Active" } else { "Pending" };
-            if data.len() == 0 {
+            let count = data.len();
+            if count == 0 {
                 println!("No {} relationships found for this account", relation_type);
                 return Ok(String::from(""));
             }
             println!("===============================");
             println!(
-                "Showing {} {} relationships for {}:",
-                data.len(),
+                "Showing {} {} {} for {}:",
+                count,
                 relation_type,
+                if count == 1 {
+                    "relationship"
+                } else {
+                    "relationships"
+                },
                 account.username()
             );
             for relationship in data {

@@ -54,7 +54,13 @@ grapevine relationship pending
 grapevine relationship add user_b
 
 ## list active relationships for User A
-## grapevine relationship list
+grapevine relationship list
+
+## switch to User B and list active relationships
+mv grapevine.key user_a.key
+mv user_b.key grapevine.key
+echo "Switched from User A to User B!"
+grapevine relationship list
 
 ## CLEANUP
 # rm alice.key bob.key
