@@ -373,10 +373,10 @@ pub async fn degree_proof(
     // stream in data
     // todo: implement FromData trait on DegreeProofRequest
     let mut buffer = Vec::new();
-    let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
+    let mut stream = data.open(3.mebibytes()); // Adjust size limit as needed
     if let Err(_) = stream.read_to_end(&mut buffer).await {
         return Err(GrapevineResponse::TooLarge(
-            "Request body execeeds 2 MiB".to_string(),
+            "Request body execeeds 3 MiB".to_string(),
         ));
     }
     let request = match bincode::deserialize::<DegreeProofRequest>(&buffer) {
@@ -433,7 +433,7 @@ pub async fn degree_proof(
         .collect();
     let scope = Fr::from_repr(validation_data.scope).unwrap();
     let prev_degree = Fr::from(validation_data.degree as u64);
-    let new_nullifier = &output.nullifiers[prev_nullifiers.len()];
+    let new_nullifier = &output.nullifiers[validation_data.degree as usize];
     if prover_address.ne(&output.relation) {
         verify_err = Some(String::from("Relation does not match caller"))
     } else if scope.ne(&output.scope) {
@@ -445,7 +445,7 @@ pub async fn degree_proof(
     } else if new_nullifier.eq(&Fr::zero()) {
         verify_err = Some(String::from("New nullifier is not set"))
     }
-    for i in 0..prev_nullifiers.len() {
+    for i in 0..validation_data.degree as usize {
         if (&prev_nullifiers[i]).ne(&output.nullifiers[i]) {
             verify_err = Some(String::from("Nullifiers do not match"))
         }
