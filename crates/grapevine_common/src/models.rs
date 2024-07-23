@@ -55,19 +55,19 @@ pub struct ProvingData {
 pub struct Relationship {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
-    pub recipient: Option<ObjectId>, // use this privkey to decrypt
-    pub sender: Option<ObjectId>,
-    #[serde(default, with = "serde_bytes")]
-    pub encrypted_nullifier: Option<[u8; 48]>,
-    #[serde(default, with = "serde_bytes")]
-    pub encrypted_nullifier_secret: Option<[u8; 48]>,
-    #[serde(default, with = "serde_bytes")]
-    pub ephemeral_key: Option<[u8; 32]>,
-    #[serde(default, with = "serde_bytes")]
-    pub encrypted_auth_signature: Option<[u8; 80]>,
-    #[serde(default, with = "serde_bytes")]
-    pub emitted_nullifier: Option<[u8; 32]>,
     pub active: Option<bool>, // true if both users have accepted, false if pending
+    pub sender: Option<ObjectId>,
+    pub recipient: Option<ObjectId>,
+    #[serde(default, with = "serde_bytes")]
+    pub ephemeral_key: Option<[u8; 32]>, // pubkey + recipient privkey decrypts auth secret
+    #[serde(default, with = "serde_bytes")]
+    pub emitted_nullifier: Option<[u8; 32]>, // if Some, then relationship is nullified
+    #[serde(default, with = "serde_bytes")]
+    pub signature_ciphertext: Option<[u8; 80]>, // decryptable by recipient for proving
+    #[serde(default, with = "serde_bytes")]
+    pub nullifier_ciphertext: Option<[u8; 48]>, // decryptable by recipient for proving
+    #[serde(default, with = "serde_bytes")]
+    pub nullifier_secret_ciphertext: Option<[u8; 48]>, // decryptable by sender for nullifier emission
 }
 
 // All fields optional to allow projections

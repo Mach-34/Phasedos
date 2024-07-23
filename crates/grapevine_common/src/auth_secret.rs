@@ -9,12 +9,10 @@ type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 /**
- * Encrypted version of an auth signature with the necessary info for the recipient to decrypt it
+ * Encrypted Auth Secret (nullifier, signature) with ephemeral key to decrypt it
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AuthSignatureEncrypted {
-    pub username: String,
-    pub recipient: [u8; 32],
+pub struct AuthSecretEncrypted {
     pub ephemeral_key: [u8; 32],
     #[serde(with = "serde_bytes")]
     pub nullifier_ciphertext: [u8; 48],
@@ -23,54 +21,48 @@ pub struct AuthSignatureEncrypted {
 }
 
 /**
- * The confidential AuthSignature used when proving a degree of separation in Grapevine
+ * Signature authorizing one user to build proofs from another + authenticated nullifier for deactivating relationships
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AuthSignature {
-    pub username: String,
+pub struct AuthSecret {
     #[serde(with = "serde_bytes")]
     pub nullifier: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub auth_signature: [u8; 64], // compressed form of auth signature
+    pub signature: [u8; 64], // compressed bjj sig
 }
 
-impl AuthSignature {
+impl AuthSecret {
     // TODO: Add documentation
-    pub fn fmt_circom(&self) -> [Fr; 3] {
+
+    /**
+     * Format inputs for circom
+     * 
+     * @returns - ([r_x, r_y, s], nullifier)
+     */
+    pub fn fmt_circom(&self) -> ([Fr; 3], Fr) {
         // decompress signature
-        let decompressed = decompress_signature(&self.auth_signature).unwrap();
+        let decompressed = decompress_signature(&self.signature).unwrap();
         // convert s value of signature to Fr
         let s_bytes = to_array_32(decompressed.s.to_bytes_le().1);
-        [
+        let signature = [
             convert_ff_ce_to_ff(&decompressed.r_b8.x),
             convert_ff_ce_to_ff(&decompressed.r_b8.y),
             Fr::from_repr(s_bytes).unwrap(),
-        ]
+        ];
+        let nullifier = Fr::from_repr(self.nullifier).unwrap();
+        (signature, nullifier)
     }
 }
 
-pub trait AuthSignatureEncryptedUser {
+impl AuthSecretEncrypted {
     /**
-     * Create a new encrypted auth signature
+     * Encrypt an auth secret for a given recipient
      *
-     * @param username - the username associated with this auth signature
      * @param auth_signature - the auth signature over user's pubkey
      * @param recipient- the bjj pubkey of the recipient of the auth signature
      * @returns - encrypted auth signature
      */
-    fn new(username: String, auth_signature: Signature, nullifier: Fr, recipient: Point) -> Self;
-
-    /**
-     * Decrypts an encrypted AuthSignature
-     *
-     * @param recipient - the private key of the recipient of the auth signature
-     * @returns - the decrypted auth signature
-     */
-    fn decrypt(&self, recipient: PrivateKey) -> AuthSignature;
-}
-
-impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
-    fn new(username: String, signature: Signature, nullifier: Fr, recipient: Point) -> Self {
+    pub fn encrypt(signature: &Signature, nullifier: &Fr, recipient: &Point) -> Self {
         // generate a new ephemeral keypair
         let ephm_sk = babyjubjub_rs::new_key();
         let ephm_pk = ephm_sk.public().compress();
@@ -100,22 +92,26 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
 
         // return the encrypted auth signature
         Self {
-            username,
-            recipient: recipient.compress(),
             ephemeral_key: ephm_pk,
             signature_ciphertext,
             nullifier_ciphertext,
         }
     }
 
-    fn decrypt(&self, recipient: PrivateKey) -> AuthSignature {
+    /**
+     * Decrypts an encrypted AuthSecret
+     *
+     * @param recipient - the private key of the recipient of the auth signature
+     * @returns - the decrypted auth signature
+     */
+    pub fn decrypt(&self, recipient: PrivateKey) -> AuthSecret {
         // compute the aes-cbc-128 key
         let ephm_pk = babyjubjub_rs::decompress_point(self.ephemeral_key).unwrap();
         let (aes_key, aes_iv) = gen_aes_key(recipient, ephm_pk);
 
         // decrypt the auth signature
         let mut sig_buf = self.signature_ciphertext;
-        let auth_signature: [u8; 64] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
+        let signature: [u8; 64] = Aes128CbcDec::new(aes_key[..].into(), aes_iv[..].into())
             .decrypt_padded_mut::<Pkcs7>(&mut sig_buf)
             .unwrap()
             .try_into()
@@ -129,11 +125,7 @@ impl AuthSignatureEncryptedUser for AuthSignatureEncrypted {
             .try_into()
             .unwrap();
 
-        AuthSignature {
-            username: self.username.clone(),
-            auth_signature,
-            nullifier,
-        }
+        AuthSecret { signature, nullifier }
     }
 }
 
@@ -166,7 +158,7 @@ mod test {
 
         // create encrypted auth signature
         let encrypted_auth_signature =
-            AuthSignatureEncrypted::new(username, auth_signature.clone(), nullifier, recipient_pk);
+            AuthSignatureEncrypted::encrypt(auth_signature.clone(), nullifier, recipient_pk);
         // decrypt the auth signature
         let decrypted_auth_signature = encrypted_auth_signature.decrypt(recipient_sk);
         // check that the auth signature is the same
@@ -201,7 +193,7 @@ mod test {
 
         // create encrypted auth signature
         let encrypted_auth_signature =
-            AuthSignatureEncrypted::new(username, auth_signature.clone(), nullifier, recipient_pk);
+            AuthSignatureEncrypted::encrypt(username, auth_signature.clone(), nullifier, recipient_pk);
         // serialize to json
         let json = serde_json::to_string(&encrypted_auth_signature).unwrap();
         // deserialize from json

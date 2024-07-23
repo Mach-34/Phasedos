@@ -3,7 +3,7 @@ use ff_ce::PrimeField;
 use grapevine_common::compat::{convert_ff_to_ff_ce, ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::crypto::pubkey_to_address;
 use grapevine_common::utils::random_fr_ce;
-use grapevine_common::{auth_signature, Fr, Params};
+use grapevine_common::{Fr, Params};
 use nova_scotia::circom::circuit::R1CS;
 use num_bigint::{BigInt, Sign};
 use serde_json::{json, Value};

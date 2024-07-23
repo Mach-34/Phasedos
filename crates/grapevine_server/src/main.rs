@@ -58,7 +58,7 @@ mod test_rocket {
     };
     use grapevine_common::{
         account::GrapevineAccount,
-        auth_signature::AuthSignatureEncrypted,
+        auth_secret::AuthSecretEncrypted,
         compat::ff_ce_to_le_bytes,
         http::{
             requests::{
@@ -509,9 +509,9 @@ mod test_rocket {
             let context = GrapevineTestContext::init().await;
             GrapevineDB::drop("grapevine_mocked").await;
             // Create a request where proof creator is different from asserted pubkey
-            let mut user_a = GrapevineAccount::new("User_Coolaid".into());
+            let mut user_a = GrapevineAccount::new("user_a".into());
 
-            let mut user_b = GrapevineAccount::new("User_Oj".into());
+            let mut user_b = GrapevineAccount::new("user_b".into());
 
             let user_request_a = build_create_user_request(&user_a);
             let user_request_b = build_create_user_request(&user_b);
@@ -519,34 +519,72 @@ mod test_rocket {
             http_create_user(&context, &user_request_b).await;
 
             // add relationship as user_a to user_b
-            let user_a_relationship_request =
+            let request =
                 user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
 
-            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+            http_add_relationship(&context, &mut user_a, &request).await;
 
             // accept relation from user_a as user_b
-            let user_b_relationship_request =
+            let request =
                 user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+            let expected_nullifier_secret_ciphertext = request.nullifier_secret_ciphertext;
+            http_add_relationship(&context, &mut user_b, &request).await;
 
-            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
-
-            let encrypted_nullifier_secret =
+            // check stored nullifier secret integrity
+            let nullifier_secret_ciphertext =
                 http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
-
-            let decrypted_local = user_b
-                .decrypt_nullifier_secret(user_b_relationship_request.encrypted_nullifier_secret);
-            let decrypted_server = user_b.decrypt_nullifier_secret(encrypted_nullifier_secret);
-            assert_eq!(decrypted_local, decrypted_server);
+            let expected_secret = user_b
+                .decrypt_nullifier_secret(expected_nullifier_secret_ciphertext);
+            let empirical_secret = user_b.decrypt_nullifier_secret(nullifier_secret_ciphertext);
+            assert_eq!(expected_secret, empirical_secret);
         }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_reject_relationship() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_no_relationship_with_self() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_reject_active_relationship() {
+            // nullifiy, don't reject
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_reject_nonexistent_relationship() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_act_nullified_relationship() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_request_already_active_relationship() {
+            todo!("Unimplemented")
+        }
+
 
         #[rocket::async_test]
         pub async fn test_nullifier_emission() {
             let context = GrapevineTestContext::init().await;
             GrapevineDB::drop("grapevine_mocked").await;
             // Create a request where proof creator is different from asserted pubkey
-            let mut user_a = GrapevineAccount::new("User_Wombat".into());
+            let mut user_a = GrapevineAccount::new("user_a".into());
 
-            let mut user_b = GrapevineAccount::new("User_SucklingPig".into());
+            let mut user_b = GrapevineAccount::new("user_b".into());
 
             let user_request_a = build_create_user_request(&user_a);
             let user_request_b = build_create_user_request(&user_b);
@@ -581,7 +619,7 @@ mod test_rocket {
                 user_b.username(),
             )
             .await;
-            assert!(code == 200, "Nullifier emission call failed.");
+            assert!(code == 200, "Expected HTTP:OK on nullifier emission");
 
             // confirm relationship now has emitted nullifier
             let relationship =
@@ -591,6 +629,25 @@ mod test_rocket {
                 "No nullifier emitted"
             );
         }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_nullify_pending_relationship() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_nullify_nullified_relationship() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_cannot_nullify_nonexistent_relationship() {
+            todo!("Unimplemented")
+        }
+
     }
 
     #[cfg(test)]
@@ -601,7 +658,7 @@ mod test_rocket {
             inputs::{GrapevineInputs, GrapevineOutputs},
             nova::{degree_proof, verify_grapevine_proof},
         };
-        use grapevine_common::{auth_signature::AuthSignatureEncryptedUser, Fr};
+        use grapevine_common::Fr;
 
         use super::*;
         use crate::test_rocket::test_helper::*;
@@ -641,16 +698,14 @@ mod test_rocket {
                 .0;
             let outputs = GrapevineOutputs::try_from(res).unwrap();
             // decrypt the auth secret
-            let auth_secret_encrypted = AuthSignatureEncrypted {
-                username: "".into(),
-                recipient: user_b.pubkey().compress(),
+            let auth_secret_encrypted = AuthSecretEncrypted {
                 ephemeral_key: proving_data.ephemeral_key,
                 signature_ciphertext: proving_data.signature_ciphertext,
                 nullifier_ciphertext: proving_data.nullifier_ciphertext,
             };
             let auth_secret = auth_secret_encrypted.decrypt(user_b.private_key());
             // build the inputs for the degree proof
-            let auth_signature = decompress_signature(&auth_secret.auth_signature).unwrap();
+            let auth_signature = decompress_signature(&auth_secret.signature).unwrap();
             let relation_pubkey = decompress_point(proving_data.relation_pubkey).unwrap();
             let relation_nullifier = Fr::from_repr(auth_secret.nullifier).unwrap();
             let inputs = GrapevineInputs::degree_step(

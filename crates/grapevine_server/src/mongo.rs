@@ -250,16 +250,16 @@ impl GrapevineDB {
     }
 
     /**
-     * Adds a pending relationship to the relationship collection
+     * Adds a relationship to the relationship collection
+     * @notice - can be pending or active depending on whether set by the doc passed in
      *
      * @param - relationship to add
      * @returns - empty result on success and error on failure
      */
-    pub async fn add_pending_relationship(
+    pub async fn add_relationship(
         &self,
         relationship: &Relationship,
     ) -> Result<(), GrapevineError> {
-        // create new relationship document
         match self.relationships.insert_one(relationship, None).await {
             Ok(_) => Ok(()),
             Err(e) => Err(GrapevineError::MongoError(e.to_string())),
@@ -267,115 +267,32 @@ impl GrapevineDB {
     }
 
     /**
-     * Sets pending relationship to be active (to -> from) and creates a new relationship (from -> to)
+     * Sets pending relationship document to be active
      *
-     * @param relationship - the relationship to activate
-     * @returns - the object id of the activated relationship
+     * @param sender - the sender of the relationship document
+     * @param recipient - the recipient of the relationship document
+     * @returns - () or error
      */
     pub async fn activate_relationship(
         &self,
-        from_relationship: &Relationship,
-        to_relationship: &Relationship,
+        sender: &ObjectId,
+        recipient: &ObjectId,
     ) -> Result<(), GrapevineError> {
-        let from_query = doc! {
-            "sender": from_relationship.sender.unwrap(),
-            "recipient": from_relationship.recipient.unwrap()
-        };
-
-        let to_query = doc! {
-            "sender": to_relationship.sender.unwrap(),
-            "recipient": to_relationship.recipient.unwrap()
-        };
-
-        let find_options = FindOneOptions::builder()
-            .projection(doc! {"_id": 1})
-            .build();
-
-        // retrived oid for "from" relationship
-        let from_oid: Bson = self
-            .relationships
-            .find_one(from_query, Some(find_options.clone()))
-            .await
-            .unwrap()
-            .unwrap()
-            .id
-            .unwrap()
-            .into();
-
-        let to_oid: Bson = self
-            .relationships
-            .find_one(to_query, Some(find_options))
-            .await
-            .unwrap()
-            .unwrap()
-            .id
-            .unwrap()
-            .into();
-
-        let from_update = doc! {
-            "$set": {
-                "active": true,
-                "encrypted_nullifier_secret": Bson::Binary(Binary {
-                    subtype: bson::spec::BinarySubtype::Generic,
-                    bytes: from_relationship.encrypted_nullifier_secret.unwrap().to_vec(),
-                })
-            }
-        };
-
-        let to_update = doc! {
-            "$set": {
-                "active": true,
-                "encrypted_auth_signature": Bson::Binary(Binary {
-                    subtype: bson::spec::BinarySubtype::Generic,
-                    bytes: to_relationship.encrypted_auth_signature.unwrap().to_vec(),
-                }),
-                "encrypted_nullifier": Bson::Binary(Binary {
-                    subtype: bson::spec::BinarySubtype::Generic,
-                    bytes: to_relationship.encrypted_nullifier.unwrap().to_vec(),
-                }),
-                "ephemeral_key": Bson::Binary(Binary {
-                    subtype: bson::spec::BinarySubtype::Generic,
-                    bytes: to_relationship.ephemeral_key.unwrap().to_vec(),
-                }),
-            }
-        };
-
-        // update "from" relationship
-        match self
-            .relationships
-            .update_one(doc! {"_id": from_oid.clone()}, from_update, None)
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-        };
-
-        // update "to" relationship
-        match self
-            .relationships
-            .update_one(doc! {"_id": to_oid.clone()}, to_update, None)
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-        };
-
-        // push the relationship to the sender's list of relationships
-        let query = doc! { "_id": from_relationship.sender.unwrap() };
-        let update = doc! { "$push": { "relationships": from_oid } };
-        match self.users.update_one(query, update, None).await {
-            Ok(_) => (),
-            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        // try to update the document
+        let filter = doc! { "sender": sender, "recipient": recipient, "active": false };
+        let update = doc! { "$set": { "active": true }};
+        let result = self.relationships.update_one(filter, update, None).await;
+        // check if successful
+        match result {
+            Ok(result) => match result.upserted_id {
+                Some(_) => Ok(()),
+                None => Err(GrapevineError::NoPendingRelationship(
+                    sender.to_hex(),
+                    recipient.to_hex(),
+                )),
+            },
+            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
         }
-
-        // push the relationship to the recipients's list of relationships
-        let query = doc! { "_id": to_relationship.sender.unwrap() };
-        let update = doc! { "$push": { "relationships": to_oid } };
-        match self.users.update_one(query, update, None).await {
-            Ok(_) => (),
-            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-        }
-        Ok(())
     }
 
     // /**
@@ -489,43 +406,56 @@ impl GrapevineDB {
         sender: &String,
         recipient: &String,
     ) -> Result<Relationship, GrapevineError> {
-        // TODO: Make this into aggregation pipeline
-        let find_options = FindOptions::builder()
-            .projection(doc! {"_id": 1, "username": 1, "pubkey": 1, "address": 1 })
-            .build();
-        let usernames = [sender, recipient];
-        let bson_usernames: Vec<Bson> = usernames
-            .iter()
-            .map(|u| Bson::String(u.to_string()))
-            .collect();
-        // Get sender and recipient oids
-        let mut cursor = self
-            .users
-            .find(doc! {"username": {"$in": bson_usernames}}, find_options)
-            .await
-            .unwrap();
-
-        let mut user_oids: Vec<(String, ObjectId)> = vec![];
-
-        while let Some(result) = cursor.next().await {
-            match result {
-                Ok(document) => {
-                    user_oids.push((document.username.unwrap(), document.id.unwrap()));
+        // find a relationship document given a sender and recipient username
+        let pipeline = vec![
+            doc! {
+                "$facet": {
+                    "sender": [
+                        { "$match": { "username": sender } },
+                        { "$project": { "sender": "$_id" } }
+                    ],
+                    "recipient": [
+                        { "$match": { "username": recipient } },
+                        { "$project": { "recipient": "$_id" } }
+                    ]
                 }
+            },
+            doc! {
+                "$project": {
+                    "sender": { "$arrayElemAt": ["$sender.sender", 0] },
+                    "recipient": { "$arrayElemAt": ["$recipient.recipient", 0] }
+                }
+            },
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "senderId": "$sender", "recipientId": "$recipient" },
+                    "pipeline": [
+                        { "$match": { "$expr": { "$and": [
+                            { "$eq": ["$sender", "$$senderId"] },
+                            { "$eq": ["$recipient", "$$recipientId"] }
+                        ]}}}
+                    ],
+                    "as": "relationship"
+                }
+            },
+            doc! { "$unwind": "$relationship" },
+            doc! { "$replaceRoot": { "newRoot": "$relationship" }},
+        ];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => Ok(bson::from_bson(bson::Bson::Document(document)).unwrap()),
                 Err(e) => {
                     println!("Error: {:?}", e);
+                    return Err(GrapevineError::MongoError(e.to_string()));
                 }
             }
-        }
-
-        let relationship_query = match user_oids[0].0 == *sender {
-            true => doc! { "sender": user_oids[0].1, "recipient": user_oids[1].1},
-            false => doc! { "sender": user_oids[1].1, "recipient": user_oids[0].1},
-        };
-
-        match self.relationships.find_one(relationship_query, None).await {
-            Ok(res) => Ok(res.unwrap()),
-            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+        } else {
+            return Err(GrapevineError::NoRelationship(
+                sender.clone(),
+                recipient.clone(),
+            ));
         }
     }
 
@@ -736,49 +666,6 @@ impl GrapevineDB {
             Err(e) => Err(GrapevineError::MongoError(e.to_string())),
         }
     }
-
-    // /**
-    //  * Creates a new phrase document in the database
-    //  * @notice assumes that `get_phrase_by_{hash, oid}` has already been called
-    //  *
-    //  * @param phrase_hash - the hash of the phrase to create
-    //  * @param description - the description of the phrase
-    //  * @return: (0, 1)
-    //  *  - 0: the object id of the created phrase document
-    //  *  - 1: the index of the phrase
-    //  */
-    // pub async fn create_phrase(
-    //     &self,
-    //     phrase_hash: [u8; 32],
-    //     description: String,
-    // ) -> Result<(ObjectId, u32), GrapevineError> {
-    //     // query for the highest phrase id
-    //     let find_options = FindOneOptions::builder().sort(doc! {"index": -1}).build();
-
-    //     // Use find_one with options to get the document with the largest phrase_id
-    //     let index = match self.phrases.find_one(None, find_options).await {
-    //         Ok(Some(document)) => {
-    //             let previous_index = document.index.unwrap();
-    //             previous_index + 1
-    //         }
-    //         Ok(None) => 1,
-    //         Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-    //     };
-
-    //     // create new phrase document
-    //     let phrase = Phrase {
-    //         id: None,
-    //         index: Some(index),
-    //         hash: Some(phrase_hash),
-    //         description: Some(description),
-    //     };
-    //     let oid = match self.phrases.insert_one(&phrase, None).await {
-    //         Ok(res) => res.inserted_id.as_object_id().unwrap(),
-    //         Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-    //     };
-
-    //     Ok((oid, index))
-    // }
 
     /**
      * Adds an identity proof for a given user
@@ -1450,7 +1337,7 @@ impl GrapevineDB {
             doc! {
                 "$lookup": {
                     "from": "relationships",
-                    "let": { "sender": "$user_id", "recipient": "$relation" },
+                    "let": { "sender": "$relation", "recipient": "$user_id" },
                     "pipeline": [
                         {
                             "$match": {
@@ -1465,8 +1352,8 @@ impl GrapevineDB {
                         {
                             "$project": {
                                 "_id": 0,
-                                "encrypted_nullifier": 1,
-                                "encrypted_auth_signature": 1,
+                                "nullifier_ciphertext": 1,
+                                "signature_ciphertext": 1,
                                 "ephemeral_key": 1
                             }
                         }
@@ -1481,8 +1368,8 @@ impl GrapevineDB {
                     "_id": 0,
                     "proof": 1,
                     "relation_pubkey": 1,
-                    "encrypted_nullifier": "$relationship.encrypted_nullifier",
-                    "encrypted_auth_signature": "$relationship.encrypted_auth_signature",
+                    "nullifier_ciphertext": "$relationship.nullifier_ciphertext",
+                    "signature_ciphertext": "$relationship.signature_ciphertext",
                     "ephemeral_key": "$relationship.ephemeral_key"
                 }
             },
@@ -1496,8 +1383,9 @@ impl GrapevineDB {
                     let mut proof: Vec<u8> = vec![];
                     let mut relation_pubkey: [u8; 32] = [0; 32];
                     let mut ephemeral_key: [u8; 32] = [0; 32];
-                    let mut encrypted_auth_signature: [u8; 80] = [0; 80];
-                    let mut encrypted_nullifier: [u8; 48] = [0; 48];
+                    let mut signature_ciphertext: [u8; 80] = [0; 80];
+                    let mut nullifier_ciphertext: [u8; 48] = [0; 48];
+                    // can we just decrypt into a document?
                     if let Some(Bson::Binary(binary)) = document.get("proof") {
                         proof = binary.bytes.clone().try_into().unwrap();
                     };
@@ -1507,19 +1395,19 @@ impl GrapevineDB {
                     if let Some(Bson::Binary(binary)) = document.get("ephemeral_key") {
                         ephemeral_key = binary.bytes.clone().try_into().unwrap();
                     };
-                    if let Some(Bson::Binary(binary)) = document.get("encrypted_auth_signature") {
-                        encrypted_auth_signature = binary.bytes.clone().try_into().unwrap();
+                    if let Some(Bson::Binary(binary)) = document.get("signature_ciphertext") {
+                        signature_ciphertext = binary.bytes.clone().try_into().unwrap();
                     };
-                    if let Some(Bson::Binary(binary)) = document.get("encrypted_nullifier") {
-                        encrypted_nullifier = binary.bytes.clone().try_into().unwrap();
+                    if let Some(Bson::Binary(binary)) = document.get("nullifier_ciphertext") {
+                        nullifier_ciphertext = binary.bytes.clone().try_into().unwrap();
                     };
 
                     Some(ProvingData {
                         proof,
                         relation_pubkey,
                         ephemeral_key,
-                        signature_ciphertext: encrypted_auth_signature,
-                        nullifier_ciphertext: encrypted_nullifier,
+                        signature_ciphertext,
+                        nullifier_ciphertext,
                     })
                 }
                 Err(_) => {

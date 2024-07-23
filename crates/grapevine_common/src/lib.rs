@@ -2,7 +2,7 @@ use nova_scotia::{circom::circuit::CircomCircuit, C1, C2, F};
 use nova_snark::{provider, traits::circuit::TrivialTestCircuit, PublicParams, RecursiveSNARK};
 
 pub mod account;
-pub mod auth_signature;
+pub mod auth_secret;
 pub mod compat;
 pub mod crypto;
 pub mod errors;
