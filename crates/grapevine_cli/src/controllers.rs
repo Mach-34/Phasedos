@@ -11,7 +11,6 @@ use grapevine_circuits::nova::identity_proof;
 // use grapevine_circuits::nova::{continue_nova_proof, nova_proof, verify_nova_proof};
 use grapevine_circuits::utils::{compress_proof, decompress_proof};
 use grapevine_common::account::GrapevineAccount;
-use grapevine_common::auth_signature::AuthSignatureEncrypted;
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::{DegreeProofRequest, PhraseRequest};
 use grapevine_common::utils::random_fr;
@@ -424,9 +423,9 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
             degree.degree.unwrap()
         );
         if degree.relation.is_none() {
-            println!("Phrase created by this user");
-            let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
-            println!("Secret phrase: \"{}\"", phrase);
+            // println!("Phrase created by this user");
+            // let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
+            // println!("Secret phrase: \"{}\"", phrase);
         } else {
             println!("Your relation: {}", degree.relation.unwrap());
             if degree.preceding_relation.is_some() {
@@ -457,9 +456,9 @@ pub async fn get_known_phrases() -> Result<String, GrapevineError> {
             degree.phrase_index
         );
         println!("Description: \"{}\"", degree.description);
-        println!("Phrase hash: 0x{}", hex::encode(degree.phrase_hash));
-        let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
-        println!("Secret phrase: \"{}\"", phrase);
+        // println!("Phrase hash: 0x{}", hex::encode(degree.phrase_hash));
+        // let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
+        // println!("Secret phrase: \"{}\"", phrase);
     }
     Ok(String::from(""))
 }
@@ -494,8 +493,8 @@ pub async fn get_phrase(phrase_index: u32) -> Result<String, GrapevineError> {
     }
     if phrase_data.secret_phrase.is_some() {
         // If phrase is known, show secret
-        let decrypted_phrase = account.decrypt_phrase(&phrase_data.secret_phrase.unwrap());
-        println!("Secret phrase: \"{}\"", decrypted_phrase);
+        // let decrypted_phrase = account.decrypt_phrase(&phrase_data.secret_phrase.unwrap());
+        // println!("Secret phrase: \"{}\"", decrypted_phrase);
     } else {
         // If phrase is not known, show degrees of separation from origin + upstream relations
         println!(
