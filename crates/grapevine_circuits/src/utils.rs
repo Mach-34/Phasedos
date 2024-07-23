@@ -1,16 +1,9 @@
-use crate::ZERO;
-use babyjubjub_rs::{new_key, Point, Signature};
-use ff_ce::PrimeField;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use grapevine_common::compat::{convert_ff_ce_to_ff, convert_ff_to_ff_ce, ff_ce_from_le_bytes};
-use grapevine_common::utils::{convert_phrase_to_fr, convert_username_to_fr, random_fr};
-use grapevine_common::{auth_signature, Fr, NovaProof, Params};
-use num_bigint::{BigInt, Sign};
-use serde_json::{json, Value};
+use grapevine_common::{NovaProof, Params};
+use std::env::current_dir;
 use std::io::{Read, Write};
-use std::{collections::HashMap, env::current_dir};
 
 /**
  * Read in a previously computed public params file
@@ -88,23 +81,4 @@ pub fn decompress_proof(proof: &[u8]) -> NovaProof {
     decoder.read_to_string(&mut serialized).unwrap();
     // deserialize the proof
     serde_json::from_str(&serialized).unwrap()
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_phrase_to_fr() {
-        let phrase = String::from("And that's the waaaayyy the news goes");
-        let bytes = convert_phrase_to_fr(&phrase);
-        println!("Phrase bytes {:?}", bytes);
-    }
-
-    #[test]
-    fn test_username_to_fr() {
-        let username = String::from("Chad Chadson");
-        let bytes = convert_username_to_fr(&username);
-        println!("User bytes {:?}", bytes);
-    }
 }
