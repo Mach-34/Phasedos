@@ -539,32 +539,38 @@ mod test_rocket {
             assert_eq!(expected_secret, empirical_secret);
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_reject_relationship() {
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_no_relationship_with_self() {
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_reject_active_relationship() {
             // nullifiy, don't reject
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_reject_nonexistent_relationship() {
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_act_nullified_relationship() {
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_request_already_active_relationship() {
             todo!("Unimplemented")
@@ -624,16 +630,19 @@ mod test_rocket {
             );
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_nullify_pending_relationship() {
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_nullify_nullified_relationship() {
             todo!("Unimplemented")
         }
 
+        #[ignore]
         #[rocket::async_test]
         pub async fn test_cannot_nullify_nonexistent_relationship() {
             todo!("Unimplemented")

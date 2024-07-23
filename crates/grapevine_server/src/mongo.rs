@@ -1337,7 +1337,7 @@ impl GrapevineDB {
             doc! {
                 "$lookup": {
                     "from": "relationships",
-                    "let": { "sender": "$user_id", "recipient": "$relation" },
+                    "let": { "sender": "$relation", "recipient": "$user_id" },
                     "pipeline": [
                         {
                             "$match": {
@@ -1352,8 +1352,8 @@ impl GrapevineDB {
                         {
                             "$project": {
                                 "_id": 0,
-                                "encrypted_nullifier": 1,
-                                "encrypted_auth_signature": 1,
+                                "nullifier_ciphertext": 1,
+                                "signature_ciphertext": 1,
                                 "ephemeral_key": 1
                             }
                         }
@@ -1368,8 +1368,8 @@ impl GrapevineDB {
                     "_id": 0,
                     "proof": 1,
                     "relation_pubkey": 1,
-                    "encrypted_nullifier": "$relationship.encrypted_nullifier",
-                    "encrypted_auth_signature": "$relationship.encrypted_auth_signature",
+                    "nullifier_ciphertext": "$relationship.nullifier_ciphertext",
+                    "signature_ciphertext": "$relationship.signature_ciphertext",
                     "ephemeral_key": "$relationship.ephemeral_key"
                 }
             },
@@ -1383,8 +1383,9 @@ impl GrapevineDB {
                     let mut proof: Vec<u8> = vec![];
                     let mut relation_pubkey: [u8; 32] = [0; 32];
                     let mut ephemeral_key: [u8; 32] = [0; 32];
-                    let mut encrypted_auth_signature: [u8; 80] = [0; 80];
-                    let mut encrypted_nullifier: [u8; 48] = [0; 48];
+                    let mut signature_ciphertext: [u8; 80] = [0; 80];
+                    let mut nullifier_ciphertext: [u8; 48] = [0; 48];
+                    // can we just decrypt into a document?
                     if let Some(Bson::Binary(binary)) = document.get("proof") {
                         proof = binary.bytes.clone().try_into().unwrap();
                     };
@@ -1394,19 +1395,19 @@ impl GrapevineDB {
                     if let Some(Bson::Binary(binary)) = document.get("ephemeral_key") {
                         ephemeral_key = binary.bytes.clone().try_into().unwrap();
                     };
-                    if let Some(Bson::Binary(binary)) = document.get("encrypted_auth_signature") {
-                        encrypted_auth_signature = binary.bytes.clone().try_into().unwrap();
+                    if let Some(Bson::Binary(binary)) = document.get("signature_ciphertext") {
+                        signature_ciphertext = binary.bytes.clone().try_into().unwrap();
                     };
-                    if let Some(Bson::Binary(binary)) = document.get("encrypted_nullifier") {
-                        encrypted_nullifier = binary.bytes.clone().try_into().unwrap();
+                    if let Some(Bson::Binary(binary)) = document.get("nullifier_ciphertext") {
+                        nullifier_ciphertext = binary.bytes.clone().try_into().unwrap();
                     };
 
                     Some(ProvingData {
                         proof,
                         relation_pubkey,
                         ephemeral_key,
-                        signature_ciphertext: encrypted_auth_signature,
-                        nullifier_ciphertext: encrypted_nullifier,
+                        signature_ciphertext,
+                        nullifier_ciphertext,
                     })
                 }
                 Err(_) => {
