@@ -28,35 +28,35 @@ enum Commands {
     /// Commands for managing your Grapevine account
     #[command(subcommand, verbatim_doc_comment)]
     Account(AccountCommands),
-    // /// Commands for managing relationships
-    // #[command(subcommand, verbatim_doc_comment)]
-    // Relationship(RelationshipCommands),
+    /// Commands for managing relationships
+    #[command(subcommand, verbatim_doc_comment)]
+    Relationship(RelationshipCommands),
     // /// Commands for interacting with phrases and degree proofs
     // #[command(subcommand, verbatim_doc_comment)]
     // Phrase(PhraseCommands),
 }
 
-// #[derive(Subcommand)]
-// enum RelationshipCommands {
-//     /// Send a new relationship request or accept a pending request
-//     /// usage: `grapevine relationship add <username>`
-//     #[command(verbatim_doc_comment)]
-//     #[clap(value_parser)]
-//     Add { username: String },
-//     /// Show pending relationship requests from other users
-//     /// usage: `grapevine relationship pending`
-//     #[command(verbatim_doc_comment)]
-//     Pending,
-//     /// Reject a pending relationship request
-//     /// usage: `grapevine relationship reject <username>`
-//     #[command(verbatim_doc_comment)]
-//     #[clap(value_parser)]
-//     Reject { username: String },
-//     /// List the username of all of your active relationships
-//     /// usage: `grapevine relationship list`
-//     #[command(verbatim_doc_comment)]
-//     List,
-// }
+#[derive(Subcommand)]
+enum RelationshipCommands {
+    /// Send a new relationship request or accept a pending request
+    /// usage: `grapevine relationship add <username>`
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    Add { username: String },
+    /// Show pending relationship requests from other users
+    /// usage: `grapevine relationship pending`
+    #[command(verbatim_doc_comment)]
+    Pending,
+    /// Reject a pending relationship request
+    /// usage: `grapevine relationship reject <username>`
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    Reject { username: String },
+    /// List the username of all of your active relationships
+    /// usage: `grapevine relationship list`
+    #[command(verbatim_doc_comment)]
+    List,
+}
 
 #[derive(Subcommand)]
 enum AccountCommands {
@@ -117,14 +117,14 @@ pub async fn main() {
             AccountCommands::Info => controllers::account_details().await,
             AccountCommands::Export => controllers::export_key(),
         },
-        //     Commands::Relationship(cmd) => match cmd {
-        //         RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
-        //         RelationshipCommands::Pending => controllers::get_relationships(false).await,
-        //         RelationshipCommands::Reject { username } => {
-        //             controllers::reject_relationship(username).await
-        //         }
-        //         RelationshipCommands::List => controllers::get_relationships(true).await,
-        //     },
+        Commands::Relationship(cmd) => match cmd {
+            RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
+            RelationshipCommands::Pending => controllers::get_relationships(false).await,
+            RelationshipCommands::Reject { username } => {
+                controllers::reject_relationship(username).await
+            }
+            RelationshipCommands::List => controllers::get_relationships(true).await,
+        },
         //     Commands::Phrase(cmd) => match cmd {
         //         PhraseCommands::Prove {
         //             phrase,
