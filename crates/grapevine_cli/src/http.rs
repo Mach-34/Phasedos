@@ -136,9 +136,13 @@ pub async fn add_relationship_req(
     // produce signature over current nonce
     let signature = hex::encode(account.sign_nonce().compress());
     let client = Client::new();
+
+    // serialize request body
+    let serialized = bincode::serialize(&body).unwrap();
+
     let res = client
         .post(&url)
-        .json(&body)
+        .body(serialized)
         .header("X-Username", account.username())
         .header("X-Authorization", signature)
         .send()

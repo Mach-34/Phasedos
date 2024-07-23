@@ -6,7 +6,9 @@ use grapevine_common::models::{
     AvailableProofs, DegreeProofValidationData, GrapevineProof, ProvingData, Relationship, User,
 };
 use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
-use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
+use mongodb::options::{
+    ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion, UpdateOptions,
+};
 use mongodb::{Client, Collection};
 
 use crate::utils::serialize_bytes_to_bson;
@@ -282,6 +284,7 @@ impl GrapevineDB {
         let filter = doc! { "sender": sender, "recipient": recipient, "active": false };
         let update = doc! { "$set": { "active": true }};
         let result = self.relationships.update_one(filter, update, None).await;
+        println!("Activate result: {:?}", result);
         // check if successful
         match result {
             Ok(result) => match result.upserted_id {
@@ -295,103 +298,100 @@ impl GrapevineDB {
         }
     }
 
-    // /**
-    //  * Delete a pending relationship from one user to another
-    //  * @notice relationship must be pending / not active
-    //  *         Relationships cannot be removed since degree proofs may be built from them
-    //  *
-    //  * @param from - the user enabling relationship
-    //  * @param to - the user receiving relationship
-    //  * @returns - Ok if successful, Err otherwise
-    //  */
-    // pub async fn reject_relationship(
-    //     &self,
-    //     from: &String,
-    //     to: &String,
-    // ) -> Result<(), GrapevineError> {
-    //     // setup aggregation pipeline to get the ObjectID of the pending relationship to delete
-    //     let pipeline = vec![
-    //         // get the ObjectID of the recipient of the relationship request
-    //         doc! { "$match": { "username": to } },
-    //         doc! { "$project": { "_id": 1 } },
-    //         // lookup the ObjectID of the sender of the relationship request
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "users",
-    //                 "let": { "from": from },
-    //                 "as": "sender",
-    //                 "pipeline": [
-    //                     doc! { "$match": { "$expr": { "$eq": ["$username", "$$from"] } } },
-    //                     doc! { "$project": { "_id": 1 } }
-    //                 ],
-    //             }
-    //         },
-    //         doc! { "$unwind": "$sender" },
-    //         // project the ObjectID's of the sender and recipient
-    //         doc! { "$project": { "recipient": "$_id", "sender": "$sender._id" } },
-    //         // lookup the ObjectID of the pending relationship to delete
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "relationships",
-    //                 "let": { "sender": "$sender", "recipient": "$recipient" },
-    //                 "as": "relationship",
-    //                 "pipeline": [
-    //                     doc! {
-    //                         "$match": {
-    //                             "$expr": {
-    //                                 "$and": [
-    //                                     { "$eq": ["$sender", "$$sender"] },
-    //                                     { "$eq": ["$recipient", "$$recipient"] },
-    //                                     { "$eq": ["$active", false ] }
-    //                                 ]
-    //                             }
-    //                         }
-    //                     },
-    //                     doc! { "$project": { "_id": 1 } }
-    //                 ],
-    //             }
-    //         },
-    //         doc! { "$unwind": "$relationship" },
-    //         // project the ObjectID of the pending relationship to delete
-    //         doc! { "$project": { "relationship": "$relationship._id", "_id": 0 } },
-    //     ];
+    /**
+     * Delete a pending relationship from one user to another
+     * @notice relationship must be pending / not active
+     *         Relationships cannot be removed since degree proofs may be built from them
+     *
+     * @param from - the user enabling relationship
+     * @param to - the user receiving relationship
+     * @returns - Ok if successful, Err otherwise
+     */
+    pub async fn reject_relationship(
+        &self,
+        from: &String,
+        to: &String,
+    ) -> Result<(), GrapevineError> {
+        // setup aggregation pipeline to get the ObjectID of the pending relationship to delete
+        let pipeline = vec![
+            // get the ObjectID of the recipient of the relationship request
+            doc! { "$match": { "username": to } },
+            doc! { "$project": { "_id": 1 } },
+            // lookup the ObjectID of the sender of the relationship request
+            doc! {
+                "$lookup": {
+                    "from": "users",
+                    "let": { "from": from },
+                    "as": "sender",
+                    "pipeline": [
+                        doc! { "$match": { "$expr": { "$eq": ["$username", "$$from"] } } },
+                        doc! { "$project": { "_id": 1 } }
+                    ],
+                }
+            },
+            doc! { "$unwind": "$sender" },
+            // project the ObjectID's of the sender and recipient
+            doc! { "$project": { "recipient": "$_id", "sender": "$sender._id" } },
+            // lookup the ObjectID of the pending relationship to delete
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "sender": "$sender", "recipient": "$recipient" },
+                    "as": "relationship",
+                    "pipeline": [
+                        doc! {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": ["$sender", "$$sender"] },
+                                        { "$eq": ["$recipient", "$$recipient"] },
+                                        { "$eq": ["$active", false ] }
+                                    ]
+                                }
+                            }
+                        },
+                        doc! { "$project": { "_id": 1 } }
+                    ],
+                }
+            },
+            doc! { "$unwind": "$relationship" },
+            // project the ObjectID of the pending relationship to delete
+            doc! { "$project": { "relationship": "$relationship._id", "_id": 0 } },
+        ];
 
-    //     // get the OID of the pending relationship to delete
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     let oid: ObjectId = match cursor.next().await {
-    //         Some(Ok(document)) => {
-    //             println!("FOUND DOC: {:?}", document);
-    //             document
-    //                 .get("relationship")
-    //                 .unwrap()
-    //                 .as_object_id()
-    //                 .unwrap()
-    //         }
-    //         Some(Err(e)) => return Err(GrapevineError::MongoError(e.to_string())),
-    //         None => {
-    //             return Err(GrapevineError::NoPendingRelationship(
-    //                 from.clone(),
-    //                 to.clone(),
-    //             ))
-    //         }
-    //     };
+        // get the OID of the pending relationship to delete
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        let oid: ObjectId = match cursor.next().await {
+            Some(Ok(document)) => document
+                .get("relationship")
+                .unwrap()
+                .as_object_id()
+                .unwrap(),
+            Some(Err(e)) => return Err(GrapevineError::MongoError(e.to_string())),
+            None => {
+                return Err(GrapevineError::NoPendingRelationship(
+                    from.clone(),
+                    to.clone(),
+                ))
+            }
+        };
 
-    //     // delete the pending relationship
-    //     let filter = doc! { "_id": oid };
-    //     match self.relationships.delete_one(filter, None).await {
-    //         Ok(res) => match res.deleted_count == 1 {
-    //             true => (),
-    //             false => {
-    //                 return Err(GrapevineError::MongoError(
-    //                     "Failed to delete relationship".to_string(),
-    //                 ))
-    //             }
-    //         },
-    //         Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
-    //     }
+        // delete the pending relationship
+        let filter = doc! { "_id": oid };
+        match self.relationships.delete_one(filter, None).await {
+            Ok(res) => match res.deleted_count == 1 {
+                true => (),
+                false => {
+                    return Err(GrapevineError::MongoError(
+                        "Failed to delete relationship".to_string(),
+                    ))
+                }
+            },
+            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        }
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     /**
      * Returns a relationship from a specified sender and recipient username

@@ -250,16 +250,25 @@ pub async fn add_relationship(
         add_error = Some(e);
     } else if pending {
         // if pending relationship exists and previous step was successful, activate (todo: transactions)
-        if let Err(e) = db.activate_relationship(&recipient.id.unwrap(), &sender.id.unwrap()).await {
+        if let Err(e) = db
+            .activate_relationship(&recipient.id.unwrap(), &sender.id.unwrap())
+            .await
+        {
             add_error = Some(e);
         }
     };
 
     // handle outcome
     match add_error {
-        Some(err) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(err), None))),
+        Some(err) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(err),
+            None,
+        ))),
         None => {
-            let msg = match pending { true => "activated", false => "pending" };
+            let msg = match pending {
+                true => "activated",
+                false => "pending",
+            };
             Ok(GrapevineResponse::Created(format!(
                 "Relationship from {} to {} {}!",
                 user.0, request.to, msg
@@ -279,7 +288,7 @@ pub async fn add_relationship(
  *            * 500 if db fails or other unknown issue    
  */
 // relationship prefix removed for now due to route collision with get_relationship
-#[get("/nullifier-secret/<recipient>")]
+#[get("/<recipient>/nullifier-secret")]
 pub async fn get_nullifier_secret(
     recipient: String,
     user: AuthenticatedUser,
@@ -377,41 +386,42 @@ pub async fn get_relationship(
     }
 }
 
-// #[post("/relationship/reject/<username>")]
-// pub async fn reject_pending_relationship(
-//     user: AuthenticatedUser,
-//     username: String,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Status, GrapevineResponse> {
-//     // attempt to delete the pending relationship
-//     println!("Rejecting relationship from {} to {}", username, user.0);
-//     match db.reject_relationship(&username, &user.0).await {
-//         Ok(_) => Ok(Status::Ok),
-//         Err(e) => match e {
-//             GrapevineError::NoPendingRelationship(from, to) => Err(GrapevineResponse::NotFound(
-//                 format!("No pending relationship exists from {} to {}", from, to),
-//             )),
-//             _ => Err(GrapevineResponse::InternalError(ErrorMessage(
-//                 Some(e),
-//                 None,
-//             ))),
-//         },
-//     }
-// }
+#[post("/relationship/reject/<username>")]
+pub async fn reject_pending_relationship(
+    user: AuthenticatedUser,
+    username: String,
+    db: &State<GrapevineDB>,
+) -> Result<Status, GrapevineResponse> {
+    // attempt to delete the pending relationship
+    println!("Rejecting relationship from {} to {}", username, user.0);
+    match db.reject_relationship(&username, &user.0).await {
+        Ok(_) => Ok(Status::Ok),
+        Err(e) => match e {
+            GrapevineError::NoPendingRelationship(from, to) => Err(GrapevineResponse::NotFound(
+                format!("No pending relationship exists from {} to {}", from, to),
+            )),
+            _ => Err(GrapevineResponse::InternalError(ErrorMessage(
+                Some(e),
+                None,
+            ))),
+        },
+    }
+}
 
-// #[get("/relationship/pending")]
-// pub async fn get_pending_relationships(
-//     user: AuthenticatedUser,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<Vec<String>>, GrapevineResponse> {
-//     match db.get_relationships(&user.0, false).await {
-//         Ok(relationships) => Ok(Json(relationships)),
-//         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(e),
-//             None,
-//         ))),
-//     }
-// }
+#[get("/relationship/pending")]
+pub async fn get_pending_relationships(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<String>>, GrapevineResponse> {
+    match db.get_relationships(&user.0, false).await {
+        Ok(relationships) => Ok(Json(relationships)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        ))),
+    }
+}
+
 #[get("/relationship/active")]
 pub async fn get_active_relationships(
     user: AuthenticatedUser,
@@ -488,28 +498,28 @@ pub async fn get_nonce(
     Ok(nonce.to_string())
 }
 
-// // /**
-// //  * Return the public key of a given user
-// //  *
-// //  * @param username - the username to look up the public key for
-// //  * @return - the public key of the user
-// //  * @return status:
-// //  *            * 200 if success
-// //  *            * 404 if user not found
-// //  *            * 500 if db fails or other unknown issue
-// //  */
-// // #[get("/<username>/pubkey")]
-// // pub async fn get_pubkey(
-// //     username: String,
-// //     db: &State<GrapevineDB>,
-// // ) -> Result<String, GrapevineResponse> {
-// //     match db.get_pubkey(username).await {
-// //         Some(pubkey) => Ok(hex::encode(pubkey)),
-// //         None => Err(GrapevineResponse::NotFound(String::from(
-// //             "User not does not exist.",
-// //         ))),
-// //     }
-// // }
+/**
+ * Return the public key of a given user
+ *
+ * @param username - the username to look up the public key for
+ * @return - the public key of the user
+ * @return status:
+ *            * 200 if success
+ *            * 404 if user not found
+ *            * 500 if db fails or other unknown issue
+ */
+#[get("/<username>/pubkey")]
+pub async fn get_pubkey(
+    username: String,
+    db: &State<GrapevineDB>,
+) -> Result<String, GrapevineResponse> {
+    match db.get_pubkey(&username).await {
+        Some(pubkey) => Ok(hex::encode(pubkey.0)),
+        None => Err(GrapevineResponse::NotFound(String::from(
+            "User not does not exist.",
+        ))),
+    }
+}
 
 // // /**
 // //  * Return a list of all available (new) degree proofs from existing connections that a user can

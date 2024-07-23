@@ -280,7 +280,7 @@ mod test_rocket {
             // mock transmit the request
             let encrypted_nullifier_secret: [u8; 48] = context
                 .client
-                .get(format!("/user/nullifier-secret/{}", recipient))
+                .get(format!("/user/{}/nullifier-secret", recipient))
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .dispatch()
@@ -519,22 +519,20 @@ mod test_rocket {
             http_create_user(&context, &user_request_b).await;
 
             // add relationship as user_a to user_b
-            let request =
-                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+            let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
 
             http_add_relationship(&context, &mut user_a, &request).await;
 
             // accept relation from user_a as user_b
-            let request =
-                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+            let request = user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
             let expected_nullifier_secret_ciphertext = request.nullifier_secret_ciphertext;
             http_add_relationship(&context, &mut user_b, &request).await;
 
             // check stored nullifier secret integrity
             let nullifier_secret_ciphertext =
                 http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
-            let expected_secret = user_b
-                .decrypt_nullifier_secret(expected_nullifier_secret_ciphertext);
+            let expected_secret =
+                user_b.decrypt_nullifier_secret(expected_nullifier_secret_ciphertext);
             let empirical_secret = user_b.decrypt_nullifier_secret(nullifier_secret_ciphertext);
             assert_eq!(expected_secret, empirical_secret);
         }
@@ -575,7 +573,6 @@ mod test_rocket {
         pub async fn test_cannot_request_already_active_relationship() {
             todo!("Unimplemented")
         }
-
 
         #[rocket::async_test]
         pub async fn test_nullifier_emission() {
@@ -647,7 +644,6 @@ mod test_rocket {
         pub async fn test_cannot_nullify_nonexistent_relationship() {
             todo!("Unimplemented")
         }
-
     }
 
     #[cfg(test)]
