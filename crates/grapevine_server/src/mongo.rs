@@ -1293,6 +1293,62 @@ impl GrapevineDB {
     //     Some(degrees)
     // }
 
+    pub async fn find_proof_by_scope(&self, username: &String, scope: &String) -> Option<GrapevineProof> {
+        // pipeline to retrieve proof given relation = username and scope = scope
+        let pipeline = vec![
+            doc! {
+                "$facet": {
+                    "relation": [
+                        { "$match": { "username": username } },
+                        { "$project": { "_id": 1 } }
+                    ],
+                    "scope": [
+                        { "$match": { "username": scope } },
+                        { "$project": { "_id": 1 } }
+                    ]
+                }
+            },
+            doc! {
+                "$project": {
+                    "relation": { "$arrayElemAt": ["$relation._id", 0] },
+                    "scope": { "$arrayElemAt": ["$scope._id", 0] }
+                }
+            },
+            doc! {
+                "$lookup": {
+                    "from": "proofs",
+                    "let": { "relationId": "$relation", "scopeId": "$scope" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": ["$relation", "$$relationId"] },
+                                        { "$eq": ["$scope", "$$scopeId"] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    "as": "proof"
+                }
+            },
+            doc! { "$unwind": "$proof" },
+            doc! { "$replaceRoot": { "newRoot": "$proof" }},
+        ];
+        
+        // try to get the returned proof
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => Some(bson::from_bson(bson::Bson::Document(document)).unwrap()),
+                Err(_) => None
+            }
+        } else {
+            None
+        }
+    }
+
     /**
      * Get a proof from the server with all info needed to prove a degree of separation as a given user
      *
@@ -1450,7 +1506,7 @@ impl GrapevineDB {
 
     /**
      * Determines whether any nullifiers for a given proof are emitted in relationships
-     * 
+     *
      * @param nullifiers - the nullifiers to search for
      * @returns - if successful, a boolean whether or not the nullifiers are not emitted (true = emitted)
      */

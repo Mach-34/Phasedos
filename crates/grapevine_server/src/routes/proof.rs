@@ -511,6 +511,24 @@ pub async fn get_available_proofs(
 }
 
 /**
+ * Allows a user to return their own proof for a given scope
+ * 
+ * @param scope - the username of the scope of the proof chain
+ * @returns - the full proof document
+ */
+#[get("/scope/<scope>")]
+pub async fn get_proof_by_scope(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+    scope: String,
+) -> Result<Json<GrapevineProof>, GrapevineResponse> {
+    match db.find_proof_by_scope(&user.0, &scope).await {
+        Some(doc) => Ok(Json(doc)),
+        None => Err(GrapevineResponse::NotFound(format!("Proof by {} for scope {}", &user.0, &scope)))
+    }
+}
+
+/**
  * Returns all the information needed to construct a proof of degree of separation from a given user
  *
  * @param oid - the ObjectID of the proof to retrieve
