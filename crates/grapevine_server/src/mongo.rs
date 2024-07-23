@@ -284,12 +284,11 @@ impl GrapevineDB {
         let filter = doc! { "sender": sender, "recipient": recipient, "active": false };
         let update = doc! { "$set": { "active": true }};
         let result = self.relationships.update_one(filter, update, None).await;
-        println!("Activate result: {:?}", result);
         // check if successful
         match result {
-            Ok(result) => match result.upserted_id {
-                Some(_) => Ok(()),
-                None => Err(GrapevineError::NoPendingRelationship(
+            Ok(result) => match result.matched_count {
+                1 => Ok(()),
+                _ => Err(GrapevineError::NoPendingRelationship(
                     sender.to_hex(),
                     recipient.to_hex(),
                 )),
