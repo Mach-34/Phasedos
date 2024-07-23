@@ -739,9 +739,7 @@ mod test_rocket {
             )
             .unwrap();
             // verify proof
-            let res = verify_grapevine_proof(&proof, &ARTIFACTS.params, degree as usize + 1)
-                .unwrap()
-                .0;
+            _ = verify_grapevine_proof(&proof, &ARTIFACTS.params, degree as usize + 1).unwrap();
             // build DegreeProofRequest
             let compressed = compress_proof(&proof);
             let degree_proof_request = DegreeProofRequest {
@@ -755,50 +753,85 @@ mod test_rocket {
             assert_eq!(code, Status::Created.code);
         }
 
-        // #[rocket::async_test]
-        // pub async fn test_no_degree_gt_8() {
-        //     // Setup
-        //     let context = GrapevineTestContext::init().await;
-        //     GrapevineDB::drop("grapevine_mocked").await;
-        //     // create users
-        //     let num_users = 5;
-        //     let mut users: Vec<GrapevineAccount> = vec![];
-        //     for i in 0..num_users {
-        //         let username = format!("user_{}", i);
-        //         let user = GrapevineAccount::new(username.into());
-        //         let request = build_create_user_request(&user);
-        //         http_create_user(&context, &request).await;
-        //         users.push(user);
-        //     }
-        //     // establish relationship chain for users
-        //     for i in 0..num_users - 1 {
-        //         let request = users[i]
-        //             .new_relationship_request(users[i + 1].username(), &users[i + 1].pubkey());
-        //         http_add_relationship(&context, &mut users[i], &request).await;
-        //         let request =
-        //             users[i + 1].new_relationship_request(users[i].username(), &users[i].pubkey());
-        //         http_add_relationship(&context, &mut users[i + 1], &request).await;
-        //     }
-        //     // build proof chain to max available degree
-        //     let scope_to_find = users[0].username();
-        //     for i in 1..num_users - 1 {
-        //         // select the specific proof to build from
-        //         let degree_to_find = i - 1 as u8;
-        //         let relation_to_find = users[i - 1].username();
-        //         let available_proofs = http_get_available_proofs(&context, &mut users[i]).await;
-        //         let proof_data = available_proofs
-        //             .iter()
-        //             .find(|&proof| {
-        //                 proof.degree == degree_to_find && proof.relation == relation_to_find
-        //             })
-        //             .unwrap();
-        //         // retrieve proving data
-        //         let proving_data =
-        //             http_get_proving_data(&context, &mut users[i], &proof_data.id.to_string())
-        //                 .await;
-        //         //
-        //     }
-        // }
+        #[rocket::async_test]
+        pub async fn test_degree_8_linear() {
+            // Setup
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // create users
+            let num_users = 8;
+            let mut users: Vec<GrapevineAccount> = vec![];
+            for i in 0..num_users {
+                let username = format!("user_{}", i);
+                let user = GrapevineAccount::new(username.into());
+                let request = build_create_user_request(&user);
+                http_create_user(&context, &request).await;
+                users.push(user);
+            }
+            // establish relationship chain for users
+            for i in 0..num_users - 1 {
+                let request = users[i]
+                    .new_relationship_request(users[i + 1].username(), &users[i + 1].pubkey());
+                http_add_relationship(&context, &mut users[i], &request).await;
+                let request =
+                    users[i + 1].new_relationship_request(users[i].username(), &users[i].pubkey());
+                http_add_relationship(&context, &mut users[i + 1], &request).await;
+            }
+            // build proof chain to max available degree
+            let scope_to_find = String::from("user_0");
+            for i in 1..num_users {
+                let mut prover = users.remove(i);
+                let previous = users.remove(i - 1);
+                // select the specific proof to build from
+                let available_proofs = http_get_available_proofs(&context, &mut prover).await;
+                println!("Proofs: {:?}", available_proofs);
+                let available_proof = available_proofs
+                    .iter()
+                    .find(|&proof| scope_to_find == proof.scope)
+                    .unwrap();
+                // retrieve proving data
+                let degree = available_proof.degree;
+                let proving_data =
+                    http_get_proving_data(&context, &mut prover, &available_proof.id.to_string())
+                        .await;
+                // parse
+                let (mut proof, inputs, outputs) =
+                    build_degree_inputs(&prover, &proving_data, degree as u8);
+                // prove
+                degree_proof(
+                    &ARTIFACTS,
+                    &inputs,
+                    &mut proof,
+                    &outputs.try_into().unwrap(),
+                )
+                .unwrap();
+                // build DegreeProofRequest
+                let compressed = compress_proof(&proof);
+                let degree_proof_request = DegreeProofRequest {
+                    proof: compressed,
+                    previous: available_proof.id.to_string(),
+                    degree: degree + 1,
+                };
+                println!("Submitting {} ({})", &degree_proof_request.previous, &degree_proof_request.degree);
+                let (code, msg) =
+                    http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
+                println!("Degree {} posted: returned {} with message \"{}\"", degree + 1, code, msg);
+                users.insert(i - 1, previous);
+                users.insert(i, prover);
+            }
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_nullify_prevent_new_proofs() {
+            todo!("Unimplemented")
+        }
+
+        #[ignore]
+        #[rocket::async_test]
+        pub async fn test_nullify_existing_proofs() {
+            todo!("Unimplemented")
+        }
     }
 
     //     // @TODO: Change eventually because to doesn't need to be mutable?

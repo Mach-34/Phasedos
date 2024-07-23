@@ -433,7 +433,7 @@ pub async fn degree_proof(
         .collect();
     let scope = Fr::from_repr(validation_data.scope).unwrap();
     let prev_degree = Fr::from(validation_data.degree as u64);
-    let new_nullifier = &output.nullifiers[prev_nullifiers.len()];
+    let new_nullifier = &output.nullifiers[validation_data.degree as usize];
     if prover_address.ne(&output.relation) {
         verify_err = Some(String::from("Relation does not match caller"))
     } else if scope.ne(&output.scope) {
@@ -445,7 +445,7 @@ pub async fn degree_proof(
     } else if new_nullifier.eq(&Fr::zero()) {
         verify_err = Some(String::from("New nullifier is not set"))
     }
-    for i in 0..prev_nullifiers.len() {
+    for i in 0..validation_data.degree as usize {
         if (&prev_nullifiers[i]).ne(&output.nullifiers[i]) {
             verify_err = Some(String::from("Nullifiers do not match"))
         }
