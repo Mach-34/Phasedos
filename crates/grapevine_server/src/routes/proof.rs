@@ -373,10 +373,10 @@ pub async fn degree_proof(
     // stream in data
     // todo: implement FromData trait on DegreeProofRequest
     let mut buffer = Vec::new();
-    let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
+    let mut stream = data.open(3.mebibytes()); // Adjust size limit as needed
     if let Err(_) = stream.read_to_end(&mut buffer).await {
         return Err(GrapevineResponse::TooLarge(
-            "Request body execeeds 2 MiB".to_string(),
+            "Request body execeeds 3 MiB".to_string(),
         ));
     }
     let request = match bincode::deserialize::<DegreeProofRequest>(&buffer) {

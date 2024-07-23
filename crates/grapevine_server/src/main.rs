@@ -694,7 +694,9 @@ mod test_rocket {
 
     #[cfg(test)]
     mod degree_proof_tests {
+        use bincode::Serializer;
         use grapevine_circuits::nova::{degree_proof, verify_grapevine_proof};
+        use serde::Serialize;
 
         use super::*;
         use crate::test_rocket::test_helper::*;
@@ -812,7 +814,9 @@ mod test_rocket {
                     previous: available_proof.id.to_string(),
                     degree: degree + 1,
                 };
-                println!("Submitting {} ({})", &degree_proof_request.previous, &degree_proof_request.degree);
+                let x =  bincode::serialize(&degree_proof_request).unwrap();
+                println!("Serialized length: {}", x.len());
+                println!("Submitting {} ({})", &degree_proof_request.previous, &degree_proof_request.degree);   
                 let (code, msg) =
                     http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
                 println!("Degree {} posted: returned {} with message \"{}\"", degree + 1, code, msg);
