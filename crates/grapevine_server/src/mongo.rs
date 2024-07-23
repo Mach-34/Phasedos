@@ -1428,7 +1428,7 @@ impl GrapevineDB {
      * @returns - the number of proofs deleted
      */
     pub async fn delete_nullified_proofs(
-        self,
+        &self,
         nullifier: &[u8; 32],
     ) -> Result<u64, GrapevineError> {
         // filter to find all matching nullifiers

@@ -294,7 +294,7 @@ mod test_rocket {
 
             let res = context
                 .client
-                .post("/user/relationship/emit-nullifier")
+                .post("/user/relationship/nullify")
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .body(serialized)
