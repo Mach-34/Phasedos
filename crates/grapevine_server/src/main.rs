@@ -761,7 +761,7 @@ mod test_rocket {
             let context = GrapevineTestContext::init().await;
             GrapevineDB::drop("grapevine_mocked").await;
             // create users
-            let num_users = 8;
+            let num_users = 9;
             let mut users: Vec<GrapevineAccount> = vec![];
             for i in 0..num_users {
                 let username = format!("user_{}", i);

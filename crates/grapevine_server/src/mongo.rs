@@ -1421,6 +1421,95 @@ impl GrapevineDB {
         }
     }
 
+    /**
+     * Deletes all proofs that have matching nullifiers
+     *
+     * @param nullifier - the nullifier to match
+     * @returns - the number of proofs deleted
+     */
+    pub async fn delete_nullified_proofs(
+        self,
+        nullifier: &[u8; 32],
+    ) -> Result<u64, GrapevineError> {
+        // filter to find all matching nullifiers
+        let filter = doc! {
+            "nullifiers": {
+                "$elemMatch": {
+                    "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                }
+            }
+        };
+        match self.proofs.delete_many(filter, None).await {
+            Ok(result) => Ok(result.deleted_count),
+            Err(e) => {
+                println!("Error: {}", e);
+                Err(GrapevineError::MongoError(e.to_string()))
+            }
+        }
+    }
+
+    /**
+     * Determines whether any nullifiers for a given proof are emitted in relationships
+     * 
+     * @param nullifiers - the nullifiers to search for
+     * @returns - if successful, a boolean whether or not the nullifiers are not emitted (true = emitted)
+     */
+    pub async fn search_for_emitted_nullifiers(
+        self,
+        nullifiers: &Vec<[u8; 32]>,
+    ) -> Result<bool, GrapevineError> {
+        Ok(false)
+    }
+
+    pub async fn find_proofs_matching_nullifiers(
+        self,
+        nullifiers: &Vec<[u8; 32]>,
+    ) -> Result<Vec<ObjectId>, GrapevineError> {
+        // prune the nullifiers that are 0x00
+        let nullifiers: Vec<[u8; 32]> = nullifiers
+            .iter()
+            .filter(|nullifier| **nullifier != [0; 32])
+            .map(|nullifier| *nullifier)
+            .collect();
+        // set up query
+        let or_conditions: Vec<_> = nullifiers.iter()
+            .map(|target_array| doc! {
+                "nullifiers": {
+                    "$elemMatch": {
+                        "$eq": Bson::Array(target_array.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                    }
+                }
+            })
+            .collect();
+        let pipeline = vec![
+            doc! { "$match": { "$or": or_conditions }},
+            doc! { "$project": { "_id": 1 }},
+        ];
+
+        let cursor = self.proofs.aggregate(pipeline, None).await;
+        match cursor {
+            Ok(mut cursor) => {
+                let mut proof_oids: Vec<ObjectId> = vec![];
+                while let Some(result) = cursor.next().await {
+                    match result {
+                        Ok(document) => {
+                            let oid = document.get("_id").unwrap().as_object_id().unwrap();
+                            proof_oids.push(oid.clone());
+                        }
+                        Err(e) => {
+                            println!("Error: {}", e);
+                            return Err(GrapevineError::MongoError(e.to_string()));
+                        }
+                    }
+                }
+                Ok(proof_oids)
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+                Err(GrapevineError::MongoError(e.to_string()))
+            }
+        }
+    }
     // /**
     // * Get details on account:
     //    - # of first degree connections
