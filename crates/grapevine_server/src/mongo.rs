@@ -1510,12 +1510,47 @@ impl GrapevineDB {
      * @param nullifiers - the nullifiers to search for
      * @returns - if successful, a boolean whether or not the nullifiers are not emitted (true = emitted)
      */
-    pub async fn search_for_emitted_nullifiers(
+    pub async fn contains_emitted_nullifiers(
         self,
         nullifiers: &Vec<[u8; 32]>,
     ) -> Result<bool, GrapevineError> {
-        Ok(false)
-    }
+        // prune the nullifiers that are 0x00
+        let nullifiers: Vec<[u8; 32]> = nullifiers
+            .iter()
+            .filter(|nullifier| **nullifier != [0; 32])
+            .map(|nullifier| *nullifier)
+            .collect();
+        // define the conditoinal matching
+        let match_conditions: Vec<_> = nullifiers.iter()
+            .map(|nullifier| doc! {
+                "emitted_nullifier": {
+                    "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                }
+            })
+            .collect();
+        // pipeline to count relationships that match any of the emitted nullifiers
+        let pipeline = [
+            doc! { "$match": { "$or": match_conditions }},
+            doc! { "$count": "matchedCount" }
+        ];
+        // determine if any matching nullifiers were found
+        let mut cursor = self.relationships.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(doc) => {
+                    let count = doc.get("matchedCount").unwrap().as_i32().unwrap();
+                    Ok(count != 0)
+                },
+                Err(e) => {
+                    println!("Error: {}", &e.to_string());
+                    Err(GrapevineError::MongoError(e.to_string()))
+                }
+            }
+        } else {
+            Err(GrapevineError::InternalError)
+        }
+        
+    }   
 
     pub async fn find_proofs_matching_nullifiers(
         self,
