@@ -43,6 +43,11 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Add { username: String },
+    /// Returns nullifier secret for a given relationship in hex format
+    /// usage: `grapevine relationship nullifier-secret <username>`
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    NullifierSecret { username: String },
     /// Show pending relationship requests from other users
     /// usage: `grapevine relationship pending`
     #[command(verbatim_doc_comment)]
@@ -119,6 +124,9 @@ pub async fn main() {
         },
         Commands::Relationship(cmd) => match cmd {
             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
+            RelationshipCommands::NullifierSecret { username } => {
+                controllers::nullifier_secret(username).await
+            }
             RelationshipCommands::Pending => controllers::get_relationships(false).await,
             RelationshipCommands::Reject { username } => {
                 controllers::reject_relationship(username).await

@@ -320,6 +320,46 @@ pub async fn get_known_req(
     }
 }
 
+/**
+ * Make request to retrieve nullifier secret for relationship specified by recipient
+ * of nullifier
+ *
+ * @param account - account of the user that owns nullifier secret
+ * @param recipient - username of recipient of nullifier in relationship
+ */
+pub async fn get_nullifier_secret(
+    account: &mut GrapevineAccount,
+    recipient: &String,
+) -> Result<Vec<u8>, GrapevineError> {
+    let url = format!("{}/user/{}/nullifier-secret", &**SERVER_URL, recipient);
+
+    // produce signature over current nonce
+    let signature = hex::encode(account.sign_nonce().compress());
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .header("X-Username", account.username())
+        .header("X-Authorization", signature)
+        .send()
+        .await
+        .unwrap();
+
+    let data = match res.status() {
+        StatusCode::OK => {
+            // increment nonce
+            let data = res.bytes().await.unwrap().to_vec();
+            Ok(data)
+        }
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
+    };
+
+    account
+        .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
+        .unwrap();
+
+    data
+}
+
 pub async fn get_phrase_req(
     phrase_index: u32,
     account: &mut GrapevineAccount,

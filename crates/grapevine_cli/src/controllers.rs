@@ -1,7 +1,7 @@
 use crate::http::{
     add_relationship_req, create_user_req, degree_proof_req, get_account_details_req,
-    get_available_proofs_req, get_degrees_req, get_known_req, get_nonce_req, get_phrase_req,
-    get_pubkey_req, get_relationships_req, phrase_req, reject_relationship_req,
+    get_available_proofs_req, get_degrees_req, get_known_req, get_nonce_req, get_nullifier_secret,
+    get_phrase_req, get_pubkey_req, get_relationships_req, phrase_req, reject_relationship_req,
     show_connections_req,
 };
 use crate::utils::artifacts_guard;
@@ -65,6 +65,16 @@ pub fn export_key() -> Result<String, GrapevineError> {
         account.username(),
         pk,
     ))
+}
+
+pub async fn nullifier_secret(username: &String) -> Result<String, GrapevineError> {
+    let mut account = get_account()?;
+    let res = get_nullifier_secret(&mut account, username).await;
+    match res {
+        Ok(data) => Ok(hex::encode(data)),
+        // TODO: Keep as internal error for now until error handling refactor
+        Err(e) => Err(e),
+    }
 }
 
 /**
