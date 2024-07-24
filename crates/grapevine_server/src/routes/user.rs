@@ -242,7 +242,6 @@ pub async fn emit_nullifier(
         }
     };
 
-    println!("Nullifier: {:?}", &request.nullifier);
     // store the emitted nullifier and terminate/ nullify the relationship
     if let Err(e) = db
         .terminate_relationship(request.nullifier, &user.0, &request.recipient)

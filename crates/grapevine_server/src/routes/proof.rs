@@ -13,8 +13,8 @@ use grapevine_common::{
     crypto::pubkey_to_address,
     errors::GrapevineError,
     http::{
-        requests::{CreateUserRequest, DegreeProofRequest, PhraseRequest},
-        responses::{DegreeData, PhraseCreationResponse},
+        requests::{CreateUserRequest, DegreeProofRequest},
+        responses::DegreeData,
     },
     models::{GrapevineProof, User},
     Fr, MAX_USERNAME_CHARS,
@@ -515,7 +515,7 @@ pub async fn degree_proof(
     }
 }
 
-// /// GET REQUESTS ///
+/// GET REQUESTS ///
 
 /**
  * Return a list of all available (new) degree proofs from existing connections that a user can

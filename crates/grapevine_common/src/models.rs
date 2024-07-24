@@ -60,7 +60,6 @@ pub struct Relationship {
     pub recipient: Option<ObjectId>,
     #[serde(default, with = "serde_bytes")]
     pub ephemeral_key: Option<[u8; 32]>, // pubkey + recipient privkey decrypts auth secret
-    #[serde(default, with = "serde_bytes")]
     pub emitted_nullifier: Option<[u8; 32]>, // if Some, then relationship is nullified
     #[serde(default, with = "serde_bytes")]
     pub signature_ciphertext: Option<[u8; 80]>, // decryptable by recipient for proving

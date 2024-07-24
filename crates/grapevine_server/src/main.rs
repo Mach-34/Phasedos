@@ -61,10 +61,8 @@ mod test_rocket {
         auth_secret::AuthSecretEncrypted,
         compat::ff_ce_to_le_bytes,
         http::{
-            requests::{
-                CreateUserRequest, DegreeProofRequest, NewRelationshipRequest, PhraseRequest,
-            },
-            responses::{DegreeData, PhraseCreationResponse},
+            requests::{CreateUserRequest, DegreeProofRequest, NewRelationshipRequest},
+            responses::DegreeData,
         },
         models::User,
         utils::random_fr,
@@ -813,7 +811,6 @@ mod test_rocket {
                 let previous = users.remove(i - 1);
                 // select the specific proof to build from
                 let available_proofs = http_get_available_proofs(&context, &mut prover).await;
-                println!("Proofs: {:?}", available_proofs);
                 let available_proof = available_proofs
                     .iter()
                     .find(|&proof| scope_to_find == proof.scope)
@@ -843,12 +840,6 @@ mod test_rocket {
                 };
                 let (code, msg) =
                     http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
-                println!(
-                    "Degree {} posted: returned {} with message \"{}\"",
-                    degree + 1,
-                    code,
-                    msg
-                );
                 users.insert(i - 1, previous);
                 users.insert(i, prover);
             }
@@ -1006,7 +997,8 @@ mod test_rocket {
                 previous: available_proof.id.to_string(),
                 degree: 1,
             };
-            _ = http_submit_degree_proof(&context, &mut user_1, degree_proof_request).await;
+            let (code, msg) =
+                http_submit_degree_proof(&context, &mut user_1, degree_proof_request).await;
             // retrieve the next degree proof
             let available_proofs = http_get_available_proofs(&context, &mut user_2).await;
             let available_proof = available_proofs
@@ -1028,6 +1020,29 @@ mod test_rocket {
                 user_1.username(),
             )
             .await;
+            // prove and submit now nullified proof
+            let (mut proof, inputs, outputs) = build_degree_inputs(&user_2, &proving_data, 1);
+            degree_proof(
+                &ARTIFACTS,
+                &inputs,
+                &mut proof,
+                &outputs.try_into().unwrap(),
+            )
+            .unwrap();
+            let compressed = compress_proof(&proof);
+            let degree_proof_request = DegreeProofRequest {
+                proof: compressed,
+                previous: available_proof.id.to_string(),
+                degree: 2,
+            };
+            // check expected output
+            let (code, msg) =
+                http_submit_degree_proof(&context, &mut user_2, degree_proof_request).await;
+            let expected_code = Status::BadRequest.code;
+            assert_eq!(code, expected_code);
+            let expected_message = String::from("{\"ProofFailed\":\"Contains emitted nullifiers\"}");
+            assert_eq!(msg, expected_message);
+
         }
     }
 

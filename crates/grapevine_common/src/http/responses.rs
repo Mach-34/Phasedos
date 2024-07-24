@@ -12,9 +12,3 @@ pub struct DegreeData {
     #[serde(with = "serde_bytes")]
     pub secret_phrase: Option<[u8; 192]>
 }
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PhraseCreationResponse {
-    pub phrase_index: u32,
-    pub new_phrase: bool,
-}

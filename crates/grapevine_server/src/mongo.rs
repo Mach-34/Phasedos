@@ -1521,10 +1521,15 @@ impl GrapevineDB {
             .map(|nullifier| *nullifier)
             .collect();
         // define the conditoinal matching
+
         let match_conditions: Vec<_> = nullifiers.iter()
             .map(|nullifier| doc! {
                 "emitted_nullifier": {
-                    "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                    // "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                    "$eq": Binary {
+                        subtype: bson::spec::BinarySubtype::Generic,
+                        bytes: nullifier.to_vec(),
+                    }
                 }
             })
             .collect();
@@ -1547,7 +1552,7 @@ impl GrapevineDB {
                 }
             }
         } else {
-            Err(GrapevineError::InternalError)
+            Ok(false)
         }
         
     }   
