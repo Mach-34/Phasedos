@@ -1511,7 +1511,7 @@ impl GrapevineDB {
      * @returns - if successful, a boolean whether or not the nullifiers are not emitted (true = emitted)
      */
     pub async fn contains_emitted_nullifiers(
-        self,
+        &self,
         nullifiers: &Vec<[u8; 32]>,
     ) -> Result<bool, GrapevineError> {
         // prune the nullifiers that are 0x00
