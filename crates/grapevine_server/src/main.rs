@@ -129,7 +129,7 @@ mod test_rocket {
         use grapevine_common::{
             account::GrapevineAccount,
             http::requests::{CreateUserRequest, EmitNullifierRequest},
-            models::{AvailableProofs, ProvingData, Relationship},
+            models::{AvailableProofs, GrapevineProof, ProvingData, Relationship},
             Fr, NovaProof,
         };
 
@@ -437,6 +437,33 @@ mod test_rocket {
             (code, message)
         }
 
+        pub async fn http_get_proof_by_scope(
+            context: &GrapevineTestContext,
+            user: &mut GrapevineAccount,
+            scope: &String,
+        ) -> Option<GrapevineProof> {
+            let username = user.username().clone();
+            let signature = generate_nonce_signature(user);
+            let uri = format!("/proof/scope/{}", scope);
+
+            // mock transmit the request
+            let res = context
+                .client
+                .get(uri)
+                .header(Header::new("X-Authorization", signature))
+                .header(Header::new("X-Username", username))
+                .dispatch()
+                .await;
+
+            // increment nonce
+            let _ = user.increment_nonce(None);
+
+            // parse response
+            match res.status().code {
+                200 => Some(res.into_json::<GrapevineProof>().await.unwrap()),
+                _ => None,
+            }
+        }
         // async fn http_get_relationships(
         //     context: &GrapevineTestContext,
         //     user: &mut GrapevineAccount,
@@ -816,20 +843,24 @@ mod test_rocket {
                 };
                 let (code, msg) =
                     http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
-                println!("Degree {} posted: returned {} with message \"{}\"", degree + 1, code, msg);
+                println!(
+                    "Degree {} posted: returned {} with message \"{}\"",
+                    degree + 1,
+                    code,
+                    msg
+                );
                 users.insert(i - 1, previous);
                 users.insert(i, prover);
             }
         }
 
-        #[ignore]
         #[rocket::async_test]
         pub async fn test_nullify_existing_proofs() {
             // Setup
             let context = GrapevineTestContext::init().await;
             GrapevineDB::drop("grapevine_mocked").await;
             // create users
-            let num_users = 4;
+            let num_users = 9;
             let mut users: Vec<GrapevineAccount> = vec![];
             for i in 0..num_users {
                 let username = format!("user_{}", i);
@@ -854,7 +885,6 @@ mod test_rocket {
                 let previous = users.remove(i - 1);
                 // select the specific proof to build from
                 let available_proofs = http_get_available_proofs(&context, &mut prover).await;
-                println!("Proofs: {:?}", available_proofs);
                 let available_proof = available_proofs
                     .iter()
                     .find(|&proof| scope_to_find == proof.scope)
@@ -884,9 +914,41 @@ mod test_rocket {
                 };
                 let (code, msg) =
                     http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
-                println!("Degree {} posted: returned {} with message \"{}\"", degree + 1, code, msg);
                 users.insert(i - 1, previous);
                 users.insert(i, prover);
+            }
+
+            // check that all degree provers in the chain have proofs
+            for i in 1..num_users {
+                let mut user = users.remove(i);
+                let proof = http_get_proof_by_scope(&context, &mut user, &scope_to_find).await;
+                assert!(proof.is_some());
+                users.insert(i, user);
+            }
+            // nullify user_4->user_5
+            let nullify_target = String::from("user_5");
+            let nullifier_secret_ciphertext =
+                http_get_nullifier_secret(&context, &mut users[4], &nullify_target).await;
+            let nullifier_secret = users[4].decrypt_nullifier_secret(nullifier_secret_ciphertext);
+            let nullifier = users[4].compute_nullifier(nullifier_secret);
+            _ = http_emit_nullifier(
+                &context,
+                ff_ce_to_le_bytes(&nullifier),
+                &mut users[4],
+                &nullify_target,
+            )
+            .await;
+            // check that users1->4 have proofs for the scope and users5-8 do not
+            let cutoff = 4;
+            for i in 1..num_users {
+                let mut user = users.remove(i);
+                let proof = http_get_proof_by_scope(&context, &mut user, &scope_to_find).await;
+                if i <= 4 {
+                    assert!(proof.is_some());
+                } else {
+                    assert!(proof.is_none());
+                }
+                users.insert(i, user);
             }
         }
 
@@ -895,8 +957,6 @@ mod test_rocket {
         pub async fn test_nullify_prevent_new_proofs() {
             todo!("Unimplemented")
         }
-
-        
     }
 
     //     // @TODO: Change eventually because to doesn't need to be mutable?
