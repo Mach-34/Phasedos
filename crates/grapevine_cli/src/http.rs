@@ -1,7 +1,8 @@
 use crate::utils::fs::ACCOUNT_PATH;
 use babyjubjub_rs::{decompress_point, Point};
 use grapevine_common::http::requests::{
-    CreateUserRequest, DegreeProofRequest, GetNonceRequest, NewRelationshipRequest, PhraseRequest,
+    CreateUserRequest, DegreeProofRequest, EmitNullifierRequest, GetNonceRequest,
+    NewRelationshipRequest, PhraseRequest,
 };
 use grapevine_common::http::responses::{DegreeData, PhraseCreationResponse};
 // use grapevine_common::models::ProvingData;
@@ -321,7 +322,47 @@ pub async fn get_known_req(
 }
 
 /**
- * Make request to retrieve nullifier secret for relationship specified by recipient
+ * Emit nullifier to terminate a relationship with a user
+ *
+ * @param account - account of the user that owns nullifier secret
+ * @param body -
+ *             * nullifier - nullifier used to terminate relationship
+ *             * recipient - username of recipient of nullifier in relationship
+ */
+pub async fn emit_nullifier(
+    account: &mut GrapevineAccount,
+    body: EmitNullifierRequest,
+) -> Result<(), GrapevineError> {
+    let url = format!("{}/user/relationship/emit-nullifier", &**SERVER_URL);
+
+    let serialized = bincode::serialize(&body).unwrap();
+
+    // produce signature over current nonce
+    let signature = hex::encode(account.sign_nonce().compress());
+    let client = Client::new();
+    let res = client
+        .post(&url)
+        .body(serialized)
+        .header("X-Username", account.username())
+        .header("X-Authorization", signature)
+        .send()
+        .await
+        .unwrap();
+
+    match res.status() {
+        StatusCode::OK => {
+            // increment nonce
+            account
+                .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
+                .unwrap();
+            return Ok(());
+        }
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
+    }
+}
+
+/**
+ * Makes request to retrieve nullifier secret for relationship specified by recipient
  * of nullifier
  *
  * @param account - account of the user that owns nullifier secret
