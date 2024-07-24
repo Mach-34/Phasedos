@@ -1,6 +1,7 @@
 use crate::catchers::{ErrorMessage, GrapevineResponse};
 use crate::guards::AuthenticatedUser;
 use crate::mongo::GrapevineDB;
+use crate::utils::RelationshipStatus;
 use babyjubjub_rs::{decompress_point, decompress_signature, verify};
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::{EmitNullifierRequest, GetNonceRequest};
@@ -86,36 +87,12 @@ pub async fn add_relationship(
         }
     };
 
-    // TODO: Commenting this out for now so we are not blocked
-    // ensure relationship does not alreaday exist between two users
-    // match db
-    //     .check_relationship_exists(&sender.id.unwrap(), &recipient.id.unwrap())
-    //     .await
-    // {
-    //     Ok((exists, active)) => match exists {
-    //         true => {
-    //             let err = match active {
-    //                 true => GrapevineError::ActiveRelationshipExists(user.0, request.to.clone()),
-    //                 false => GrapevineError::PendingRelationshipExists(user.0, request.to.clone()),
-    //             };
-    //             return Err(GrapevineResponse::Conflict(ErrorMessage(Some(err), None)));
-    //         }
-    //         false => (),
-    //     },
-    //     Err(e) => {
-    //         return Err(GrapevineResponse::InternalError(ErrorMessage(
-    //             Some(e),
-    //             None,
-    //         )))
-    //     }
-    // }
-
-    // true if a pending relationship from recipient to sender exists
-    let pending = match db
-        .find_pending_relationship(&recipient.id.unwrap(), &sender.id.unwrap())
+    // get status of relationship
+    let status = match db
+        .relationship_status(&recipient.id.unwrap(), &sender.id.unwrap())
         .await
     {
-        Ok(exists) => exists,
+        Ok(status) => status,
         Err(e) => {
             return Err(GrapevineResponse::InternalError(ErrorMessage(
                 Some(e),
@@ -123,6 +100,16 @@ pub async fn add_relationship(
             )))
         }
     };
+    // check if relationship is already active
+    let mut pending = false;
+    if status == RelationshipStatus::Active {
+        return Err(GrapevineResponse::Conflict(ErrorMessage(
+            Some(GrapevineError::ActiveRelationshipExists(user.0, request.to)),
+            None,
+        )));
+    } else {
+        pending = status == RelationshipStatus::Pending;
+    }
 
     // create the relationship document from sender to recipient
     let relationship_doc = Relationship {
@@ -244,7 +231,7 @@ pub async fn emit_nullifier(
 
     // store the emitted nullifier and terminate/ nullify the relationship
     if let Err(e) = db
-        .terminate_relationship(request.nullifier, &user.0, &request.recipient)
+        .nullify_relationship(&request.nullifier, &user.0, &request.recipient)
         .await
     {
         return Err(GrapevineResponse::InternalError(ErrorMessage(
@@ -331,7 +318,7 @@ pub async fn get_active_relationships(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
 ) -> Result<Json<Vec<String>>, GrapevineResponse> {
-    match db.get_relationships(&user.0, true).await {
+    match db.get_all_relationship_usernames(&user.0, true).await {
         Ok(relationships) => Ok(Json(relationships)),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),

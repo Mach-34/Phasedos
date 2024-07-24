@@ -17,6 +17,7 @@ pub struct GrapevineProof {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AvailableProofs {
+    #[serde(rename = "_id")]
     pub id: ObjectId,
     pub degree: u8,
     pub scope: String,
@@ -42,6 +43,7 @@ pub struct DegreeProofValidationData {
 pub struct ProvingData {
     #[serde(default, with = "serde_bytes")]
     pub relation_pubkey: [u8; 32],
+    #[serde(default, with = "serde_bytes")]
     pub proof: Vec<u8>,
     #[serde(with = "serde_bytes")]
     pub ephemeral_key: [u8; 32],
