@@ -15,6 +15,7 @@ pub enum GrapevineError {
     PendingRelationshipExists(String, String),
     ActiveRelationshipExists(String, String),
     RelationshipSenderIsTarget,
+    RelationshipNullified,
     PhraseExists,
     PhraseNotFound,
     ProofNotFound(String),
@@ -80,7 +81,10 @@ impl std::fmt::Display for GrapevineError {
             }
             GrapevineError::RelationshipSenderIsTarget => {
                 write!(f, "Relationship sender and target are the same")
-            }
+            },
+            GrapevineError::RelationshipNullified => {
+                write!(f, "Nullified relationship is being used")
+            },
             &GrapevineError::NonceMismatch(expected, actual) => write!(
                 f,
                 "Nonce mismatch: expected {}, got {}. Retry this call",

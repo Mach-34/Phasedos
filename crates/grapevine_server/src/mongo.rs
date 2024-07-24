@@ -1293,6 +1293,62 @@ impl GrapevineDB {
     //     Some(degrees)
     // }
 
+    pub async fn find_proof_by_scope(&self, username: &String, scope: &String) -> Option<GrapevineProof> {
+        // pipeline to retrieve proof given relation = username and scope = scope
+        let pipeline = vec![
+            doc! {
+                "$facet": {
+                    "relation": [
+                        { "$match": { "username": username } },
+                        { "$project": { "_id": 1 } }
+                    ],
+                    "scope": [
+                        { "$match": { "username": scope } },
+                        { "$project": { "_id": 1 } }
+                    ]
+                }
+            },
+            doc! {
+                "$project": {
+                    "relation": { "$arrayElemAt": ["$relation._id", 0] },
+                    "scope": { "$arrayElemAt": ["$scope._id", 0] }
+                }
+            },
+            doc! {
+                "$lookup": {
+                    "from": "proofs",
+                    "let": { "relationId": "$relation", "scopeId": "$scope" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        { "$eq": ["$relation", "$$relationId"] },
+                                        { "$eq": ["$scope", "$$scopeId"] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    "as": "proof"
+                }
+            },
+            doc! { "$unwind": "$proof" },
+            doc! { "$replaceRoot": { "newRoot": "$proof" }},
+        ];
+        
+        // try to get the returned proof
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => Some(bson::from_bson(bson::Bson::Document(document)).unwrap()),
+                Err(_) => None
+            }
+        } else {
+            None
+        }
+    }
+
     /**
      * Get a proof from the server with all info needed to prove a degree of separation as a given user
      *
@@ -1421,6 +1477,135 @@ impl GrapevineDB {
         }
     }
 
+    /**
+     * Deletes all proofs that have matching nullifiers
+     *
+     * @param nullifier - the nullifier to match
+     * @returns - the number of proofs deleted
+     */
+    pub async fn delete_nullified_proofs(
+        &self,
+        nullifier: &[u8; 32],
+    ) -> Result<u64, GrapevineError> {
+        // filter to find all matching nullifiers
+        let filter = doc! {
+            "nullifiers": {
+                "$elemMatch": {
+                    "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                }
+            }
+        };
+        match self.proofs.delete_many(filter, None).await {
+            Ok(result) => Ok(result.deleted_count),
+            Err(e) => {
+                println!("Error: {}", e);
+                Err(GrapevineError::MongoError(e.to_string()))
+            }
+        }
+    }
+
+    /**
+     * Determines whether any nullifiers for a given proof are emitted in relationships
+     *
+     * @param nullifiers - the nullifiers to search for
+     * @returns - if successful, a boolean whether or not the nullifiers are not emitted (true = emitted)
+     */
+    pub async fn contains_emitted_nullifiers(
+        &self,
+        nullifiers: &Vec<[u8; 32]>,
+    ) -> Result<bool, GrapevineError> {
+        // prune the nullifiers that are 0x00
+        let nullifiers: Vec<[u8; 32]> = nullifiers
+            .iter()
+            .filter(|nullifier| **nullifier != [0; 32])
+            .map(|nullifier| *nullifier)
+            .collect();
+        // define the conditoinal matching
+
+        let match_conditions: Vec<_> = nullifiers.iter()
+            .map(|nullifier| doc! {
+                "emitted_nullifier": {
+                    // "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                    "$eq": Binary {
+                        subtype: bson::spec::BinarySubtype::Generic,
+                        bytes: nullifier.to_vec(),
+                    }
+                }
+            })
+            .collect();
+        // pipeline to count relationships that match any of the emitted nullifiers
+        let pipeline = [
+            doc! { "$match": { "$or": match_conditions }},
+            doc! { "$count": "matchedCount" }
+        ];
+        // determine if any matching nullifiers were found
+        let mut cursor = self.relationships.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(doc) => {
+                    let count = doc.get("matchedCount").unwrap().as_i32().unwrap();
+                    Ok(count != 0)
+                },
+                Err(e) => {
+                    println!("Error: {}", &e.to_string());
+                    Err(GrapevineError::MongoError(e.to_string()))
+                }
+            }
+        } else {
+            Ok(false)
+        }
+        
+    }   
+
+    pub async fn find_proofs_matching_nullifiers(
+        self,
+        nullifiers: &Vec<[u8; 32]>,
+    ) -> Result<Vec<ObjectId>, GrapevineError> {
+        // prune the nullifiers that are 0x00
+        let nullifiers: Vec<[u8; 32]> = nullifiers
+            .iter()
+            .filter(|nullifier| **nullifier != [0; 32])
+            .map(|nullifier| *nullifier)
+            .collect();
+        // set up query
+        let or_conditions: Vec<_> = nullifiers.iter()
+            .map(|target_array| doc! {
+                "nullifiers": {
+                    "$elemMatch": {
+                        "$eq": Bson::Array(target_array.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                    }
+                }
+            })
+            .collect();
+        let pipeline = vec![
+            doc! { "$match": { "$or": or_conditions }},
+            doc! { "$project": { "_id": 1 }},
+        ];
+
+        let cursor = self.proofs.aggregate(pipeline, None).await;
+        match cursor {
+            Ok(mut cursor) => {
+                let mut proof_oids: Vec<ObjectId> = vec![];
+                while let Some(result) = cursor.next().await {
+                    match result {
+                        Ok(document) => {
+                            let oid = document.get("_id").unwrap().as_object_id().unwrap();
+                            proof_oids.push(oid.clone());
+                        }
+                        Err(e) => {
+                            println!("Error: {}", e);
+                            return Err(GrapevineError::MongoError(e.to_string()));
+                        }
+                    }
+                }
+                Ok(proof_oids)
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+                Err(GrapevineError::MongoError(e.to_string()))
+            }
+        }
+    }
     // /**
     // * Get details on account:
     //    - # of first degree connections

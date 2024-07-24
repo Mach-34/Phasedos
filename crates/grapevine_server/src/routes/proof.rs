@@ -13,8 +13,8 @@ use grapevine_common::{
     crypto::pubkey_to_address,
     errors::GrapevineError,
     http::{
-        requests::{CreateUserRequest, DegreeProofRequest, PhraseRequest},
-        responses::{DegreeData, PhraseCreationResponse},
+        requests::{CreateUserRequest, DegreeProofRequest},
+        responses::DegreeData,
     },
     models::{GrapevineProof, User},
     Fr, MAX_USERNAME_CHARS,
@@ -412,6 +412,34 @@ pub async fn degree_proof(
         }
     };
 
+    // check for nullifiers
+    // @notice: technically we could omit this since server would fail to find previous oid on next step
+    //          but in the spirit of testing what would eventually exist onchain we include this step
+    let nullifiers = output
+        .nullifiers
+        .iter()
+        .map(|nullifier| nullifier.to_bytes())
+        .collect::<Vec<[u8; 32]>>();
+    match db.contains_emitted_nullifiers(&nullifiers).await {
+        Ok(res) => {
+            if res {
+                return Err(GrapevineResponse::BadRequest(ErrorMessage(
+                    Some(GrapevineError::ProofFailed(
+                        "Contains emitted nullifiers".into(),
+                    )),
+                    None,
+                )));
+            };
+        }
+        Err(e) => {
+            return Err(GrapevineResponse::InternalError(ErrorMessage(
+                Some(e),
+                None,
+            )))
+        }
+    };
+    // match db.contains_emitted_nullifiers()
+
     // get all degree data needed to authorize this proof
     let previous_proof_oid = ObjectId::from_str(&request.previous).unwrap();
     let validation_data = match db.get_degree_data(&user.0, &previous_proof_oid).await {
@@ -449,7 +477,7 @@ pub async fn degree_proof(
         if (&prev_nullifiers[i]).ne(&output.nullifiers[i]) {
             verify_err = Some(String::from("Nullifiers do not match"))
         }
-    };
+    }
     if verify_err.is_some() {
         return Err(GrapevineResponse::BadRequest(ErrorMessage(
             Some(GrapevineError::ProofFailed(verify_err.unwrap())),
@@ -466,7 +494,7 @@ pub async fn degree_proof(
         nullifiers: Some(output.nullifiers.iter().map(|n| n.to_bytes()).collect()),
         proof: Some(request.proof),
         preceding: Some(previous_proof_oid),
-        inactive: Some(false)
+        inactive: Some(false),
     };
 
     // TODO: Check that existing proof does not already exist in db at same degree and scope
@@ -487,7 +515,7 @@ pub async fn degree_proof(
     }
 }
 
-// /// GET REQUESTS ///
+/// GET REQUESTS ///
 
 /**
  * Return a list of all available (new) degree proofs from existing connections that a user can
@@ -508,6 +536,27 @@ pub async fn get_available_proofs(
     db: &State<GrapevineDB>,
 ) -> Result<Json<Vec<AvailableProofs>>, Status> {
     Ok(Json(db.find_available_degrees(user.0).await))
+}
+
+/**
+ * Allows a user to return their own proof for a given scope
+ *
+ * @param scope - the username of the scope of the proof chain
+ * @returns - the full proof document
+ */
+#[get("/scope/<scope>")]
+pub async fn get_proof_by_scope(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+    scope: String,
+) -> Result<Json<GrapevineProof>, GrapevineResponse> {
+    match db.find_proof_by_scope(&user.0, &scope).await {
+        Some(doc) => Ok(Json(doc)),
+        None => Err(GrapevineResponse::NotFound(format!(
+            "Proof by {} for scope {}",
+            &user.0, &scope
+        ))),
+    }
 }
 
 /**
