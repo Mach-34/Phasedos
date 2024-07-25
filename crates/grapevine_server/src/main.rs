@@ -324,7 +324,7 @@ mod test_rocket {
             // mock transmit the request
             let encrypted_nullifier_secret: [u8; 48] = context
                 .client
-                .get(format!("/user/nullifier-secret/{}", recipient))
+                .get(format!("/user/{}/nullifier-secret", recipient))
                 .header(Header::new("X-Authorization", signature))
                 .header(Header::new("X-Username", username))
                 .dispatch()
