@@ -68,24 +68,6 @@ pub fn export_key() -> Result<String, GrapevineError> {
     ))
 }
 
-pub async fn nullifier_secret(username: &String) -> Result<String, GrapevineError> {
-    // get account
-    let mut account = get_account()?;
-    // sync nonce
-    synchronize_nonce().await?;
-    let res = get_nullifier_secret(&mut account, username).await;
-    match res {
-        Ok(data) => {
-            let bytes: [u8; 48] = data.try_into().unwrap();
-            // decrypt the nullifier secret
-            let decrypted = account.decrypt_nullifier_secret(bytes);
-            Ok(hex::encode(ff_ce_to_le_bytes(&decrypted)))
-        }
-        // TODO: Keep as internal error for now until error handling refactor
-        Err(e) => Err(e),
-    }
-}
-
 /**
  * Register a new user on Grapevine
  *
@@ -216,17 +198,15 @@ pub async fn get_relationships(active: bool) -> Result<String, GrapevineError> {
 /**
  * Emits the nullifier for a specified relationship, terminating it
  *
- * @param nullifier_secret - hex encoded secret used to compute nullifier for a relationship
  * @param recipien - username of nullifier recipient in relationship
  */
-pub async fn nullify_relationship(
-    nullifier_secret: &String,
-    recipient: &String,
-) -> Result<String, GrapevineError> {
+pub async fn nullify_relationship(recipient: &String) -> Result<String, GrapevineError> {
     // get account
     let mut account = get_account()?;
     // sync nonce
     synchronize_nonce().await?;
+
+    let nullifier_secret = get_nullifier_secret(&mut account, recipient).await.unwrap();
 
     // convert nullifier from hex string to Fr
     let bytes = hex::decode(nullifier_secret).unwrap();
