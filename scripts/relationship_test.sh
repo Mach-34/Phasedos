@@ -62,6 +62,9 @@ mv user_b.key grapevine.key
 echo "Switched from User A to User B!"
 grapevine relationship list
 
+## nullify relationship with User A
+
+
 ## CLEANUP
 # rm alice.key bob.key
 # if [ -f real.key ]; then

@@ -43,11 +43,6 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Add { username: String },
-    /// Returns nullifier secret for a given relationship in hex format
-    /// usage: `grapevine relationship nullifier-secret <username>`
-    #[command(verbatim_doc_comment)]
-    #[clap(value_parser)]
-    NullifierSecret { username: String },
     /// Show pending relationship requests from other users
     /// usage: `grapevine relationship pending`
     #[command(verbatim_doc_comment)]
@@ -57,7 +52,7 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Reject { username: String },
-    /// Nullify a relationship by username
+    /// Remove a relationship by username
     /// usage: `grapevine relationship remove <username>`
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]

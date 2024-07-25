@@ -305,7 +305,7 @@ pub async fn get_pending_relationships(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
 ) -> Result<Json<Vec<String>>, GrapevineResponse> {
-    match db.get_relationships(&user.0, false).await {
+    match db.get_all_relationship_usernames(&user.0, false).await {
         Ok(relationships) => Ok(Json(relationships)),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),
