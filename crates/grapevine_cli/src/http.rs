@@ -333,7 +333,7 @@ pub async fn emit_nullifier(
     account: &mut GrapevineAccount,
     body: EmitNullifierRequest,
 ) -> Result<(), GrapevineError> {
-    let url = format!("{}/user/relationship/emit-nullifier", &**SERVER_URL);
+    let url = format!("{}/user/relationship/nullify", &**SERVER_URL);
 
     let serialized = bincode::serialize(&body).unwrap();
 

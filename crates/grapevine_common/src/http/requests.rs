@@ -8,15 +8,6 @@ pub struct CreateUserRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PhraseRequest {
-    #[serde(with = "serde_bytes")]
-    pub proof: Vec<u8>, // compressed proof
-    #[serde(with = "serde_bytes")]
-    pub ciphertext: [u8; 192], // encrypted phrase
-    pub description: String, // description (discarded if phrase already exists)
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GetNonceRequest {
     pub username: String,
     #[serde(with = "serde_bytes")]

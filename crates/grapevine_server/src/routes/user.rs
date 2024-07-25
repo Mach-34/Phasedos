@@ -1,6 +1,7 @@
 use crate::catchers::{ErrorMessage, GrapevineResponse};
 use crate::guards::AuthenticatedUser;
 use crate::mongo::GrapevineDB;
+use crate::utils::RelationshipStatus;
 use babyjubjub_rs::{decompress_point, decompress_signature, verify};
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::{EmitNullifierRequest, GetNonceRequest};
@@ -18,113 +19,6 @@ use rocket::http::Status;
 use rocket::serde::json::Json;
 
 /// POST REQUESTS ///
-
-// /**
-//  * Create a new user of the grapevine service
-//  *
-//  * @param data - the CreateUserRequest containing:
-//  *             * username: the username for the new user
-//  *             * pubkey: the public key used to authZ/authN and deriving AES encryption keys
-//  *             * signature: the signature over the username by pubkey
-//  * @return status:
-//  *             * 201 if success
-//  *             * 400 if username length exceeds 30 characters, username is not valid ASCII,
-//  *               invalid signature over username by pubkey, or issues deserializing request
-//  *             * 409 if username || pubkey are already in use by another user
-//  *             * 500 if db fails or other unknown issue
-//  */
-// #[post("/create", format = "json", data = "<request>")]
-// pub async fn create_user(
-//     request: Json<CreateUserRequest>,
-//     db: &State<GrapevineDB>,
-// ) -> Result<GrapevineResponse, GrapevineResponse> {
-//     // check username length is valid
-//     if request.username.len() > MAX_USERNAME_CHARS {
-//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//             Some(GrapevineError::UsernameTooLong(request.username.clone())),
-//             None,
-//         )));
-//     };
-//     // check request is ascii
-//     if !request.username.is_ascii() {
-//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//             Some(GrapevineError::UsernameNotAscii(request.username.clone())),
-//             None,
-//         )));
-//     };
-//     // check the validity of the signature over the username
-//     let message = BigInt::from_bytes_le(
-//         Sign::Plus,
-//         &convert_username_to_fr(&request.username).unwrap()[..],
-//     );
-//     let pubkey_decompressed = decompress_point(request.pubkey).unwrap();
-//     let signature_decompressed = decompress_signature(&request.signature).unwrap();
-//     match verify(pubkey_decompressed, signature_decompressed, message) {
-//         true => (),
-//         false => {
-//             return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//                 Some(GrapevineError::Signature(String::from(
-//                     "Could not verify user creation signature",
-//                 ))),
-//                 None,
-//             )));
-//         }
-//     };
-//     // check that the username or pubkey are not already used
-//     match db
-//         .check_creation_params(&request.username, &request.pubkey)
-//         .await
-//     {
-//         Ok(found) => match found {
-//             [true, true] => {
-//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
-//                     Some(GrapevineError::UserExists(request.username.clone())),
-//                     None,
-//                 )));
-//             }
-//             [true, false] => {
-//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
-//                     Some(GrapevineError::UsernameExists(request.username.clone())),
-//                     None,
-//                 )));
-//             }
-//             [false, true] => {
-//                 return Err(GrapevineResponse::Conflict(ErrorMessage(
-//                     Some(GrapevineError::PubkeyExists(format!(
-//                         "0x{}",
-//                         hex::encode(request.pubkey.clone())
-//                     ))),
-//                     None,
-//                 )));
-//             }
-//             _ => (),
-//         },
-//         Err(e) => {
-//             return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                 Some(e),
-//                 None,
-//             )))
-//         }
-//     };
-//     // create the new user in the database
-//     let user = User {
-//         id: None,
-//         nonce: Some(0),
-//         username: Some(request.username.clone()),
-//         pubkey: Some(request.pubkey.clone()),
-//         relationships: Some(vec![]),
-//         degree_proofs: Some(vec![]),
-//     };
-//     match db.create_user(user).await {
-//         Ok(_) => Ok(GrapevineResponse::Created(
-//             "User succefully created".to_string(),
-//         )),
-//         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(e),
-//             None,
-//         ))),
-//     }
-// }
 
 /**
  * Add a unidirectional relationship allowing the target to prove connection to the sender
@@ -193,36 +87,12 @@ pub async fn add_relationship(
         }
     };
 
-    // TODO: Commenting this out for now so we are not blocked
-    // ensure relationship does not alreaday exist between two users
-    // match db
-    //     .check_relationship_exists(&sender.id.unwrap(), &recipient.id.unwrap())
-    //     .await
-    // {
-    //     Ok((exists, active)) => match exists {
-    //         true => {
-    //             let err = match active {
-    //                 true => GrapevineError::ActiveRelationshipExists(user.0, request.to.clone()),
-    //                 false => GrapevineError::PendingRelationshipExists(user.0, request.to.clone()),
-    //             };
-    //             return Err(GrapevineResponse::Conflict(ErrorMessage(Some(err), None)));
-    //         }
-    //         false => (),
-    //     },
-    //     Err(e) => {
-    //         return Err(GrapevineResponse::InternalError(ErrorMessage(
-    //             Some(e),
-    //             None,
-    //         )))
-    //     }
-    // }
-
-    // true if a pending relationship from recipient to sender exists
-    let pending = match db
-        .find_pending_relationship(&recipient.id.unwrap(), &sender.id.unwrap())
+    // get status of relationship
+    let status = match db
+        .relationship_status(&recipient.id.unwrap(), &sender.id.unwrap())
         .await
     {
-        Ok(exists) => exists,
+        Ok(status) => status,
         Err(e) => {
             return Err(GrapevineResponse::InternalError(ErrorMessage(
                 Some(e),
@@ -230,6 +100,16 @@ pub async fn add_relationship(
             )))
         }
     };
+    // check if relationship is already active
+    let mut pending = false;
+    if status == RelationshipStatus::Active {
+        return Err(GrapevineResponse::Conflict(ErrorMessage(
+            Some(GrapevineError::ActiveRelationshipExists(user.0, request.to)),
+            None,
+        )));
+    } else {
+        pending = status == RelationshipStatus::Pending;
+    }
 
     // create the relationship document from sender to recipient
     let relationship_doc = Relationship {
@@ -317,12 +197,12 @@ pub async fn get_nullifier_secret(
  *            * 401 if relationship is not found   
  *            * 500 if db fails or other unknown issue    
  */
-#[post("/relationship/emit-nullifier", data = "<data>")]
+#[post("/relationship/nullify", data = "<data>")]
 pub async fn emit_nullifier(
     user: AuthenticatedUser,
     data: Data<'_>,
     db: &State<GrapevineDB>,
-) -> Result<(), GrapevineResponse> {
+) -> Result<GrapevineResponse, GrapevineResponse> {
     // stream in data
     let mut buffer = Vec::new();
     let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
@@ -332,6 +212,7 @@ pub async fn emit_nullifier(
             "Request body execeeds 2 MiB".to_string(),
         ));
     }
+    // parse the request
     let request = match bincode::deserialize::<EmitNullifierRequest>(&buffer) {
         Ok(req) => req,
         Err(e) => {
@@ -348,11 +229,22 @@ pub async fn emit_nullifier(
         }
     };
 
-    match db
-        .terminate_relationship(request.nullifier, &user.0, &request.recipient)
+    // store the emitted nullifier and terminate/ nullify the relationship
+    if let Err(e) = db
+        .nullify_relationship(&request.nullifier, &user.0, &request.recipient)
         .await
     {
-        Ok(_) => Ok(()),
+        return Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(e),
+            None,
+        )));
+    };
+
+    // delete all proofs that contain the given nullifier
+    match db.delete_nullified_proofs(&request.nullifier).await {
+        Ok(_) => Ok(GrapevineResponse::Created(
+            "Nullifier emitted successfully".to_string(),
+        )),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),
             None,
@@ -427,7 +319,7 @@ pub async fn get_active_relationships(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
 ) -> Result<Json<Vec<String>>, GrapevineResponse> {
-    match db.get_relationships(&user.0, true).await {
+    match db.get_all_relationship_usernames(&user.0, true).await {
         Ok(relationships) => Ok(Json(relationships)),
         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(e),

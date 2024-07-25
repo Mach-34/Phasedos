@@ -5,7 +5,6 @@ mod user;
 
 lazy_static! {
     pub(crate) static ref USER_ROUTES: Vec<Route> = routes![
-        // user::create_user,
         user::add_relationship,
         user::get_nullifier_secret,
         user::get_relationship,
@@ -23,9 +22,7 @@ lazy_static! {
         proof::prove_identity,
         proof::degree_proof,
         proof::get_available_proofs,
-        // proof::get_phrase_connections,
         proof::get_proof_with_params,
-        // proof::get_known_phrases,
-        // proof::get_phrase
+        proof::get_proof_by_scope
     ];
 }

@@ -11,7 +11,7 @@ use mongodb::options::{
 };
 use mongodb::{Client, Collection};
 
-use crate::utils::serialize_bytes_to_bson;
+use crate::utils::{RelationshipStatus, ToBson};
 use crate::MONGODB_URI;
 
 pub struct GrapevineDB {
@@ -19,6 +19,8 @@ pub struct GrapevineDB {
     relationships: Collection<Relationship>,
     proofs: Collection<GrapevineProof>,
 }
+
+mod pipelines;
 
 impl GrapevineDB {
     pub async fn init(database_name: &String, mongodb_uri: &String) -> Self {
@@ -91,14 +93,10 @@ impl GrapevineDB {
         pubkey: &[u8; 32],
     ) -> Result<[bool; 2], GrapevineError> {
         // Verify user existence
-        let pubkey_binary = Binary {
-            subtype: bson::spec::BinarySubtype::Generic,
-            bytes: pubkey.to_vec(),
-        };
         let query = doc! {
             "$or": [
                 { "username": username },
-                { "pubkey": pubkey_binary }
+                { "pubkey": pubkey.to_vec().to_bson() }
             ]
         };
         let projection = doc! { "username": 1, "pubkey": 1, "address": 1 };
@@ -174,56 +172,13 @@ impl GrapevineDB {
         proof: &ObjectId,
     ) -> Option<DegreeProofValidationData> {
         // find degree chains they are not a part of
-        let pipeline = vec![
-            // 1. Look up the address of the proving user
-            doc! { "$match": { "username": username } },
-            doc! { "$project": { "address": 1, "_id": 1 } },
-            // 2. Look up the matching proof document
-            doc! { "$lookup": {
-                "from": "proofs",
-                "pipeline": [
-                    doc! { "$match": { "$expr": { "$eq": ["$_id", proof] } } },
-                    doc! { "$project": { "scope": 1, "degree": 1, "nullifiers": 1, "inactive": 1, "_id": 0 } }
-                ],
-                "as": "proofDoc"
-            }},
-            doc! { "$unwind": "$proofDoc" },
-            // 3. Look up the scope address given in the proof document
-            doc! { "$lookup": {
-                "from": "users",
-                "localField": "proofDoc.scope",
-                "foreignField": "_id",
-                "pipeline": [
-                    doc! { "$project": { "address": 1, "_id": 1 } }
-                ],
-                "as": "scopeAddress"
-            }},
-            doc! { "$unwind": "$scopeAddress" },
-            // 4. Project out unnecessary data and reshape according to returned values
-            doc! { "$project": {
-                "_id": 0,
-                "prover_oid": "$_id",
-                "prover_address": "$address",
-                "degree": "$proofDoc.degree",
-                "nullifiers": "$proofDoc.nullifiers",
-                "inactive": "$proofDoc.inactive",
-                "scope": "$scopeAddress.address",
-                "scope_oid": "$scopeAddress._id"
-            }},
-        ];
+        let pipeline = pipelines::degree_data(&username, &proof);
         // get the OID's of degree proofs the user can build from
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         if let Some(result) = cursor.next().await {
             match result {
-                Ok(document) => {
-                    let validation_data: DegreeProofValidationData =
-                        bson::from_bson(bson::Bson::Document(document)).unwrap();
-                    Some(validation_data)
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
-                    None
-                }
+                Ok(document) => Some(bson::from_bson(bson::Bson::Document(document)).unwrap()),
+                Err(_) => None,
             }
         } else {
             None
@@ -290,13 +245,12 @@ impl GrapevineDB {
                 1 => Ok(()),
                 _ => Err(GrapevineError::NoPendingRelationship(
                     sender.to_hex(),
-                    recipient.to_hex(),
+                    recipient.to_hex(),taging
                 )),
             },
             Err(e) => Err(GrapevineError::MongoError(e.to_string())),
         }
     }
-
     /**
      * Delete a pending relationship from one user to another
      * @notice relationship must be pending / not active
@@ -406,49 +360,13 @@ impl GrapevineDB {
         recipient: &String,
     ) -> Result<Relationship, GrapevineError> {
         // find a relationship document given a sender and recipient username
-        let pipeline = vec![
-            doc! {
-                "$facet": {
-                    "sender": [
-                        { "$match": { "username": sender } },
-                        { "$project": { "sender": "$_id" } }
-                    ],
-                    "recipient": [
-                        { "$match": { "username": recipient } },
-                        { "$project": { "recipient": "$_id" } }
-                    ]
-                }
-            },
-            doc! {
-                "$project": {
-                    "sender": { "$arrayElemAt": ["$sender.sender", 0] },
-                    "recipient": { "$arrayElemAt": ["$recipient.recipient", 0] }
-                }
-            },
-            doc! {
-                "$lookup": {
-                    "from": "relationships",
-                    "let": { "senderId": "$sender", "recipientId": "$recipient" },
-                    "pipeline": [
-                        { "$match": { "$expr": { "$and": [
-                            { "$eq": ["$sender", "$$senderId"] },
-                            { "$eq": ["$recipient", "$$recipientId"] }
-                        ]}}}
-                    ],
-                    "as": "relationship"
-                }
-            },
-            doc! { "$unwind": "$relationship" },
-            doc! { "$replaceRoot": { "newRoot": "$relationship" }},
-        ];
+        let pipeline = pipelines::get_relationship(&sender, &recipient, true);
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        // try to parse the returned relationship document
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => Ok(bson::from_bson(bson::Bson::Document(document)).unwrap()),
-                Err(e) => {
-                    println!("Error: {:?}", e);
-                    return Err(GrapevineError::MongoError(e.to_string()));
-                }
+                Err(e) => Err(GrapevineError::MongoError(e.to_string())),
             }
         } else {
             return Err(GrapevineError::NoRelationship(
@@ -458,81 +376,30 @@ impl GrapevineDB {
         }
     }
 
-    pub async fn terminate_relationship(
+    /**
+     * Nullifies a relationship by adding an emitted nullifier
+     *
+     * @param nullifier - the nullifier to add to the relationship document
+     * @param sender - the username of the sender (nullifier emitter)
+     * @param recipient - the username of the recipient (nullifier users)
+     */
+    pub async fn nullify_relationship(
         &self,
-        nullifier: [u8; 32],
+        nullifier: &[u8; 32],
         sender: &String,
         recipient: &String,
     ) -> Result<(), GrapevineError> {
-        // setup aggregation pipeline for finding usernames of relationships
-        let pipeline = vec![
-            // get the ObjectID of the user doc for the given username
-            doc! {
-                "$match": {
-                    "username": { "$in": [recipient, sender] }
-                }
-            },
-            doc! {
-                "$project": {
-                    "_id": 0,
-                    // TODO; This may need to change cause of relationship confusion???
-                    "sender": {
-                        "$cond": { "if": { "$eq": ["$username", recipient] }, "then": "$_id", "else": "$$REMOVE" }
-                    },
-                    "recipient": {
-                        "$cond": { "if": { "$eq": ["$username", sender] }, "then": "$_id", "else": "$$REMOVE" }
-                    }
-                }
-            },
-            doc! {
-                "$group": {
-                    "_id": 0,
-                    "recipient": { "$max": "$recipient" },
-                    "sender": { "$max": "$sender" }
-                }
-            },
-            // query relationship document
-            doc! {
-                "$lookup": {
-                    "from": "relationships",
-                    "let": { "sender_user": "$sender", "recipient_user": "$recipient" },
-                    "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {
-                                    "$and": [
-                                        { "$eq": ["$sender", "$$sender_user"] },
-                                        { "$eq": ["$recipient", "$$recipient_user"] },
-                                    ]
-                                }
-                            }
-                        }
-                    ],
-                    "as": "relationship"
-                }
-            },
-            doc! {
-                "$unwind": "$relationship"
-            },
-            doc! {
-                "$replaceRoot": {
-                    "newRoot": "$relationship"
-                }
-            },
-        ];
-
+        // setup aggregation pipeline for finding the
+        let pipeline = pipelines::get_relationship(&sender, &recipient, false);
         // get oid for relationship
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    let relationship_id = document.get("_id").unwrap();
-
                     // update relationship document by adding emitted nullifier
-                    let query = doc! {"_id": relationship_id};
+                    let query = doc! {"_id": document.get("_id").unwrap() };
                     let update =
-                        doc! {"$set": {"emitted_nullifier": serialize_bytes_to_bson(&nullifier)}};
+                        doc! { "$set": { "emitted_nullifier": nullifier.to_vec().to_bson() }};
                     match self.relationships.update_one(query, update, None).await {
                         Ok(_) => Ok(()),
                         Err(e) => Err(GrapevineError::MongoError(e.to_string())),
@@ -542,60 +409,26 @@ impl GrapevineDB {
             }
         } else {
             // TODO: Create relationship not found type
-            return Err(GrapevineError::MongoError(
+            Err(GrapevineError::MongoError(
                 "Relationship not found".to_string(),
-            ));
+            ))
         }
     }
 
     /**
-     * Find all (pending or active) relationships for a user
+     * Find all usernames for (pending or active) relationships for a user
      *
      * @param user - the username of the user to find relationships for
      * @param active - whether to find active or pending relationships
      * @returns - a list of usernames of the users the user has relationships with
      */
-    pub async fn get_relationships(
+    pub async fn get_all_relationship_usernames(
         &self,
         user: &String,
         active: bool,
     ) -> Result<Vec<String>, GrapevineError> {
         // setup aggregation pipeline for finding usernames of relationships
-        let pipeline = vec![
-            // get the ObjectID of the user doc for the given username
-            doc! { "$match": { "username": user } },
-            doc! { "$project": { "_id": 1 } },
-            // lookup all (pending/ active) relationships for the user
-            doc! {
-                "$lookup": {
-                    "from": "relationships",
-                    "localField": "_id",
-                    "foreignField": "recipient",
-                    "as": "relationships",
-                    "pipeline": [
-                        doc! { "$match": { "$expr": { "$eq": ["$active", active] } } },
-                        doc! { "$project": { "sender": 1, "_id": 0 } },
-                    ],
-                }
-            },
-            doc! { "$unwind": "$relationships" },
-            // lookup the usernames of the relationships by the ObjectID found in the relationship docs
-            doc! {
-                "$lookup": {
-                    "from": "users",
-                    "localField": "relationships.sender",
-                    "foreignField": "_id",
-                    "as": "relationships",
-                    "pipeline": [
-                        doc! { "$project": { "username": 1, "_id": 0 } },
-                    ],
-                }
-            },
-            doc! { "$unwind": "$relationships" },
-            // project only the usernames of the relationships
-            doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
-        ];
-
+        let pipeline = pipelines::get_relationships_usernames(&user, active);
         // get the OID's of degree proofs the user can build from
         let mut relationships: Vec<String> = vec![];
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
@@ -612,56 +445,35 @@ impl GrapevineDB {
     }
 
     /**
-     * Attempts to find a relationship between to users
+     * Determines whether a pending relationship
+     * @notice: preceded by two "get_user" calls, could be combined into one query
+     *          that finds both users and the pending relaitonship
      *
-     * @param from - the user enabling relationship
-     * @param to - the user receiving relationship
-     * @returns - the relationship if found, None otherwise
+     * @param from - the OID of the user enabling relationship
+     * @param to - the OID of the user receiving relationship
+     * @returns - enum denoting whether relationship is active, pending, or nonexistent
      */
-    pub async fn find_pending_relationship(
+    pub async fn relationship_status(
         &self,
         from: &ObjectId,
         to: &ObjectId,
-    ) -> Result<bool, GrapevineError> {
-        let filter = doc! { "sender": from, "recipient": to, "active": false };
-        let projection = doc! { "_id": 1 };
-        let find_options = FindOneOptions::builder().projection(projection).build();
-        match self.relationships.find_one(filter, find_options).await {
-            Ok(res) => match res {
-                Some(_) => Ok(true),
-                None => Ok(false),
-            },
-            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
-        }
-    }
-
-    /**
-     * Check to see if a relationship already exists between two users
-     *
-     * @param sender - the user enabling relationship
-     * @param recipient - the user receiving relationship
-     * @returns
-     *  - 0: true if relationship from sender to user exists
-     *  - 1: true if relationship is active
-     */
-    pub async fn check_relationship_exists(
-        &self,
-        sender: &ObjectId,
-        recipient: &ObjectId,
-    ) -> Result<(bool, bool), GrapevineError> {
-        let query = doc! { "recipient": recipient, "sender": sender };
+    ) -> Result<RelationshipStatus, GrapevineError> {
+        // Query to find pending relationship
+        let filter = doc! { "sender": from, "recipient": to };
         let projection = doc! { "_id": 1, "active": 1 };
         let find_options = FindOneOptions::builder().projection(projection).build();
-
-        match self.relationships.find_one(query, find_options).await {
-            Ok(res) => {
-                let exists = res.is_some();
-                let active = match exists {
-                    true => res.unwrap().active.unwrap(),
-                    false => false,
-                };
-                Ok((exists, active))
-            }
+        // check if the relationship exists
+        match self.relationships.find_one(filter, find_options).await {
+            Ok(res) => match res {
+                Some(document) => {
+                    // determine whether found relationship is active or pending
+                    match document.active.unwrap() {
+                        true => Ok(RelationshipStatus::Active),
+                        false => Ok(RelationshipStatus::Pending),
+                    }
+                }
+                None => Ok(RelationshipStatus::None),
+            },
             Err(e) => Err(GrapevineError::MongoError(e.to_string())),
         }
     }
@@ -874,20 +686,6 @@ impl GrapevineDB {
         Ok(proof_oid)
     }
 
-    // pub async fn get_proof(&self, proof_oid: &ObjectId) -> Option<DegreeProof> {
-    //     self.degree_proofs
-    //         .find_one(doc! { "_id": proof_oid }, None)
-    //         .await
-    //         .unwrap()
-    // }
-
-    // pub async fn remove_user(&self, user: &ObjectId) {
-    //     self.users
-    //         .delete_one(doc! { "_id": user }, None)
-    //         .await
-    //         .expect("Failed to remove user");
-    // }
-
     /**
      * Given a user, find available degrees of separation proofs they can build from
      *   - find degree chains they are not a part of
@@ -898,399 +696,39 @@ impl GrapevineDB {
      */
     pub async fn find_available_degrees(&self, username: String) -> Vec<AvailableProofs> {
         // find degree chains they are not a part of
-        let pipeline = vec![
-            // Match the user
-            doc! { "$match": { "username": username } },
-            // Lookup relationships where the user is the recipient
-            doc! {
-                "$lookup": {
-                    "from": "relationships",
-                    "let": { "userId": "$_id" },
-                    "pipeline": [
-                        doc! {
-                            "$match": {
-                                "$expr": { "$eq": ["$recipient", "$$userId"] }
-                            }
-                        },
-                        doc! { "$project": { "sender": 1, "_id": 0 } }
-                    ],
-                    "as": "userRelationships"
-                }
-            },
-            doc! { "$unwind": "$userRelationships" },
-            // project out only the _id of the senders
-            doc! {
-                "$project": {
-                    "sender": "$userRelationships.sender",
-                    "_id": 0
-                }
-            },
-            // find all proofs where the relation = any of the senders
-            doc! {
-                "$lookup": {
-                    "from": "proofs",
-                    "localField": "sender",
-                    "foreignField": "relation",
-                    "as": "proofs",
-                    "pipeline": [
-                        doc! { "$match": { "inactive": { "$ne": true } } },
-                        doc! { "$project": { "degree": 1, "scope": 1 } }
-                    ]
-                }
-            },
-            // Unwind the proofs array
-            doc! { "$unwind": "$proofs" },
-            // Reshape the document to the desired format
-            doc! {
-                "$project": {
-                    "_id": "$proofs._id",
-                    "degree": "$proofs.degree",
-                    "scope": "$proofs.scope",
-                    "relation": "$sender"
-                }
-            },
-            // Lookup the username for the scope
-            doc! {
-                "$lookup": {
-                    "from": "users",
-                    "localField": "scope",
-                    "foreignField": "_id",
-                    "as": "scopeUser",
-                    "pipeline": [
-                        doc! { "$project": { "_id": 0, "username": 1 } }
-                    ]
-                }
-            },
-            // Lookup the username for the relation
-            doc! {
-                "$lookup": {
-                    "from": "users",
-                    "localField": "relation",
-                    "foreignField": "_id",
-                    "as": "relationUser",
-                    "pipeline": [
-                        doc! { "$project": { "_id": 0, "username": 1 } }
-                    ]
-                }
-            },
-            // Final projection to format the output
-            doc! {
-                "$project": {
-                    "degree": 1,
-                    "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
-                    "relation": { "$arrayElemAt": ["$relationUser.username", 0] }
-                }
-            },
-        ];
+        let pipeline = pipelines::available_degrees(&username);
         // get the OID's of degree proofs the user can build from
-        let mut proofs: Vec<AvailableProofs> = vec![];
+        let mut available_proofs: Vec<AvailableProofs> = vec![];
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    let id = document
-                        .get("_id")
-                        .and_then(|id| id.as_object_id())
-                        .unwrap();
-                    let degree = document.get("degree").unwrap().as_i32().unwrap() as u8;
-                    let scope = document.get("scope").unwrap().as_str().unwrap().to_string();
-                    let relation = document
-                        .get("relation")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        .to_string();
-                    proofs.push(AvailableProofs {
-                        id,
-                        degree,
-                        scope,
-                        relation,
-                    });
+                    available_proofs.push(bson::from_bson(bson::Bson::Document(document)).unwrap())
                 }
                 Err(e) => println!("Error: {}", e),
             }
         }
-
-        proofs
+        available_proofs
     }
 
-    // /**
-    //  * Get all degree proofs created by a specific user
-    //  */
-    // pub async fn get_known(&self, username: String) -> Option<Vec<DegreeData>> {
-    //     let pipeline = vec![
-    //         // Step 1: Find the user by username to get their degree proofs
-    //         doc! { "$match": { "username": username } },
-    //         doc! { "$project": { "_id": 1, "degree_proofs": 1 } },
-    //         // Step 2: Look up degree proofs by this user of degree 1
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "degree_proofs",
-    //                 "foreignField": "_id",
-    //                 "as": "proofs",
-    //                 "pipeline": [
-    //                     { "$match": { "$expr": { "$eq": ["$degree", 1] } } }, // Note: Adjusted to use a static value for "degree"
-    //                     { "$project": { "degree": 1, "ciphertext": 1, "phrase": 1 } }
-    //                 ]
-    //             }
-    //         },
-    //         doc! { "$unwind": "$proofs" },
-    //         // Step 3: Cross reference the phrase documents to get auxiliary phrase information
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "phrases",
-    //                 "localField": "proofs.phrase",
-    //                 "foreignField": "_id",
-    //                 "as": "phrase",
-    //             }
-    //         },
-    //         doc! { "$unwind": "$phrase" },
-    //         // Step 4: Prune unnecessary fields and return the result
-    //         doc! {
-    //             "$project": {
-    //                 "hash": "$phrase.hash",
-    //                 "index": "$phrase.index",
-    //                 "description": "$phrase.description",
-    //                 "ciphertext": "$proofs.ciphertext",
-    //             }
-    //         },
-    //     ];
-    //     // get the OID's of degree proofs the user can build from
-    //     let mut degrees: Vec<DegreeData> = vec![];
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let phrase_hash: [u8; 32] = document
-    //                     .get("hash")
-    //                     .unwrap()
-    //                     .as_array()
-    //                     .unwrap()
-    //                     .iter()
-    //                     .map(|x| x.as_i32().unwrap() as u8)
-    //                     .collect::<Vec<u8>>()
-    //                     .try_into()
-    //                     .unwrap();
-    //                 let mut secret_phrase: Option<[u8; 192]> = None;
-    //                 if let Some(Bson::Binary(binary)) = document.get("ciphertext") {
-    //                     secret_phrase = Some(binary.bytes.clone().try_into().unwrap());
-    //                 }
-    //                 let phrase_index = document.get("index").unwrap().as_i64().unwrap() as u32;
-    //                 let description = document
-    //                     .get("description")
-    //                     .unwrap()
-    //                     .as_str()
-    //                     .unwrap()
-    //                     .to_string();
-    //                 degrees.push(DegreeData {
-    //                     description,
-    //                     degree: Some(1),
-    //                     phrase_index,
-    //                     relation: None,
-    //                     preceding_relation: None,
-    //                     phrase_hash,
-    //                     secret_phrase,
-    //                 });
-    //             }
-    //             Err(e) => {
-    //                 println!("Error: {}", e);
-    //                 return None;
-    //             }
-    //         }
-    //     }
-    //     Some(degrees)
-    // }
-
-    // // @todo: ask chatgpt for better name
-    // pub async fn get_all_degrees(&self, username: String) -> Option<Vec<DegreeData>> {
-    //     let pipeline = vec![
-    //         // get the user to find the proofs of degrees of separation for the user
-    //         doc! { "$match": { "username": username } },
-    //         doc! { "$project": { "_id": 1, "degree_proofs": 1 } },
-    //         // look up the degree proof documents
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "degree_proofs",
-    //                 "foreignField": "_id",
-    //                 "as": "proofs",
-    //                 "pipeline": [doc! { "$project": { "degree": 1, "preceding": 1, "phrase": 1 } }]
-    //             }
-    //         },
-    //         doc! {
-    //             "$project": {
-    //                 "proofs": {
-    //                     "$filter": {
-    //                       "input": "$proofs",
-    //                       "as": "proof",
-    //                       "cond": { "$gt": ["$$proof.degree", 1] }
-    //                     }
-    //                 },
-    //             }
-    //         },
-    //         doc! { "$unwind": "$proofs" },
-    //         doc! {
-    //             "$project": {
-    //                 "degree": "$proofs.degree",
-    //                 "preceding": "$proofs.preceding",
-    //                 "phrase": "$proofs.phrase",
-    //                 "_id": 0
-    //             }
-    //         },
-    //         // get the preceding proof if it exists, then get the user who made it to show the connection
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "degree_proofs",
-    //                 "localField": "preceding",
-    //                 "foreignField": "_id",
-    //                 "as": "relation",
-    //                 "pipeline": [doc! { "$project": { "preceding": 1, "user": 1, "_id": 0 } }]
-    //             }
-    //         },
-    //         doc! {
-    //             "$project": {
-    //                 "degree": 1,
-    //                 "preceding": 1,
-    //                 "phrase": 1,
-    //                 "relation": { "$arrayElemAt": ["$relation.user", 0] },
-    //                 "precedingRelation": { "$arrayElemAt": ["$relation.preceding", 0] },
-    //                 "_id": 0
-    //             }
-    //         },
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "users",
-    //                 "localField": "relation",
-    //                 "foreignField": "_id",
-    //                 "as": "relation",
-    //                 "pipeline": [doc! { "$project": { "_id": 0, "username": 1 } }]
-    //             }
-    //         },
-    //         doc! {
-    //             "$project": {
-    //                 "degree": 1,
-    //                 "phrase": 1,
-    //                 "relation": { "$arrayElemAt": ["$relation.username", 0] },
-    //                 "precedingRelation": 1,
-    //                 "_id": 0
-    //             }
-    //         },
-    //         // Lookup preceding relation. Will be none if degree is 2 or less
-    //         doc! {
-    //           "$lookup": {
-    //             "from": "degree_proofs",
-    //             "localField": "precedingRelation",
-    //             "foreignField": "_id",
-    //             "as": "precedingRelation",
-    //             "pipeline": [doc! { "$project": { "user": 1, "_id": 0 } }]
-    //           },
-    //         },
-    //         doc! {
-    //             "$project": {
-    //                 "degree": 1,
-    //                 "phrase": 1,
-    //                 "relation": 1,
-    //                 "precedingRelation": { "$arrayElemAt": ["$precedingRelation.user", 0] },
-    //             }
-    //         },
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "users",
-    //                 "localField": "precedingRelation",
-    //                 "foreignField": "_id",
-    //                 "as": "precedingRelation",
-    //                 "pipeline": [doc! { "$project": { "_id": 0, "username": 1 } }]
-    //             }
-    //         },
-    //         doc! {
-    //             "$project": {
-    //                 "degree": 1,
-    //                 "phrase": 1,
-    //                 "relation": 1,
-    //                 "precedingRelation": { "$arrayElemAt": ["$precedingRelation.username", 0] },
-    //                 "_id": 0
-    //             }
-    //         },
-    //         doc! {
-    //             "$lookup": {
-    //                 "from": "phrases",
-    //                 "localField": "phrase",
-    //                 "foreignField": "_id",
-    //                 "as": "phrase",
-    //                 "pipeline": [doc! { "$project": { "index": 1, "hash": 1, "description": 1, "_id": 0 } }]
-    //             }
-    //         },
-    //         doc! {
-    //             "$unwind": "$phrase"
-    //         },
-    //         doc! {
-    //             "$set": {
-    //                 "phrase_index": "$phrase.index",
-    //                 "phrase_hash": "$phrase.hash",
-    //                 "phrase_description": "$phrase.description"
-    //             }
-    //         },
-    //         doc! {
-    //             "$project": {
-    //                 "phrase": 0
-    //             }
-    //         },
-    //         doc! { "$sort": { "degree": 1 }},
-    //     ];
-    //     // get the OID's of degree proofs the user can build from
-    //     let mut degrees: Vec<DegreeData> = vec![];
-    //     let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
-    //     while let Some(result) = cursor.next().await {
-    //         match result {
-    //             Ok(document) => {
-    //                 let degree = document.get_i32("degree").unwrap() as u8;
-    //                 let relation = document
-    //                     .get("relation")
-    //                     .unwrap()
-    //                     .as_str()
-    //                     .unwrap()
-    //                     .to_string();
-    //                 let preceding_relation = match document.get("precedingRelation") {
-    //                     Some(relation) => Some(relation.as_str().unwrap().to_string()),
-    //                     None => None,
-    //                 };
-    //                 // @todo: can this be retrieved better?
-    //                 let phrase_hash: [u8; 32] = document
-    //                     .get("phrase_hash")
-    //                     .unwrap()
-    //                     .as_array()
-    //                     .unwrap()
-    //                     .iter()
-    //                     .map(|x| x.as_i32().unwrap() as u8)
-    //                     .collect::<Vec<u8>>()
-    //                     .try_into()
-    //                     .unwrap();
-    //                 let phrase_index = document.get_i64("phrase_index").unwrap() as u32;
-    //                 let phrase_description = document
-    //                     .get("phrase_description")
-    //                     .unwrap()
-    //                     .as_str()
-    //                     .unwrap()
-    //                     .to_string();
-    //                 degrees.push(DegreeData {
-    //                     description: phrase_description,
-    //                     degree: Some(degree),
-    //                     phrase_index,
-    //                     relation: Some(relation),
-    //                     preceding_relation,
-    //                     phrase_hash,
-    //                     secret_phrase: None,
-    //                 });
-    //             }
-    //             Err(e) => {
-    //                 println!("Error: {}", e);
-    //                 return None;
-    //             }
-    //         }
-    //     }
-    //     Some(degrees)
-    // }
+    pub async fn find_proof_by_scope(
+        &self,
+        username: &String,
+        scope: &String,
+    ) -> Option<GrapevineProof> {
+        // pipeline to retrieve proof given relation = username and scope = scope
+        let pipeline = pipelines::proof_by_scope(username, scope);
+        // try to get the returned proof
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => Some(bson::from_bson(bson::Bson::Document(document)).unwrap()),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
 
     /**
      * Get a proof from the server with all info needed to prove a degree of separation as a given user
@@ -1303,124 +741,22 @@ impl GrapevineDB {
         username: String,
         proof: ObjectId,
     ) -> Option<ProvingData> {
-        let pipeline = vec![
-            // 1. Find the matching proof
-            doc! { "$match": { "_id": proof }},
-            // 2. Look up the pubkey of the proof creator
-            doc! {
-                "$lookup": {
-                    "from": "users",
-                    "localField": "relation",
-                    "foreignField": "_id",
-                    "as": "relation_pubkey",
-                    "pipeline": [{ "$project": { "_id": 0, "pubkey": 1 }}]
-                }
-            },
-            doc! { "$unwind": "$relation_pubkey" },
-            doc! { "$set": { "relation_pubkey": "$relation_pubkey.pubkey" }},
-            // 3. Look up the OID of the user requesting proof data given the username
-            doc! {
-                "$lookup": {
-                    "from": "users",
-                    "let": { "username": username },
-                    "pipeline": [
-                        {"$match": { "$expr": { "$eq": [ "$username", "$$username" ] }}},
-                        { "$project": { "_id": 1 }}
-                    ],
-                    "as": "user_id"
-                }
-            },
-            doc! { "$unwind": "$user_id" },
-            doc! { "$set": { "user_id": "$user_id._id" }},
-            // 4. Look up the nullifier and auth signature for the given relationship
-            doc! {
-                "$lookup": {
-                    "from": "relationships",
-                    "let": { "sender": "$relation", "recipient": "$user_id" },
-                    "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {
-                                    "$and": [
-                                        { "$eq": [ "$sender", "$$sender" ] },
-                                        { "$eq": [ "$recipient", "$$recipient" ] }
-                                    ]
-                                }
-                            }
-                        },
-                        {
-                            "$project": {
-                                "_id": 0,
-                                "nullifier_ciphertext": 1,
-                                "signature_ciphertext": 1,
-                                "ephemeral_key": 1
-                            }
-                        }
-                    ],
-                    "as": "relationship"
-                }
-            },
-            doc! { "$unwind": "$relationship" },
-            // 5: Project only necessary fields
-            doc! {
-                "$project": {
-                    "_id": 0,
-                    "proof": 1,
-                    "relation_pubkey": 1,
-                    "nullifier_ciphertext": "$relationship.nullifier_ciphertext",
-                    "signature_ciphertext": "$relationship.signature_ciphertext",
-                    "ephemeral_key": "$relationship.ephemeral_key"
-                }
-            },
-        ];
-
+        // pipeline to get the proof data
+        let pipeline = pipelines::proving_data(&username, &proof);
         // Get the proving data
         let mut cursor = self.proofs.aggregate(pipeline, None).await.unwrap();
         if let Some(result) = cursor.next().await {
             match result {
-                Ok(document) => {
-                    let mut proof: Vec<u8> = vec![];
-                    let mut relation_pubkey: [u8; 32] = [0; 32];
-                    let mut ephemeral_key: [u8; 32] = [0; 32];
-                    let mut signature_ciphertext: [u8; 80] = [0; 80];
-                    let mut nullifier_ciphertext: [u8; 48] = [0; 48];
-                    // can we just decrypt into a document?
-                    if let Some(Bson::Binary(binary)) = document.get("proof") {
-                        proof = binary.bytes.clone().try_into().unwrap();
-                    };
-                    if let Some(Bson::Binary(binary)) = document.get("relation_pubkey") {
-                        relation_pubkey = binary.bytes.clone().try_into().unwrap();
-                    };
-                    if let Some(Bson::Binary(binary)) = document.get("ephemeral_key") {
-                        ephemeral_key = binary.bytes.clone().try_into().unwrap();
-                    };
-                    if let Some(Bson::Binary(binary)) = document.get("signature_ciphertext") {
-                        signature_ciphertext = binary.bytes.clone().try_into().unwrap();
-                    };
-                    if let Some(Bson::Binary(binary)) = document.get("nullifier_ciphertext") {
-                        nullifier_ciphertext = binary.bytes.clone().try_into().unwrap();
-                    };
-
-                    Some(ProvingData {
-                        proof,
-                        relation_pubkey,
-                        ephemeral_key,
-                        signature_ciphertext,
-                        nullifier_ciphertext,
-                    })
-                }
-                Err(_) => {
-                    println!("Error");
-                    None
-                }
+                Ok(document) => Some(bson::from_bson(bson::Bson::Document(document)).unwrap()),
+                Err(_) => None,
             }
         } else {
-            println!("No doc found");
             None
         }
     }
 
     /**
+<<<<<<< HEAD
     * Get details on account:
        - # of first degree connections
        - # of second degree connections
@@ -2066,4 +1402,55 @@ impl GrapevineDB {
     //         ));
     //     }
     // }
+=======
+     * Deletes all proofs that have matching nullifiers
+     *
+     * @param nullifier - the nullifier to match
+     * @returns - the number of proofs deleted
+     */
+    pub async fn delete_nullified_proofs(
+        &self,
+        nullifier: &[u8; 32],
+    ) -> Result<u64, GrapevineError> {
+        // filter to find all matching nullifiers
+        let filter = doc! {
+            "nullifiers": {
+                "$elemMatch": {
+                    "$eq": Bson::Array(nullifier.iter().map(|&byte| Bson::Int32(byte.into())).collect())
+                }
+            }
+        };
+        match self.proofs.delete_many(filter, None).await {
+            Ok(result) => Ok(result.deleted_count),
+            Err(e) => {
+                println!("Error: {}", e);
+                Err(GrapevineError::MongoError(e.to_string()))
+            }
+        }
+    }
+
+    /**
+     * Determines whether any nullifiers for a given proof are emitted in relationships
+     *
+     * @param nullifiers - the nullifiers to search for
+     * @returns - if successful, a boolean whether or not the nullifiers are not emitted (true = emitted)
+     */
+    pub async fn contains_emitted_nullifiers(
+        &self,
+        nullifiers: &Vec<[u8; 32]>,
+    ) -> Result<bool, GrapevineError> {
+        // pipeline for searching all given nullifiers in emitted nullifiers from relationships
+        let pipeline = pipelines::nullifiers_emitted(&nullifiers);
+        // determine if any matching nullifiers were found
+        let mut cursor = self.relationships.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(doc) => Ok(doc.get("matchedCount").unwrap().as_i32().unwrap() != 0),
+                Err(e) => Err(GrapevineError::MongoError(e.to_string()))
+            }
+        } else {
+            Ok(false)
+        }
+    }
+>>>>>>> staging
 }
