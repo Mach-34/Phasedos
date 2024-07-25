@@ -219,6 +219,7 @@ mod test_rocket {
         ) -> (u16, String) {
             // select the specific proof to build from
             let available_proofs = http_get_available_proofs(&context, prover).await;
+            println!("Available Proofs: {:?}", available_proofs);
             let available_proof = match scope {
                 Some(scope) => available_proofs
                     .iter()
@@ -858,48 +859,106 @@ mod test_rocket {
             }
         }
 
-        // #[rocket::async_test]
-        // pub async fn nonlinear_degree_5() {
-        //     /// user_0
-        //     ///   |- user_1
-        //     ///        |- user_2
-        //     ///            |-user_3
-        //     ///            |   |-user_4
-        //     ///            |       |-user_5
-        //     ///            |
-        //     ///            |-user_6
-        //     ///            |   |-user_7
-        //     ///            |       |-user_8
-        //     ///            |       |-user_9
-        //     ///            |
-        //     ///            |-user_10
-        //     ///            |   |-user_7
-        //     ///            |       |-user_11
-        //     ///            |       |-user_12
-        //     ///
-        //     // Setup
-        //     let context = GrapevineTestContext::init().await;
-        //     GrapevineDB::drop("grapevine_mocked").await;
-        //     // create users
-        //     let num_users = 13;
-        //     let mut users: Vec<GrapevineAccount> = vec![];
-        //     for i in 0..num_users {
-        //         let username = format!("user_{}", i);
-        //         let user = GrapevineAccount::new(username.into());
-        //         let request = build_create_user_request(&user);
-        //         http_create_user(&context, &request).await;
-        //         users.push(user);
-        //     }
-        //     // establish relationship chain for users
-        //     for i in 0..num_users - 1 {
-        //         let request = users[i]
-        //             .new_relationship_request(users[i + 1].username(), &users[i + 1].pubkey());
-        //         http_add_relationship(&context, &mut users[i], &request).await;
-        //         let request =
-        //             users[i + 1].new_relationship_request(users[i].username(), &users[i].pubkey());
-        //         http_add_relationship(&context, &mut users[i + 1], &request).await;
-        //     }
-        // }
+        #[rocket::async_test]
+        pub async fn test_nonlinear_reordering() {
+            // user_0
+            //   |- user_1
+            //        |- user_2
+            //            |-user_3
+            //            |   |-user_4
+            //            |       |-user_5
+            //            |
+            //            |-user_6
+            //            |   |-user_7
+            //            |       |-user_8
+            //            |       |-user_9
+            //            |
+            //            |-user_10
+            //            |   |-user_11
+            //            |       |-user_12
+            //            |       |-user_13
+            //
+            // to 
+            // user_0
+            //   |- user_1
+            //        |-user_3
+            //        |   |-user_4
+            //        |       |-user_5
+            //        |
+            //        |-user_6
+            //        |   |-user_7
+            //        |       |-user_8
+            //        |       |-user_9
+            //        |
+            //        |-user_10
+            //        |   |-user_11
+            //        |       |-user_12
+            //        |       |-user_13
+            //
+            // Setup
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+            // create users
+            let mut users = get_users(&context, 14).await;
+            // todo: fix this bs
+            // establish 0-1-2-3-4-5 chain
+            let mut temp_vec = vec![
+                users.remove(5),
+                users.remove(4),
+                users.remove(3),
+                users.remove(2),
+                users.remove(1),
+                users.remove(0)
+            ];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(0, temp_vec.remove(0));
+            users.insert(1, temp_vec.remove(0));
+            users.insert(2, temp_vec.remove(0));
+            users.insert(3, temp_vec.remove(0)); 
+            users.insert(4, temp_vec.remove(0));
+            users.insert(5, temp_vec.remove(0));
+            // establish 2-6-7-8 chain
+            let mut temp_vec = vec![users.remove(8), users.remove(7), users.remove(6), users.remove(2)];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(2, temp_vec.remove(0));
+            users.insert(6, temp_vec.remove(0));
+            users.insert(7, temp_vec.remove(0));
+            users.insert(8, temp_vec.remove(0));
+            // extablish 7-9
+            let mut temp_vec = vec![users.remove(9), users.remove(7)];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(7, temp_vec.remove(0));
+            users.insert(9, temp_vec.remove(0));
+            // establish 2-10-11-12
+            let mut temp_vec = vec![users.remove(12), users.remove(11), users.remove(10), users.remove(2)];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(2, temp_vec.remove(0));
+            users.insert(10, temp_vec.remove(0));
+            users.insert(11, temp_vec.remove(0));
+            users.insert(12, temp_vec.remove(0));
+            // establish 11-13
+            let mut temp_vec = vec![users.remove(13), users.remove(11)];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(11, temp_vec.remove(0));
+            users.insert(13, temp_vec.remove(0));
+            for i in 0..14 {
+                // println!("User #{}: {}", i, users[i].username());
+            }
+            // build proof chain
+            let scope_to_find = String::from("user_0");
+            for i in 1..14 {
+                let mut prover = users.remove(i);
+                let (code, _) =
+                    degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
+                assert_eq!(code, Status::Created.code);
+                users.insert(i, prover);
+            }
+        }
 
         #[rocket::async_test]
         pub async fn test_nullify_existing_proofs() {
