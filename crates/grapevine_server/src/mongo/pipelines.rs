@@ -379,3 +379,45 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
         doc! { "$count": "matchedCount" },
     ]
 }
+
+// pub fn degree_proof_dependencies() -> Vec<Document> {
+//     vec![
+//         doc! {
+//           "$match": {
+//             "user": user,
+//             "phrase": proof.phrase
+//           }
+//         },
+//         doc! {
+//           "$graphLookup": {
+//             "from": "degree_proofs",
+//             "startWith": "$preceding", // Assuming 'preceding' is a field that points to the parent document
+//             "connectFromField": "preceding",
+//             "connectToField": "_id",
+//             "as": "preceding_chain",
+//           }
+//         },
+//         doc! {
+//             "$project": {
+//                 "_id": 1,
+//                 "degree": 1,
+//                 "inactive": 1,
+//                 "preceding": 1,
+//                 "proceeding": 1,
+//                 "preceding_chain": {
+//                     "$map": {
+//                         "input": "$preceding_chain",
+//                         "as": "chain",
+//                         "in": {
+//                             "_id": "$$chain._id",
+//                             "degree": "$$chain.degree",
+//                             "inactive": "$$chain.inactive",
+//                             "preceding": "$$chain.preceding",
+//                             "proceeding": "$$chain.proceeding",
+//                         }
+//                     }
+//                 }
+//             }
+//         },
+//     ]
+// }

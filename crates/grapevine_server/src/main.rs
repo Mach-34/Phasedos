@@ -121,7 +121,7 @@ mod test_rocket {
         use ff::PrimeField;
         use grapevine_circuits::{
             inputs::{GrapevineInputs, GrapevineOutputs},
-            nova::verify_grapevine_proof,
+            nova::{degree_proof, verify_grapevine_proof},
             utils::compress_proof,
         };
         use grapevine_common::{
@@ -130,6 +130,27 @@ mod test_rocket {
             models::{AvailableProofs, GrapevineProof, ProvingData, Relationship},
             Fr, NovaProof,
         };
+
+        /**
+         * Generate a specified number of users and register them in the grapevine service
+         *
+         * @param num_users - the number of users to enroll
+         * @return  - the registered grapevine accounts
+         */
+        pub async fn get_users(
+            context: &GrapevineTestContext,
+            num_users: usize,
+        ) -> Vec<GrapevineAccount> {
+            let mut users = vec![];
+            for i in 0..num_users {
+                let username = format!("user_{}", i);
+                let user = GrapevineAccount::new(username.into());
+                let request = build_create_user_request(&user);
+                http_create_user(&context, &request).await;
+                users.push(user);
+            }
+            users
+        }
 
         /**
          * Build a grapevine identity proof (degree 0) given a grapevine account
@@ -184,6 +205,54 @@ mod test_rocket {
         }
 
         /**
+         * Full degree proof step
+         *
+         * @param context - the mocked rocket http server context
+         * @param prover - the account proving the degree
+         * @param scope - Optionally the username of the scope to use when multiple available proofs, or the first one
+         * @return - http code and message from server for degree proof submission
+         */
+        pub async fn degree_proof_step_by_scope(
+            context: &GrapevineTestContext,
+            prover: &mut GrapevineAccount,
+            scope: Option<&String>,
+        ) -> (u16, String) {
+            // select the specific proof to build from
+            let available_proofs = http_get_available_proofs(&context, prover).await;
+            let available_proof = match scope {
+                Some(scope) => available_proofs
+                    .iter()
+                    .find(|&proof| scope == &proof.scope)
+                    .unwrap(),
+                None => available_proofs.first().unwrap(),
+            };
+            // retrieve proving data
+            let degree = available_proof.degree;
+            let proving_data =
+                http_get_proving_data(&context, prover, &available_proof.id.to_string()).await;
+            // parse
+            let (mut proof, inputs, outputs) =
+                build_degree_inputs(prover, &proving_data, degree as u8);
+            // prove
+            degree_proof(
+                &ARTIFACTS,
+                &inputs,
+                &mut proof,
+                &outputs.try_into().unwrap(),
+            )
+            .unwrap();
+            // build DegreeProofRequest
+            let compressed = compress_proof(&proof);
+            let degree_proof_request = DegreeProofRequest {
+                proof: compressed,
+                previous: available_proof.id.to_string(),
+                degree: degree + 1,
+            };
+            // submit degree proof and return result
+            http_submit_degree_proof(&context, prover, degree_proof_request).await
+        }
+
+        /**
          * Construct the request body for a user creation request
          *
          * @return - the body for a user creation http request
@@ -203,6 +272,27 @@ mod test_rocket {
         fn generate_nonce_signature(user: &GrapevineAccount) -> String {
             let nonce_signature = user.sign_nonce();
             hex::encode(nonce_signature.compress())
+        }
+
+        /**
+         * Builds chain of relationships between accounts
+         *
+         * @param accounts - the accounts to build relationships between
+         */
+        pub async fn relationship_chain(
+            context: &GrapevineTestContext,
+            accounts: &mut Vec<GrapevineAccount>,
+        ) {
+            for i in 0..accounts.len() - 1 {
+                let request = accounts[i].new_relationship_request(
+                    accounts[i + 1].username(),
+                    &accounts[i + 1].pubkey(),
+                );
+                http_add_relationship(&context, &mut accounts[i], &request).await;
+                let request = accounts[i + 1]
+                    .new_relationship_request(accounts[i].username(), &accounts[i].pubkey());
+                http_add_relationship(&context, &mut accounts[i + 1], &request).await;
+            }
         }
 
         /**
@@ -689,7 +779,10 @@ mod test_rocket {
             .await;
             println!("Code: {}", code);
             let expected_code = Status::Created.code;
-            assert_eq!(expected_code, code, "Expected HTTP::Created on nullifier emission");
+            assert_eq!(
+                expected_code, code,
+                "Expected HTTP::Created on nullifier emission"
+            );
 
             // confirm relationship now has emitted nullifier
             // TODO: FIX
@@ -735,51 +828,12 @@ mod test_rocket {
             let context = GrapevineTestContext::init().await;
             GrapevineDB::drop("grapevine_mocked").await;
             // create users
-            let mut user_a = GrapevineAccount::new("user_a".into());
-            let user_request_a = build_create_user_request(&user_a);
-            http_create_user(&context, &user_request_a).await;
-            let mut user_b = GrapevineAccount::new("user_b".into());
-            let user_request_b = build_create_user_request(&user_b);
-            http_create_user(&context, &user_request_b).await;
-
+            let mut users = get_users(&context, 2).await;
             // establish relationship between users
-            let user_a_relationship_request =
-                user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
-            http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
-            let user_b_relationship_request =
-                user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
-            http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+            relationship_chain(&context, &mut users).await;
 
             // retrieve available proofs as user_b
-            let available_proofs = http_get_available_proofs(&context, &mut user_b).await;
-            // retrieve proving data for user_b to prove degree 1 from user_a
-            let prev_proof_oid = available_proofs[0].id.to_string();
-            let degree = available_proofs[0].degree;
-            let proving_data = http_get_proving_data(&context, &mut user_b, &prev_proof_oid).await;
-            // parse the returned data and prepare input/ proof for next step
-            let (mut proof, inputs, outputs) =
-                build_degree_inputs(&user_b, &proving_data, degree as u8);
-
-            // user_b proves degree 1 separation from user_a
-            degree_proof(
-                &ARTIFACTS,
-                &inputs,
-                &mut proof,
-                &outputs.try_into().unwrap(),
-            )
-            .unwrap();
-            // verify proof
-            _ = verify_grapevine_proof(&proof, &ARTIFACTS.params, degree as usize + 1).unwrap();
-            // build DegreeProofRequest
-            let compressed = compress_proof(&proof);
-            let degree_proof_request = DegreeProofRequest {
-                proof: compressed,
-                previous: prev_proof_oid,
-                degree: degree + 1,
-            };
-            // simulate http call
-            let (code, _) =
-                http_submit_degree_proof(&context, &mut user_b, degree_proof_request).await;
+            let (code, _) = degree_proof_step_by_scope(&context, &mut users[1], None).await;
             assert_eq!(code, Status::Created.code);
         }
 
@@ -790,63 +844,62 @@ mod test_rocket {
             GrapevineDB::drop("grapevine_mocked").await;
             // create users
             let num_users = 9;
-            let mut users: Vec<GrapevineAccount> = vec![];
-            for i in 0..num_users {
-                let username = format!("user_{}", i);
-                let user = GrapevineAccount::new(username.into());
-                let request = build_create_user_request(&user);
-                http_create_user(&context, &request).await;
-                users.push(user);
-            }
+            let mut users = get_users(&context, num_users).await;
             // establish relationship chain for users
-            for i in 0..num_users - 1 {
-                let request = users[i]
-                    .new_relationship_request(users[i + 1].username(), &users[i + 1].pubkey());
-                http_add_relationship(&context, &mut users[i], &request).await;
-                let request =
-                    users[i + 1].new_relationship_request(users[i].username(), &users[i].pubkey());
-                http_add_relationship(&context, &mut users[i + 1], &request).await;
-            }
+            relationship_chain(&context, &mut users).await;
             // build proof chain to max available degree
             let scope_to_find = String::from("user_0");
             for i in 1..num_users {
                 let mut prover = users.remove(i);
-                let previous = users.remove(i - 1);
-                // select the specific proof to build from
-                let available_proofs = http_get_available_proofs(&context, &mut prover).await;
-                let available_proof = available_proofs
-                    .iter()
-                    .find(|&proof| scope_to_find == proof.scope)
-                    .unwrap();
-                // retrieve proving data
-                let degree = available_proof.degree;
-                let proving_data =
-                    http_get_proving_data(&context, &mut prover, &available_proof.id.to_string())
-                        .await;
-                // parse
-                let (mut proof, inputs, outputs) =
-                    build_degree_inputs(&prover, &proving_data, degree as u8);
-                // prove
-                degree_proof(
-                    &ARTIFACTS,
-                    &inputs,
-                    &mut proof,
-                    &outputs.try_into().unwrap(),
-                )
-                .unwrap();
-                // build DegreeProofRequest
-                let compressed = compress_proof(&proof);
-                let degree_proof_request = DegreeProofRequest {
-                    proof: compressed,
-                    previous: available_proof.id.to_string(),
-                    degree: degree + 1,
-                };
-                let (code, msg) =
-                    http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
-                users.insert(i - 1, previous);
+                let (code, _) =
+                    degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
+                assert_eq!(code, Status::Created.code);
                 users.insert(i, prover);
             }
         }
+
+        // #[rocket::async_test]
+        // pub async fn nonlinear_degree_5() {
+        //     /// user_0
+        //     ///   |- user_1
+        //     ///        |- user_2
+        //     ///            |-user_3
+        //     ///            |   |-user_4
+        //     ///            |       |-user_5
+        //     ///            |
+        //     ///            |-user_6
+        //     ///            |   |-user_7
+        //     ///            |       |-user_8
+        //     ///            |       |-user_9
+        //     ///            |
+        //     ///            |-user_10
+        //     ///            |   |-user_7
+        //     ///            |       |-user_11
+        //     ///            |       |-user_12
+        //     ///
+        //     // Setup
+        //     let context = GrapevineTestContext::init().await;
+        //     GrapevineDB::drop("grapevine_mocked").await;
+        //     // create users
+        //     let num_users = 13;
+        //     let mut users: Vec<GrapevineAccount> = vec![];
+        //     for i in 0..num_users {
+        //         let username = format!("user_{}", i);
+        //         let user = GrapevineAccount::new(username.into());
+        //         let request = build_create_user_request(&user);
+        //         http_create_user(&context, &request).await;
+        //         users.push(user);
+        //     }
+        //     // establish relationship chain for users
+        //     for i in 0..num_users - 1 {
+        //         let request = users[i]
+        //             .new_relationship_request(users[i + 1].username(), &users[i + 1].pubkey());
+        //         http_add_relationship(&context, &mut users[i], &request).await;
+        //         let request =
+        //             users[i + 1].new_relationship_request(users[i].username(), &users[i].pubkey());
+        //         http_add_relationship(&context, &mut users[i + 1], &request).await;
+        //     }
+        // }
 
         #[rocket::async_test]
         pub async fn test_nullify_existing_proofs() {
@@ -855,60 +908,16 @@ mod test_rocket {
             GrapevineDB::drop("grapevine_mocked").await;
             // create users
             let num_users = 9;
-            let mut users: Vec<GrapevineAccount> = vec![];
-            for i in 0..num_users {
-                let username = format!("user_{}", i);
-                let user = GrapevineAccount::new(username.into());
-                let request = build_create_user_request(&user);
-                http_create_user(&context, &request).await;
-                users.push(user);
-            }
+            let mut users = get_users(&context, num_users).await;
             // establish relationship chain for users
-            for i in 0..num_users - 1 {
-                let request = users[i]
-                    .new_relationship_request(users[i + 1].username(), &users[i + 1].pubkey());
-                http_add_relationship(&context, &mut users[i], &request).await;
-                let request =
-                    users[i + 1].new_relationship_request(users[i].username(), &users[i].pubkey());
-                http_add_relationship(&context, &mut users[i + 1], &request).await;
-            }
+            relationship_chain(&context, &mut users).await;
             // build proof chain
             let scope_to_find = String::from("user_0");
             for i in 1..num_users {
                 let mut prover = users.remove(i);
-                let previous = users.remove(i - 1);
-                // select the specific proof to build from
-                let available_proofs = http_get_available_proofs(&context, &mut prover).await;
-                let available_proof = available_proofs
-                    .iter()
-                    .find(|&proof| scope_to_find == proof.scope)
-                    .unwrap();
-                // retrieve proving data
-                let degree = available_proof.degree;
-                let proving_data =
-                    http_get_proving_data(&context, &mut prover, &available_proof.id.to_string())
-                        .await;
-                // parse
-                let (mut proof, inputs, outputs) =
-                    build_degree_inputs(&prover, &proving_data, degree as u8);
-                // prove
-                degree_proof(
-                    &ARTIFACTS,
-                    &inputs,
-                    &mut proof,
-                    &outputs.try_into().unwrap(),
-                )
-                .unwrap();
-                // build DegreeProofRequest
-                let compressed = compress_proof(&proof);
-                let degree_proof_request = DegreeProofRequest {
-                    proof: compressed,
-                    previous: available_proof.id.to_string(),
-                    degree: degree + 1,
-                };
-                let (code, msg) =
-                    http_submit_degree_proof(&context, &mut prover, degree_proof_request).await;
-                users.insert(i - 1, previous);
+                let (code, _) =
+                    degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
+                assert_eq!(code, Status::Created.code);
                 users.insert(i, prover);
             }
 
@@ -1043,9 +1052,9 @@ mod test_rocket {
                 http_submit_degree_proof(&context, &mut user_2, degree_proof_request).await;
             let expected_code = Status::BadRequest.code;
             assert_eq!(code, expected_code);
-            let expected_message = String::from("{\"ProofFailed\":\"Contains emitted nullifiers\"}");
+            let expected_message =
+                String::from("{\"ProofFailed\":\"Contains emitted nullifiers\"}");
             assert_eq!(msg, expected_message);
-
         }
     }
 
