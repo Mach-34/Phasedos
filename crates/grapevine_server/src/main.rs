@@ -276,7 +276,7 @@ mod test_rocket {
          */
         pub async fn http_emit_nullifier(
             context: &GrapevineTestContext,
-            nullifier: [u8; 32],
+            nullifier_secret: [u8; 32],
             sender: &mut GrapevineAccount,
             recipient: &String,
         ) -> u16 {
@@ -284,7 +284,7 @@ mod test_rocket {
             let signature = generate_nonce_signature(sender);
 
             let payload = EmitNullifierRequest {
-                nullifier,
+                nullifier_secret,
                 recipient: recipient.to_string(),
             };
 
@@ -676,20 +676,20 @@ mod test_rocket {
 
             let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
 
-            // recompute nullifier to pass to server
-            let nullifier = user_a.compute_nullifier(nullifier_secret);
-
             // emit nullifier as user_a
             let code = http_emit_nullifier(
                 &context,
-                ff_ce_to_le_bytes(&nullifier),
+                ff_ce_to_le_bytes(&nullifier_secret),
                 &mut user_a,
                 user_b.username(),
             )
             .await;
             println!("Code: {}", code);
             let expected_code = Status::Created.code;
-            assert_eq!(expected_code, code, "Expected HTTP::Created on nullifier emission");
+            assert_eq!(
+                expected_code, code,
+                "Expected HTTP::Created on nullifier emission"
+            );
 
             // confirm relationship now has emitted nullifier
             // TODO: FIX
@@ -924,10 +924,9 @@ mod test_rocket {
             let nullifier_secret_ciphertext =
                 http_get_nullifier_secret(&context, &mut users[4], &nullify_target).await;
             let nullifier_secret = users[4].decrypt_nullifier_secret(nullifier_secret_ciphertext);
-            let nullifier = users[4].compute_nullifier(nullifier_secret);
             _ = http_emit_nullifier(
                 &context,
-                ff_ce_to_le_bytes(&nullifier),
+                ff_ce_to_le_bytes(&nullifier_secret),
                 &mut users[4],
                 &nullify_target,
             )
@@ -1015,10 +1014,9 @@ mod test_rocket {
             let nullifier_secret_ciphertext =
                 http_get_nullifier_secret(&context, &mut user_0, user_1.username()).await;
             let nullifier_secret = user_0.decrypt_nullifier_secret(nullifier_secret_ciphertext);
-            let nullifier = user_0.compute_nullifier(nullifier_secret);
             _ = http_emit_nullifier(
                 &context,
-                ff_ce_to_le_bytes(&nullifier),
+                ff_ce_to_le_bytes(&nullifier_secret),
                 &mut user_0,
                 user_1.username(),
             )
@@ -1043,9 +1041,9 @@ mod test_rocket {
                 http_submit_degree_proof(&context, &mut user_2, degree_proof_request).await;
             let expected_code = Status::BadRequest.code;
             assert_eq!(code, expected_code);
-            let expected_message = String::from("{\"ProofFailed\":\"Contains emitted nullifiers\"}");
+            let expected_message =
+                String::from("{\"ProofFailed\":\"Contains emitted nullifiers\"}");
             assert_eq!(msg, expected_message);
-
         }
     }
 

@@ -232,7 +232,7 @@ impl GrapevineAccount {
             ephemeral_key: auth_secret_encrypted.ephemeral_key,
             signature_ciphertext: auth_secret_encrypted.signature_ciphertext,
             nullifier_ciphertext: auth_secret_encrypted.nullifier_ciphertext,
-            nullifier_secret_ciphertext
+            nullifier_secret_ciphertext,
         }
     }
 
@@ -253,12 +253,6 @@ impl GrapevineAccount {
     /** Computes address from pubkey and returns it */
     pub fn address(&self) -> Fr {
         pubkey_to_address(&self.pubkey())
-    }
-
-    /** Compute nullifier from nullifier secret and return */
-    pub fn compute_nullifier(&self, nullifier_secret: Fr) -> Fr {
-        let hasher = Poseidon::new();
-        hasher.hash(vec![nullifier_secret, self.address()]).unwrap()
     }
 
     /** Return the username associated with this account */

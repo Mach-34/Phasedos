@@ -210,12 +210,8 @@ pub async fn nullify_relationship(recipient: &String) -> Result<String, Grapevin
     let bytes: [u8; 48] = encrypted_nullifier_secret.try_into().unwrap();
     let nullifier_secret = account.decrypt_nullifier_secret(bytes);
 
-    // TODO: Make this happen server side
-    // compute nullifier
-    let nullifier = account.compute_nullifier(nullifier_secret);
-
     let request_body = EmitNullifierRequest {
-        nullifier: ff_ce_to_le_bytes(&nullifier),
+        nullifier_secret: ff_ce_to_le_bytes(&nullifier_secret),
         recipient: recipient.clone(),
     };
 

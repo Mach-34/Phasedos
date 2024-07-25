@@ -3,10 +3,11 @@ use crate::guards::AuthenticatedUser;
 use crate::mongo::GrapevineDB;
 use crate::utils::RelationshipStatus;
 use babyjubjub_rs::{decompress_point, decompress_signature, verify};
+use grapevine_common::compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::{EmitNullifierRequest, GetNonceRequest};
 use grapevine_common::http::{requests::CreateUserRequest, responses::DegreeData};
-use grapevine_common::utils::convert_username_to_fr;
+use grapevine_common::utils::{compute_nullifier, convert_username_to_fr};
 use grapevine_common::MAX_USERNAME_CHARS;
 use grapevine_common::{
     http::requests::NewRelationshipRequest,
@@ -229,9 +230,18 @@ pub async fn emit_nullifier(
         }
     };
 
+    // fetch address from user
+    let address = db.get_user(&user.0).await.unwrap().address.unwrap();
+    // compute nullifier from nullifier secret
+    let nullifier = compute_nullifier(
+        ff_ce_from_le_bytes(address),
+        ff_ce_from_le_bytes(request.nullifier_secret),
+    );
+    let nullifier_bytes = ff_ce_to_le_bytes(&nullifier);
+
     // store the emitted nullifier and terminate/ nullify the relationship
     if let Err(e) = db
-        .nullify_relationship(&request.nullifier, &user.0, &request.recipient)
+        .nullify_relationship(&nullifier_bytes, &user.0, &request.recipient)
         .await
     {
         return Err(GrapevineResponse::InternalError(ErrorMessage(
@@ -241,7 +251,7 @@ pub async fn emit_nullifier(
     };
 
     // delete all proofs that contain the given nullifier
-    match db.delete_nullified_proofs(&request.nullifier).await {
+    match db.delete_nullified_proofs(&nullifier_bytes).await {
         Ok(_) => Ok(GrapevineResponse::Created(
             "Nullifier emitted successfully".to_string(),
         )),
