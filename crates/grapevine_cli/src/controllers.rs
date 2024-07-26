@@ -163,9 +163,18 @@ pub async fn get_available_proofs() -> Result<String, GrapevineError> {
     let res = available_degrees(&mut account).await;
     match res {
         Ok(data) => {
-            let degree_col_width = 8;
-            let scope_col_width = 34;
+            let degree_col_width = 4;
             let relation_col_width = 4;
+
+            // calculate longest scope username
+            let scope_col_width = data.iter().fold(0, |acc, x| {
+                if acc < x.scope.len() {
+                    x.scope.len()
+                } else {
+                    acc
+                }
+            }) + 8;
+
             let mut output = String::new();
 
             let str = format!(
