@@ -1,5 +1,5 @@
 use crate::http::{
-    add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
+    add_relationship_req, available_degrees, create_user_req, degree_proof_req, emit_nullifier,
     get_account_details_req, get_available_proofs_req, get_degrees_req, get_known_req,
     get_nonce_req, get_nullifier_secret, get_phrase_req, get_pubkey_req, get_relationships_req,
     reject_relationship_req, show_connections_req,
@@ -150,6 +150,37 @@ pub async fn reject_relationship(username: &String) -> Result<String, GrapevineE
             "Success: rejected pending relationship with \"{}\"",
             username
         )),
+        Err(e) => Err(e),
+    }
+}
+
+pub async fn get_available_proofs() -> Result<String, GrapevineError> {
+    // get account
+    let mut account = get_account()?;
+    // sync nonce
+    synchronize_nonce().await?;
+
+    let res = available_degrees(&mut account).await;
+    match res {
+        Ok(data) => {
+            let degree_col_width = 8;
+            let scope_col_width = 34;
+            let relation_col_width = 4;
+            let mut output = String::new();
+
+            let str = format!(
+                "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n\n",
+                "Degree", "Scope", "Relation"
+            );
+            output.push_str(&str);
+            for i in 0..data.len() {
+                output.push_str(&format!(
+                    "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n",
+                    data[i].degree, data[i].scope, data[i].relation
+                ));
+            }
+            Ok(output)
+        }
         Err(e) => Err(e),
     }
 }

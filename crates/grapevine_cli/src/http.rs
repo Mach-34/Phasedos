@@ -5,6 +5,7 @@ use grapevine_common::http::requests::{
     NewRelationshipRequest,
 };
 use grapevine_common::http::responses::DegreeData;
+use grapevine_common::models::AvailableProofs;
 // use grapevine_common::models::ProvingData;
 use grapevine_common::{account::GrapevineAccount, errors::GrapevineError};
 use lazy_static::lazy_static;
@@ -158,6 +159,34 @@ pub async fn add_relationship_req(
                 .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
                 .unwrap();
             return Ok(message);
+        }
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
+    }
+}
+
+pub async fn available_degrees(
+    account: &mut GrapevineAccount,
+) -> Result<Vec<AvailableProofs>, GrapevineError> {
+    let url = format!("{}/proof/available", &**SERVER_URL);
+    // produce signature over current nonce
+    let signature = hex::encode(account.sign_nonce().compress());
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .header("X-Username", account.username())
+        .header("X-Authorization", signature)
+        .send()
+        .await
+        .unwrap();
+
+    account
+        .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
+        .unwrap();
+
+    match res.status() {
+        StatusCode::OK => {
+            let proofs = res.json::<Vec<AvailableProofs>>().await.unwrap();
+            Ok(proofs)
         }
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
     }
