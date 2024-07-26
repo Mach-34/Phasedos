@@ -68,10 +68,8 @@ enum AccountCommands {
     /// Register a new Grapevine account
     /// usage: `grapevine account register <username>`
     #[command(verbatim_doc_comment)]
-    Register {
-        #[clap(value_parser)]
-        username: String,
-    },
+    #[clap(value_parser)]
+    Register { username: String },
     /// Get information about your Grapevine account
     /// usage: `grapevine account info`
     #[command(verbatim_doc_comment)]
@@ -89,6 +87,11 @@ enum ProofCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Available,
+    /// Prove all available degrees
+    /// usage: `grapevine proof prove-available
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    ProveAvailable,
 }
 
 /**
@@ -107,6 +110,7 @@ pub async fn main() {
         Commands::Health => controllers::health().await,
         Commands::Proof(cmd) => match cmd {
             ProofCommands::Available => controllers::get_available_proofs().await,
+            ProofCommands::ProveAvailable => controllers::prove_all_available().await,
         },
         Commands::Relationship(cmd) => match cmd {
             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,

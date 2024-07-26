@@ -1,7 +1,7 @@
 use crate::http::{
-    add_relationship_req, available_degrees, create_user_req, degree_proof_req, emit_nullifier,
+    add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
     get_account_details_req, get_available_proofs_req, get_degrees_req, get_known_req,
-    get_nonce_req, get_nullifier_secret, get_phrase_req, get_pubkey_req, get_relationships_req,
+    get_nonce_req, get_nullifier_secret, get_pubkey_req, get_relationships_req,
     reject_relationship_req, show_connections_req,
 };
 use crate::utils::artifacts_guard;
@@ -154,16 +154,19 @@ pub async fn reject_relationship(username: &String) -> Result<String, GrapevineE
     }
 }
 
+/**
+ * Get available degree proofs that an account can prove from
+ */
 pub async fn get_available_proofs() -> Result<String, GrapevineError> {
     // get account
     let mut account = get_account()?;
     // sync nonce
     synchronize_nonce().await?;
 
-    let res = available_degrees(&mut account).await;
+    let res = get_available_proofs_req(&mut account).await;
     match res {
         Ok(data) => {
-            let degree_col_width = 4;
+            let degree_col_width = 8;
             let relation_col_width = 4;
 
             // calculate longest scope username
@@ -238,7 +241,7 @@ pub async fn get_relationships(active: bool) -> Result<String, GrapevineError> {
 /**
  * Emits the nullifier for a specified relationship, terminating it
  *
- * @param recipien - username of nullifier recipient in relationship
+ * @param recipient - username of nullifier recipient in relationship
  */
 pub async fn nullify_relationship(recipient: &String) -> Result<String, GrapevineError> {
     // get account
@@ -295,64 +298,8 @@ pub async fn synchronize_nonce() -> Result<String, GrapevineError> {
 }
 
 /**
- * Create a new phrase and proves knowledge of it
- * @notice if phrase does not exists, creates new phrase. Otherwise, proves knowledge of existing phrase
- *
- * @param phrase - the phrase to create
- * @param description - the description of the phrase (discarded if phrase exists)
+ * Proves all available degrees with existing relations
  */
-pub async fn prove_phrase(phrase: &String, description: &String) -> Result<String, GrapevineError> {
-    // ensure artifacts are present
-    artifacts_guard().await.unwrap();
-    let params = use_public_params().unwrap();
-    let r1cs = use_r1cs().unwrap();
-    let wc_path = use_wasm().unwrap();
-    // get account
-    let mut account = get_account()?;
-    // sync nonce
-    synchronize_nonce().await?;
-
-    // check that phrase is > 180 chars
-    if phrase.len() > 180 {
-        return Err(GrapevineError::PhraseTooLong);
-    }
-
-    // prove phrase
-    let pubkeys = vec![account.pubkey().clone()];
-    let auth_signature = vec![[random_fr(), random_fr(), random_fr()]];
-
-    // TODO: FIX ONCE PROVING IS TESTED //
-    // let proof = nova_proof(wc_path, &r1cs, &params, &phrase, &pubkeys, &auth_signature).unwrap();
-
-    // // compress proof
-    // let compressed = compress_proof(&proof);
-    // // encrypt phrase
-    // let ciphertext = account.encrypt_phrase(&phrase);
-
-    // // build request body
-    // let body = PhraseRequest {
-    //     proof: compressed,
-    //     ciphertext,
-    //     description: description.clone(),
-    // };
-    // // send request
-    // let res = phrase_req(&mut account, body).await;
-    // match res {
-    //     Ok(data) => match data.new_phrase {
-    //         true => Ok(format!(
-    //             "Success: Created and proved knowledge of new phrase #{}: \"{}\"",
-    //             data.phrase_index, phrase
-    //         )),
-    //         false => Ok(format!(
-    //             "Success: Proved knowledge of existing phrase #{}: \"{}\"",
-    //             data.phrase_index, phrase
-    //         )),
-    //     },
-    //     Err(e) => Err(e),
-    // }
-    Ok(String::from(""))
-}
-
 pub async fn prove_all_available() -> Result<String, GrapevineError> {
     // GETTING
     // get account
@@ -360,36 +307,36 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
     // sync nonce
     synchronize_nonce().await?;
     // get available proofs
-    let res = get_available_proofs_req(&mut account).await;
-    // handle result
-    let proofs = match res {
-        Ok(proofs) => proofs,
-        Err(e) => {
-            println!("Failed to get available proofs");
-            return Err(e);
-        }
-    };
-    match proofs.len() {
-        0 => {
-            println!();
-            return Ok(format!(
-                "No new degree proofs found for user \"{}\"",
-                account.username()
-            ));
-        }
-        _ => (),
-    }
+    // let res = get_available_proofs_req(&mut account).await;
+    // // handle result
+    // let proofs = match res {
+    //     Ok(proofs) => proofs,
+    //     Err(e) => {
+    //         println!("Failed to get available proofs");
+    //         return Err(e);
+    //     }
+    // };
+    // match proofs.len() {
+    //     0 => {
+    //         println!();
+    //         return Ok(format!(
+    //             "No new degree proofs found for user \"{}\"",
+    //             account.username()
+    //         ));
+    //     }
+    //     _ => (),
+    // }
     // PROVING
     // ensure proving artifacts are downloaded
-    artifacts_guard().await.unwrap();
-    let public_params = use_public_params().unwrap();
-    let r1cs = use_r1cs().unwrap();
-    let wc_path = use_wasm().unwrap();
-    if proofs.len() == 0 {
-        return Ok(String::from("No new degree proofs found"));
-    } else {
-        println!("Proving {} new degrees...", proofs.len());
-    }
+    // artifacts_guard().await.unwrap();
+    // let public_params = use_public_params().unwrap();
+    // let r1cs = use_r1cs().unwrap();
+    // let wc_path = use_wasm().unwrap();
+    // if proofs.len() == 0 {
+    //     return Ok(String::from("No new degree proofs found"));
+    // } else {
+    //     println!("Proving {} new degrees...", proofs.len());
+    // }
     // TODO: FIX ONCE PROVING IS TESTED //
 
     // for i in 0..proofs.len() {
@@ -509,101 +456,7 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
             }
         }
     }
-    Ok(String::from(""))
-}
-
-pub async fn get_known_phrases() -> Result<String, GrapevineError> {
-    // get account
-    let mut account = get_account()?;
-    // sync nonce
-    synchronize_nonce().await?;
-    // send request
-    let res = get_known_req(&mut account).await;
-    let data = match res {
-        Ok(data) => data,
-        Err(e) => return Err(e),
-    };
-    for degree in data {
-        println!(
-            "=-=-=-=-=-=-=[Phrase #{}]=-=-=-=-=-=-=",
-            degree.phrase_index
-        );
-        println!("Description: \"{}\"", degree.description);
-        // println!("Phrase hash: 0x{}", hex::encode(degree.phrase_hash));
-        // let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
-        // println!("Secret phrase: \"{}\"", phrase);
-    }
-    Ok(String::from(""))
-}
-
-pub async fn get_phrase(phrase_index: u32) -> Result<String, GrapevineError> {
-    // get account
-    let mut account = get_account()?;
-    // sync nonce
-    synchronize_nonce().await?;
-    // get degree data
-    let res = get_phrase_req(phrase_index, &mut account).await;
-    let phrase_data = match res {
-        Ok(data) => data,
-        Err(e) => return Err(e),
-    };
-    // get connection data
-    let res = show_connections_req(phrase_index, &mut account).await;
-    let connection_data = match res {
-        Ok(data) => data,
-        Err(e) => return Err(e),
-    };
-
-    // OUTPUT
-    // header (always shown)
-    println!("=-=-=-=-=-=-=[Phrase #{}]=-=-=-=-=-=-=", phrase_index);
-    println!("Phrase description: \"{}\"", &phrase_data.description);
-    println!("Phrase hash: 0x{}", hex::encode(&phrase_data.phrase_hash));
-    // if no degree, show that this user does not know the phrase
-    if phrase_data.degree.is_none() {
-        println!("You do not have any connections to this phrase!");
-        return Ok(String::from(""));
-    }
-    if phrase_data.secret_phrase.is_some() {
-        // If phrase is known, show secret
-        // let decrypted_phrase = account.decrypt_phrase(&phrase_data.secret_phrase.unwrap());
-        // println!("Secret phrase: \"{}\"", decrypted_phrase);
-    } else {
-        // If phrase is not known, show degrees of separation from origin + upstream relations
-        println!(
-            "Degrees of separation from phrase: {}",
-            phrase_data.degree.unwrap()
-        );
-        if phrase_data.relation.is_some() {
-            println!(
-                "Your 1st degree relation to this phrase: {}",
-                phrase_data.relation.unwrap()
-            );
-        }
-        if phrase_data.preceding_relation.is_some() {
-            println!(
-                "Your 2nd degree relation to this phrase: {}",
-                phrase_data.preceding_relation.unwrap()
-            );
-        }
-    }
-    // Show connection data
-    println!("#####################");
-    println!("Total of {} connections to this phrase", connection_data.0);
-    for i in 0..connection_data.1.len() {
-        let connections = connection_data.1.get(i).unwrap();
-        let degree_plural = match i == 0 {
-            true => "degree",
-            false => "degrees",
-        };
-        println!(
-            "Relationships with {} {} connection to this phrase: {}",
-            i + 1,
-            degree_plural,
-            connections
-        );
-    }
-    Ok(String::from(""))
+    Ok(String::from("Unimplemented"))
 }
 
 pub fn make_or_get_account(username: String) -> Result<GrapevineAccount, GrapevineError> {
