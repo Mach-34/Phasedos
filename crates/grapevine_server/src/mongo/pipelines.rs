@@ -176,7 +176,6 @@ pub fn available_degrees(user: &String) -> Vec<Document> {
             }
         },
         // 3. Find all proofs where the relation = any of the senders from relationships
-        // todo: filter out inactive proofs and proofs > 8
         doc! {
             "$lookup": {
                 "from": "proofs",
@@ -184,7 +183,7 @@ pub fn available_degrees(user: &String) -> Vec<Document> {
                 "foreignField": "relation",
                 "as": "proofs",
                 "pipeline": [
-                    doc! { "$match": { "inactive": { "$ne": true } } },
+                    doc! { "$match": { "inactive": { "$ne": true }, "degree": { "$lt": 8 } } },
                     doc! { "$project": { "degree": 1, "scope": 1 } }
                 ]
             }
@@ -223,7 +222,7 @@ pub fn available_degrees(user: &String) -> Vec<Document> {
                 ]
             }
         },
-        // 7. Final projection to format the output
+        // 7. Reshape for only the data we want to return
         doc! {
             "$project": {
                 "degree": 1,
@@ -231,6 +230,26 @@ pub fn available_degrees(user: &String) -> Vec<Document> {
                 "relation": { "$arrayElemAt": ["$relationUser.username", 0] }
             }
         },
+        // 8. sort by degree and scope
+        doc! { "$sort": { "scope": 1, "degree": 1 }},
+        // 9. group by scope, returning the lowest degree for each
+        doc! {
+            "$group": {
+                "_id": "$scope",
+                "originalId": { "$first": "$_id" },
+                "degree": { "$first": "$degree" },
+                "relation": { "$first": "$relation" }
+            }
+        },
+        // 10. Final document reshape
+        doc! {
+            "$project": {
+                "_id": "$originalId",
+                "degree": 1,
+                "scope": "$_id",
+                "relation": 1
+            }
+        }
     ]
 }
 

@@ -878,7 +878,7 @@ mod test_rocket {
             //            |       |-user_12
             //            |       |-user_13
             //
-            // to 
+            // to
             // user_0
             //   |- user_1
             //        |-user_3
@@ -908,18 +908,23 @@ mod test_rocket {
                 users.remove(3),
                 users.remove(2),
                 users.remove(1),
-                users.remove(0)
+                users.remove(0),
             ];
             temp_vec.reverse();
             relationship_chain(&context, &mut temp_vec).await;
             users.insert(0, temp_vec.remove(0));
             users.insert(1, temp_vec.remove(0));
             users.insert(2, temp_vec.remove(0));
-            users.insert(3, temp_vec.remove(0)); 
+            users.insert(3, temp_vec.remove(0));
             users.insert(4, temp_vec.remove(0));
             users.insert(5, temp_vec.remove(0));
             // establish 2-6-7-8 chain
-            let mut temp_vec = vec![users.remove(8), users.remove(7), users.remove(6), users.remove(2)];
+            let mut temp_vec = vec![
+                users.remove(8),
+                users.remove(7),
+                users.remove(6),
+                users.remove(2),
+            ];
             temp_vec.reverse();
             relationship_chain(&context, &mut temp_vec).await;
             users.insert(2, temp_vec.remove(0));
@@ -933,7 +938,12 @@ mod test_rocket {
             users.insert(7, temp_vec.remove(0));
             users.insert(9, temp_vec.remove(0));
             // establish 2-10-11-12
-            let mut temp_vec = vec![users.remove(12), users.remove(11), users.remove(10), users.remove(2)];
+            let mut temp_vec = vec![
+                users.remove(12),
+                users.remove(11),
+                users.remove(10),
+                users.remove(2),
+            ];
             temp_vec.reverse();
             relationship_chain(&context, &mut temp_vec).await;
             users.insert(2, temp_vec.remove(0));
@@ -958,6 +968,16 @@ mod test_rocket {
                 assert_eq!(code, Status::Created.code);
                 users.insert(i, prover);
             }
+
+            // make relationship for user0->user2
+            let mut temp_vec = vec![users.remove(2), users.remove(0)];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(0, temp_vec.remove(0));
+            users.insert(2, temp_vec.remove(0));
+            let mut prover = users.remove(2);
+            let (code, _) =
+                degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
         }
 
         #[rocket::async_test]
