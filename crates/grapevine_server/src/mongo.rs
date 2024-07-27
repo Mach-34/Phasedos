@@ -479,6 +479,7 @@ impl GrapevineDB {
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
+                    println!("Found one: {:?}", document);
                     let removable = document.get("removable").unwrap().as_bool().unwrap();
                     let id = document.get("_id").unwrap().as_object_id().unwrap();
                     let downstream = document.get("downstream").unwrap().as_array().unwrap();

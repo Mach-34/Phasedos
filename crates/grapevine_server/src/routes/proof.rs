@@ -439,7 +439,6 @@ pub async fn degree_proof(
             )))
         }
     };
-    // match db.contains_emitted_nullifiers()
 
     // get all degree data needed to authorize this proof
     let previous_proof_oid = ObjectId::from_str(&request.previous).unwrap();
