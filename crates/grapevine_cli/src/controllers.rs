@@ -240,11 +240,16 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
         wasm_path: use_wasm().unwrap(),
     };
 
-    println!("Proving {} new degrees...", proofs.len());
+    let proof_count = proofs.len();
+    println!(
+        "Proving {} new degree{}...",
+        proof_count,
+        if proof_count == 1 { "" } else { "s" }
+    );
 
     // TODO: FIX ONCE PROVING IS TESTED //
 
-    for i in 0..proofs.len() {
+    for i in 0..proof_count {
         let available_proof = proofs[i].clone();
         // get proof and encrypted auth signature
         let res = get_proof_with_params_req(&mut account, available_proof.id.to_string()).await;
@@ -324,8 +329,9 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
         );
     }
     Ok(format!(
-        "Success: proved {} new degree proofs",
-        proofs.len()
+        "Success: proved {} new degree proof{}",
+        proof_count,
+        if proof_count == 1 { "" } else { "s" }
     ))
 }
 
