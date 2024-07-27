@@ -87,6 +87,10 @@ enum ProofCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Available,
+    /// List all your degree proofs
+    /// usage: `grapevine proof list`
+    #[command(verbatim_doc_comment)]
+    List,
     /// Prove all available degrees
     /// usage: `grapevine proof prove-available
     #[command(verbatim_doc_comment)]
@@ -110,6 +114,7 @@ pub async fn main() {
         Commands::Health => controllers::health().await,
         Commands::Proof(cmd) => match cmd {
             ProofCommands::Available => controllers::get_available_proofs().await,
+            ProofCommands::List => controllers::get_my_proofs().await,
             ProofCommands::ProveAvailable => controllers::prove_all_available().await,
         },
         Commands::Relationship(cmd) => match cmd {

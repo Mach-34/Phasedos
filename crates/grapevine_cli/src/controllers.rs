@@ -446,35 +446,34 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
         Ok(data) => data,
         Err(e) => return Err(e),
     };
-    println!(
-        "Proofs of {}'s degrees of separation from phrases/ users:",
-        account.username()
-    );
-    for degree in data {
-        println!(
-            "=-=-=-=-=-=-=[Phrase #{}]=-=-=-=-=-=-=",
-            degree.phrase_index
-        );
-        println!("Phrase description: \"{}\"", degree.description);
-        println!("Phrase hash: 0x{}", hex::encode(degree.phrase_hash));
-        println!(
-            "Degrees of separation from origin: {}",
-            degree.degree.unwrap()
-        );
-        if degree.relation.is_none() {
-            // println!("Phrase created by this user");
-            // let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
-            // println!("Secret phrase: \"{}\"", phrase);
-        } else {
-            println!("Your relation: {}", degree.relation.unwrap());
-            if degree.preceding_relation.is_some() {
-                println!(
-                    "2nd degree relation: {}",
-                    degree.preceding_relation.unwrap()
-                );
-            }
-        }
-    }
+    println!("Data: {:?}", data);
+    // println!(
+    //     "Proofs of {}'s degrees of separation from phrases/ users:",
+    //     account.username()
+    // );
+    // for degree in data {
+    //     println!(
+    //         "=-=-=-=-=-=-=[Phrase #{}]=-=-=-=-=-=-=",
+    //         degree.phrase_index
+    //     );
+    //     println!(
+    //         "Degrees of separation from scope: {}",
+    //         degree.degree.unwrap()
+    //     );
+    //     if degree.relation.is_none() {
+    //         // println!("Phrase created by this user");
+    //         // let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
+    //         // println!("Secret phrase: \"{}\"", phrase);
+    //     } else {
+    //         println!("Your relation: {}", degree.relation.unwrap());
+    //         if degree.preceding_relation.is_some() {
+    //             println!(
+    //                 "2nd degree relation: {}",
+    //                 degree.preceding_relation.unwrap()
+    //             );
+    //         }
+    //     }
+    // }
     Ok(String::from("Unimplemented"))
 }
 

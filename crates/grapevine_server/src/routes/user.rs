@@ -423,36 +423,36 @@ pub async fn get_pubkey(
     }
 }
 
-// // /**
-// //  * Return a list of all available (new) degree proofs from existing connections that a user can
-// //  * build from (empty if none)
-// //  *
-// //  * @param username - the username to look up the available proofs for
-// //  * @return - a vector of DegreeData structs containing:
-// //  *             * oid: the ObjectID of the proof to build from
-// //  *             * relation: the separation degree of the proof
-// //  *             * phrase_hash: the poseidon hash of the original phrase at the start of the chain
-// //  * @return status:
-// //  *            * 200 if success
-// //  *            * 401 if signature mismatch or nonce mismatch
-// //  *            * 404 if user not found
-// //  *            * 500 if db fails or other unknown issue
-// //  */
-// // #[get("/degrees")]
-// // pub async fn get_all_degrees(
-// //     user: AuthenticatedUser,
-// //     db: &State<GrapevineDB>,
-// // ) -> Result<Json<Vec<DegreeData>>, GrapevineResponse> {
-// //     match db.get_all_degrees(user.0).await {
-// //         Some(proofs) => Ok(Json(proofs)),
-// //         None => Err(GrapevineResponse::InternalError(ErrorMessage(
-// //             Some(GrapevineError::MongoError(String::from(
-// //                 "Error retrieving degrees in db",
-// //             ))),
-// //             None,
-// //         ))),
-// //     }
-// // }
+/**
+ * Return a list of all available (new) degree proofs from existing connections that a user can
+ * build from (empty if none)
+ *
+ * @param username - the username to look up the available proofs for
+ * @return - a vector of DegreeData structs containing:
+ *             * oid: the ObjectID of the proof to build from
+ *             * relation: the separation degree of the proof
+ *             * phrase_hash: the poseidon hash of the original phrase at the start of the chain
+ * @return status:
+ *            * 200 if success
+ *            * 401 if signature mismatch or nonce mismatch
+ *            * 404 if user not found
+ *            * 500 if db fails or other unknown issue
+ */
+#[get("/degrees")]
+pub async fn get_all_degrees(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<DegreeData>>, GrapevineResponse> {
+    match db.get_all_degrees(user.0).await {
+        Some(proofs) => Ok(Json(proofs)),
+        None => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(GrapevineError::MongoError(String::from(
+                "Error retrieving degrees in db",
+            ))),
+            None,
+        ))),
+    }
+}
 
 /**
  * Returns account details related to degree proofs
