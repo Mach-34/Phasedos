@@ -43,19 +43,6 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Add { username: String },
-    /// Returns nullifier secret for a given relationship in hex format
-    /// usage: `grapevine relationship nullifier-secret <username>`
-    #[command(verbatim_doc_comment)]
-    #[clap(value_parser)]
-    NullifierSecret { username: String },
-    /// Nullify a relationship by providing nullifier secret
-    /// usage: `grapevine relationship nullify <username> <nullifier-secret>`
-    #[command(verbatim_doc_comment)]
-    #[clap(value_parser)]
-    Nullify {
-        username: String,
-        nullifier_secret: String,
-    },
     /// Show pending relationship requests from other users
     /// usage: `grapevine relationship pending`
     #[command(verbatim_doc_comment)]
@@ -65,6 +52,11 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Reject { username: String },
+    /// Remove a relationship by username
+    /// usage: `grapevine relationship remove <username>`
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    Remove { username: String },
     /// List the username of all of your active relationships
     /// usage: `grapevine relationship list`
     #[command(verbatim_doc_comment)]
@@ -132,16 +124,12 @@ pub async fn main() {
         },
         Commands::Relationship(cmd) => match cmd {
             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
-            RelationshipCommands::NullifierSecret { username } => {
-                controllers::nullifier_secret(username).await
-            }
-            RelationshipCommands::Nullify {
-                username,
-                nullifier_secret,
-            } => controllers::nullify_relationship(nullifier_secret, username).await,
             RelationshipCommands::Pending => controllers::get_relationships(false).await,
             RelationshipCommands::Reject { username } => {
                 controllers::reject_relationship(username).await
+            }
+            RelationshipCommands::Remove { username } => {
+                controllers::nullify_relationship(username).await
             }
             RelationshipCommands::List => controllers::get_relationships(true).await,
         },

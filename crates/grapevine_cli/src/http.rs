@@ -2,9 +2,9 @@ use crate::utils::fs::ACCOUNT_PATH;
 use babyjubjub_rs::{decompress_point, Point};
 use grapevine_common::http::requests::{
     CreateUserRequest, DegreeProofRequest, EmitNullifierRequest, GetNonceRequest,
-    NewRelationshipRequest, PhraseRequest,
+    NewRelationshipRequest,
 };
-use grapevine_common::http::responses::{DegreeData, PhraseCreationResponse};
+use grapevine_common::http::responses::DegreeData;
 // use grapevine_common::models::ProvingData;
 use grapevine_common::{account::GrapevineAccount, errors::GrapevineError};
 use lazy_static::lazy_static;
@@ -163,47 +163,6 @@ pub async fn add_relationship_req(
     }
 }
 
-/**
- * Makes an HTTP Request to create a new phrase
- *
- * @param account - the account of the user creating the new phrase
- * @param body - the NewPhraseRequest containing proof to provide as the body of the http request
- */
-pub async fn phrase_req(
-    account: &mut GrapevineAccount,
-    body: PhraseRequest,
-) -> Result<PhraseCreationResponse, GrapevineError> {
-    let url = format!("{}/proof/phrase", &**SERVER_URL);
-    // serialize the proof
-    let serialized: Vec<u8> = bincode::serialize(&body).unwrap();
-    // produce signature over current nonce
-    let signature = hex::encode(account.sign_nonce().compress());
-    let client = Client::new();
-    let res = client
-        .post(&url)
-        .body(serialized)
-        .header("X-Username", account.username())
-        .header("X-Authorization", signature)
-        .send()
-        .await
-        .unwrap();
-    match res.status() {
-        StatusCode::CREATED => {
-            let data: PhraseCreationResponse =
-                serde_json::from_str(&res.text().await.unwrap()).unwrap();
-            // increment nonce
-            account
-                .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
-                .unwrap();
-            return Ok(data);
-        }
-        _ => {
-            // Err(res.json::<GrapevineError>().await.unwrap())
-            Err(GrapevineError::InternalError)
-        }
-    }
-}
-
 pub async fn get_account_details_req(
     account: &mut GrapevineAccount,
 ) -> Result<(u64, u64, u64), GrapevineError> {
@@ -350,7 +309,7 @@ pub async fn emit_nullifier(
         .unwrap();
 
     match res.status() {
-        StatusCode::OK => {
+        StatusCode::CREATED => {
             // increment nonce
             account
                 .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))

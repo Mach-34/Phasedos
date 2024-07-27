@@ -2,7 +2,7 @@ use crate::http::{
     add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
     get_account_details_req, get_available_proofs_req, get_degrees_req, get_known_req,
     get_nonce_req, get_nullifier_secret, get_phrase_req, get_pubkey_req, get_relationships_req,
-    phrase_req, reject_relationship_req, show_connections_req,
+    reject_relationship_req, show_connections_req,
 };
 use crate::utils::artifacts_guard;
 use crate::utils::fs::{use_public_params, use_r1cs, use_wasm, ACCOUNT_PATH};
@@ -13,7 +13,7 @@ use grapevine_circuits::utils::{compress_proof, decompress_proof};
 use grapevine_common::account::GrapevineAccount;
 use grapevine_common::compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::errors::GrapevineError;
-use grapevine_common::http::requests::{DegreeProofRequest, EmitNullifierRequest, PhraseRequest};
+use grapevine_common::http::requests::{DegreeProofRequest, EmitNullifierRequest};
 use grapevine_common::utils::{random_fr, to_array_32};
 
 use std::path::Path;
@@ -66,24 +66,6 @@ pub fn export_key() -> Result<String, GrapevineError> {
         account.username(),
         pk,
     ))
-}
-
-pub async fn nullifier_secret(username: &String) -> Result<String, GrapevineError> {
-    // get account
-    let mut account = get_account()?;
-    // sync nonce
-    synchronize_nonce().await?;
-    let res = get_nullifier_secret(&mut account, username).await;
-    match res {
-        Ok(data) => {
-            let bytes: [u8; 48] = data.try_into().unwrap();
-            // decrypt the nullifier secret
-            let decrypted = account.decrypt_nullifier_secret(bytes);
-            Ok(hex::encode(ff_ce_to_le_bytes(&decrypted)))
-        }
-        // TODO: Keep as internal error for now until error handling refactor
-        Err(e) => Err(e),
-    }
 }
 
 /**
@@ -216,27 +198,20 @@ pub async fn get_relationships(active: bool) -> Result<String, GrapevineError> {
 /**
  * Emits the nullifier for a specified relationship, terminating it
  *
- * @param nullifier_secret - hex encoded secret used to compute nullifier for a relationship
  * @param recipien - username of nullifier recipient in relationship
  */
-pub async fn nullify_relationship(
-    nullifier_secret: &String,
-    recipient: &String,
-) -> Result<String, GrapevineError> {
+pub async fn nullify_relationship(recipient: &String) -> Result<String, GrapevineError> {
     // get account
     let mut account = get_account()?;
     // sync nonce
     synchronize_nonce().await?;
 
-    // convert nullifier from hex string to Fr
-    let bytes = hex::decode(nullifier_secret).unwrap();
-    let fr = ff_ce_from_le_bytes(to_array_32(bytes));
-    // TODO: Make this happen server side
-    // compute nullifier
-    let nullifier = account.compute_nullifier(fr);
+    let encrypted_nullifier_secret = get_nullifier_secret(&mut account, recipient).await.unwrap();
+    let bytes: [u8; 48] = encrypted_nullifier_secret.try_into().unwrap();
+    let nullifier_secret = account.decrypt_nullifier_secret(bytes);
 
     let request_body = EmitNullifierRequest {
-        nullifier: ff_ce_to_le_bytes(&nullifier),
+        nullifier_secret: ff_ce_to_le_bytes(&nullifier_secret),
         recipient: recipient.clone(),
     };
 

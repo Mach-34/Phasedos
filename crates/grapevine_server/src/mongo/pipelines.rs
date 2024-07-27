@@ -1,5 +1,157 @@
 use crate::utils::ToBson;
 use mongodb::bson::{doc, oid::ObjectId, Document};
+
+/**
+ * Query for getting first and second degree connection details
+ *
+ * @param user: The document id of the user who's connection details are being queried
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+pub fn get_account_details(user: &ObjectId) -> Vec<Document> {
+    vec![
+        doc! {
+          "$match": {
+            "_id": user
+          }
+        },
+        // Lookup to join with the relationships collection
+        doc! {
+            "$lookup": {
+                "from": "relationships",
+                "localField": "relationships",
+                "foreignField": "_id",
+                "as": "relationships_data",
+                "pipeline": [doc! { "$project": { "_id": 0, "sender": 1 } }]
+            }
+        },
+        // Add sender values to first degree connection array
+        doc! {
+            "$addFields": {
+                "first_degree_connections": {
+                    "$map": {
+                        "input": "$relationships_data",
+                        "as": "relationship",
+                        "in": "$$relationship.sender"
+                    }
+                }
+            }
+        },
+        // Lookup first degree connection senders from users colection
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "first_degree_connections",
+                "foreignField": "_id",
+                "as": "sender_relationships"
+            }
+        },
+        doc! {
+            "$unwind": {
+                "path": "$sender_relationships",
+                "preserveNullAndEmptyArrays": true
+            }
+        },
+        doc! {
+            "$lookup": {
+                "from": "relationships",
+                "localField": "sender_relationships.relationships",
+                "foreignField": "_id",
+                "as": "sender_relationships.relationships_data"
+            }
+        },
+        doc! {
+            "$group": {
+                "_id": "$_id",
+                "first_degree_connections": { "$first": "$first_degree_connections" },
+                "sender_relationships": { "$push": "$sender_relationships" }
+            }
+        },
+        doc! {
+            "$addFields": {
+                "second_degree_connections": {
+                    "$cond": {
+                        "if": { "$eq": [ "$sender_relationships", [] ] },
+                        "then": [],
+                        "else": {
+                            "$reduce": {
+                                "input": "$sender_relationships",
+                                "initialValue": [],
+                                "in": {
+                                    "$concatArrays": [
+                                        "$$value",
+                                        {
+                                            "$filter": {
+                                                "input": {
+                                                    "$map": {
+                                                        "input": "$$this.relationships_data",
+                                                        "as": "relationship",
+                                                        "in": {
+                                                            "$cond": [
+                                                                {
+                                                                    "$and": [
+                                                                        { "$ne": [ "$$relationship.sender", null ] },
+                                                                        { "$ne": [ "$$relationship.sender", user ] },
+                                                                        { "$not": { "$in": [ "$$relationship.sender", "$first_degree_connections" ] } },
+                                                                        { "$not": { "$in": [ "$$relationship.sender", "$$value" ] } }
+                                                                    ]
+                                                                },
+                                                                "$$relationship.sender",
+                                                                null
+                                                            ]
+                                                        }
+                                                    }
+                                                },
+                                                "cond": { "$ne": [ "$$this", null ] }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        doc! {
+            "$addFields": {
+                "second_degree_connections": {
+                    "$setUnion": ["$second_degree_connections", []]
+                }
+            }
+        },
+        doc! {
+            "$lookup": {
+                "from": "degree_proofs",
+                "localField": "_id",
+                "foreignField": "user",
+                "as": "user_degrees"
+            }
+        },
+        doc! {
+            "$addFields": {
+                "phrase_count": {
+                    "$size": {
+                        "$filter": {
+                            "input": "$user_degrees",
+                            "as": "degree",
+                            "cond": { "$eq": ["$$degree.degree", 1] }
+                        }
+                    }
+                }
+            }
+        },
+        doc! {
+            "$project": {
+                "phrase_count": 1,
+                "first_degree_connections": { "$size": "$first_degree_connections" },
+                "second_degree_connections": { "$size": "$second_degree_connections" },
+                "second_degree_connections_all":  "$second_degree_connections",
+                "first_degree_connections_all":  "$first_degree_connections"
+            }
+        },
+    ]
+}
+
 /**
  * Query for getting all the info needed to validate a degree proof
  *
@@ -97,6 +249,61 @@ pub fn get_relationship(sender: &String, recipient: &String, full: bool) -> Vec<
         doc! { "$unwind": "$relationship" },
         // 3. Return only the retrieved relationship document (or only the OID)
         doc! { "$replaceRoot": { "newRoot": "$relationship" }},
+    ]
+}
+
+/**
+ * Query for getting a one-way relationship document between users given their usernames
+ *
+ * @param from: The username of the sender (creator of the stored auth secret/ nullifier emitter)
+ * @param to: The username of the recipient (user of the stored auth secret)
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+pub fn reject_relationship(from: &String, to: &String) -> Vec<Document> {
+    vec![
+        // get the ObjectID of the recipient of the relationship request
+        doc! { "$match": { "username": to } },
+        doc! { "$project": { "_id": 1 } },
+        // lookup the ObjectID of the sender of the relationship request
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "let": { "from": from },
+                "as": "sender",
+                "pipeline": [
+                    doc! { "$match": { "$expr": { "$eq": ["$username", "$$from"] } } },
+                    doc! { "$project": { "_id": 1 } }
+                ],
+            }
+        },
+        doc! { "$unwind": "$sender" },
+        // project the ObjectID's of the sender and recipient
+        doc! { "$project": { "recipient": "$_id", "sender": "$sender._id" } },
+        // lookup the ObjectID of the pending relationship to delete
+        doc! {
+            "$lookup": {
+                "from": "relationships",
+                "let": { "sender": "$sender", "recipient": "$recipient" },
+                "as": "relationship",
+                "pipeline": [
+                    doc! {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": ["$sender", "$$sender"] },
+                                    { "$eq": ["$recipient", "$$recipient"] },
+                                    { "$eq": ["$active", false ] }
+                                ]
+                            }
+                        }
+                    },
+                    doc! { "$project": { "_id": 1 } }
+                ],
+            }
+        },
+        doc! { "$unwind": "$relationship" },
+        // project the ObjectID of the pending relationship to delete
+        doc! { "$project": { "relationship": "$relationship._id", "_id": 0 } },
     ]
 }
 
