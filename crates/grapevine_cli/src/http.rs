@@ -5,7 +5,7 @@ use grapevine_common::http::requests::{
     NewRelationshipRequest,
 };
 use grapevine_common::http::responses::DegreeData;
-use grapevine_common::models::AvailableProofs;
+use grapevine_common::models::{AvailableProofs, ProvingData};
 // use grapevine_common::models::ProvingData;
 use grapevine_common::{account::GrapevineAccount, errors::GrapevineError};
 use lazy_static::lazy_static;
@@ -78,33 +78,33 @@ pub async fn get_available_proofs_req(
     }
 }
 
-// pub async fn get_proof_with_params_req(
-//     account: &mut GrapevineAccount,
-//     oid: String,
-// ) -> Result<ProvingData, GrapevineError> {
-//     let url = format!("{}/proof/params/{}", &**SERVER_URL, oid);
-//     // produce signature over current nonce
-//     let signature = hex::encode(account.sign_nonce().compress());
-//     let client = Client::new();
-//     let res = client
-//         .get(&url)
-//         .header("X-Username", account.username())
-//         .header("X-Authorization", signature)
-//         .send()
-//         .await
-//         .unwrap();
-//     match res.status() {
-//         StatusCode::OK => {
-//             // increment nonce
-//             account
-//                 .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
-//                 .unwrap();
-//             let proof = res.json::<ProvingData>().await.unwrap();
-//             Ok(proof)
-//         }
-//         _ => Err(res.json::<GrapevineError>().await.unwrap()),
-//     }
-// }
+pub async fn get_proof_with_params_req(
+    account: &mut GrapevineAccount,
+    oid: String,
+) -> Result<ProvingData, GrapevineError> {
+    let url = format!("{}/proof/params/{}", &**SERVER_URL, oid);
+    // produce signature over current nonce
+    let signature = hex::encode(account.sign_nonce().compress());
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .header("X-Username", account.username())
+        .header("X-Authorization", signature)
+        .send()
+        .await
+        .unwrap();
+    match res.status() {
+        StatusCode::OK => {
+            // increment nonce
+            account
+                .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
+                .unwrap();
+            let proof = res.json::<ProvingData>().await.unwrap();
+            Ok(proof)
+        }
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
+    }
+}
 
 /// POST REQUESTS ///
 /**

@@ -1,20 +1,25 @@
 use crate::http::{
     add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
-    get_account_details_req, get_available_proofs_req, get_degrees_req, get_known_req,
-    get_nonce_req, get_nullifier_secret, get_pubkey_req, get_relationships_req,
-    reject_relationship_req, show_connections_req,
+    get_account_details_req, get_available_proofs_req, get_degrees_req, get_nonce_req,
+    get_nullifier_secret, get_proof_with_params_req, get_pubkey_req, get_relationships_req,
+    reject_relationship_req,
 };
 use crate::utils::artifacts_guard;
 use crate::utils::fs::{use_public_params, use_r1cs, use_wasm, ACCOUNT_PATH};
-use grapevine_circuits::inputs::{GrapevineArtifacts, GrapevineInputs};
-use grapevine_circuits::nova::identity_proof;
+use babyjubjub_rs::{decompress_point, decompress_signature};
+use ff::PrimeField;
+use grapevine_circuits::inputs::{GrapevineArtifacts, GrapevineInputs, GrapevineOutputs};
+use grapevine_circuits::nova::{degree_proof, identity_proof, verify_grapevine_proof};
 // use grapevine_circuits::nova::{continue_nova_proof, nova_proof, verify_nova_proof};
 use grapevine_circuits::utils::{compress_proof, decompress_proof};
 use grapevine_common::account::GrapevineAccount;
+use grapevine_common::auth_secret::AuthSecretEncrypted;
 use grapevine_common::compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::{DegreeProofRequest, EmitNullifierRequest};
 use grapevine_common::utils::{random_fr, to_array_32};
+use grapevine_common::Fr;
+use nova_scotia::continue_recursive_circuit;
 
 use std::path::Path;
 
@@ -198,6 +203,133 @@ pub async fn get_available_proofs() -> Result<String, GrapevineError> {
 }
 
 /**
+ * Proves all available degrees with existing relations
+ */
+pub async fn prove_all_available() -> Result<String, GrapevineError> {
+    // GETTING
+    // get account
+    let mut account = get_account()?;
+    // sync nonce
+    synchronize_nonce().await?;
+    // get available proofs
+    let res = get_available_proofs_req(&mut account).await;
+    // // handle result
+    let proofs = match res {
+        Ok(proofs) => {
+            if proofs.len() == 0 {
+                return Ok(format!(
+                    "No new degree proofs found for user \"{}\"",
+                    account.username()
+                ));
+            }
+            proofs
+        }
+        Err(e) => {
+            println!("Failed to get available proofs");
+            return Err(e);
+        }
+    };
+
+    // PROVING
+    // ensure proving artifacts are downloaded
+    artifacts_guard().await.unwrap();
+
+    let artifacts = GrapevineArtifacts {
+        params: use_public_params().unwrap(),
+        r1cs: use_r1cs().unwrap(),
+        wasm_path: use_wasm().unwrap(),
+    };
+
+    println!("Proving {} new degrees...", proofs.len());
+
+    // TODO: FIX ONCE PROVING IS TESTED //
+
+    for i in 0..proofs.len() {
+        let available_proof = proofs[i].clone();
+        // get proof and encrypted auth signature
+        let res = get_proof_with_params_req(&mut account, available_proof.id.to_string()).await;
+        let proving_data = match res {
+            Ok(proving_data) => proving_data,
+            Err(e) => return Err(e),
+        };
+
+        println!("Scope: {}", available_proof.scope);
+        println!("Relation: {}", available_proof.relation);
+        println!("Degree being proved: {}", available_proof.degree + 1);
+        println!("Proving...");
+
+        // prepare inputs
+        let auth_secret_encrypted = AuthSecretEncrypted {
+            ephemeral_key: proving_data.ephemeral_key,
+            nullifier_ciphertext: proving_data.nullifier_ciphertext,
+            signature_ciphertext: proving_data.signature_ciphertext,
+        };
+
+        let auth_secret = account.decrypt_auth_signature(auth_secret_encrypted);
+        let mut proof = decompress_proof(&proving_data.proof);
+        let verified = verify_grapevine_proof(
+            &proof,
+            &artifacts.params,
+            (available_proof.degree * 2) as usize,
+        );
+        let previous_output = match verified {
+            Ok(data) => data.0,
+            Err(e) => {
+                println!("Verification Failed");
+                return Err(GrapevineError::ProofFailed(String::from(
+                    "Given proof is not verifiable",
+                )));
+            }
+        };
+
+        let auth_signature = decompress_signature(&auth_secret.signature).unwrap();
+        let relation_pubkey = decompress_point(proving_data.relation_pubkey).unwrap();
+        let nullifier = Fr::from_repr(auth_secret.nullifier).unwrap();
+
+        let inputs = GrapevineInputs::degree_step(
+            &account.private_key(),
+            &relation_pubkey,
+            &nullifier,
+            &previous_output[2],
+            &auth_signature,
+        );
+
+        match degree_proof(&artifacts, &inputs, &mut proof, &previous_output) {
+            Ok(_) => (),
+            Err(_) => {
+                println!("Proof continuation failed");
+                return Err(GrapevineError::ProofFailed(String::from(
+                    "Given proof is not verifiable",
+                )));
+            }
+        }
+        let compressed = compress_proof(&proof);
+        // build request body
+        let body = DegreeProofRequest {
+            proof: compressed,
+            previous: available_proof.id.to_string(),
+            degree: available_proof.degree + 1,
+        };
+
+        // handle response from server
+        let res: Result<(), GrapevineError> = degree_proof_req(&mut account, body).await;
+        match res {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+        println!(
+            "Proved degree {} for scope {}",
+            available_proof.degree + 1,
+            available_proof.scope
+        );
+    }
+    Ok(format!(
+        "Success: proved {} new degree proofs",
+        proofs.len()
+    ))
+}
+
+/**
  * Gets all (pending, active) relationships for the account
  *
  * @param active - whether to get active relationships or pending relationships
@@ -295,125 +427,6 @@ pub async fn synchronize_nonce() -> Result<String, GrapevineError> {
             Ok(msg)
         }
     }
-}
-
-/**
- * Proves all available degrees with existing relations
- */
-pub async fn prove_all_available() -> Result<String, GrapevineError> {
-    // GETTING
-    // get account
-    let mut account = get_account()?;
-    // sync nonce
-    synchronize_nonce().await?;
-    // get available proofs
-    // let res = get_available_proofs_req(&mut account).await;
-    // // handle result
-    // let proofs = match res {
-    //     Ok(proofs) => proofs,
-    //     Err(e) => {
-    //         println!("Failed to get available proofs");
-    //         return Err(e);
-    //     }
-    // };
-    // match proofs.len() {
-    //     0 => {
-    //         println!();
-    //         return Ok(format!(
-    //             "No new degree proofs found for user \"{}\"",
-    //             account.username()
-    //         ));
-    //     }
-    //     _ => (),
-    // }
-    // PROVING
-    // ensure proving artifacts are downloaded
-    // artifacts_guard().await.unwrap();
-    // let public_params = use_public_params().unwrap();
-    // let r1cs = use_r1cs().unwrap();
-    // let wc_path = use_wasm().unwrap();
-    // if proofs.len() == 0 {
-    //     return Ok(String::from("No new degree proofs found"));
-    // } else {
-    //     println!("Proving {} new degrees...", proofs.len());
-    // }
-    // TODO: FIX ONCE PROVING IS TESTED //
-
-    // for i in 0..proofs.len() {
-    //     let oid = proofs[i].clone();
-    //     // get proof and encrypted auth signature
-    //     let res = get_proof_with_params_req(&mut account, oid.clone()).await;
-    //     let proving_data = match res {
-    //         Ok(proving_data) => proving_data,
-    //         Err(e) => return Err(e),
-    //     };
-    //     println!(
-    //         "=-=-=-=-=-=-=[Phrase #{}]=-=-=-=-=-=-=",
-    //         proving_data.phrase_index
-    //     );
-    //     println!("Description: \"{}\"", proving_data.description);
-    //     println!("Phrase hash: 0x{}", hex::encode(proving_data.phrase_hash));
-    //     println!("Degree being proved: {}", proving_data.degree + 1);
-    //     println!("Proving...");
-    //     // prepare inputs
-    //     let auth_signature_encrypted = AuthSignatureEncrypted {
-    //         ephemeral_key: proving_data.ephemeral_key,
-    //         ciphertext: proving_data.ciphertext,
-    //         username: proving_data.username,
-    //         recipient: account.pubkey().compress(),
-    //     };
-    //     let auth_signature = account.decrypt_auth_signature(auth_signature_encrypted);
-    //     let mut proof = decompress_proof(&proving_data.proof);
-    //     let verified =
-    //         verify_nova_proof(&proof, &public_params, (proving_data.degree * 2) as usize);
-    //     let previous_output = match verified {
-    //         Ok(data) => data.0,
-    //         Err(_) => {
-    //             println!("Verification Failed");
-    //             return Err(GrapevineError::DegreeProofVerificationFailed);
-    //         }
-    //     };
-    //     // build nova proof
-    //     match continue_nova_proof(
-    //         &account.pubkey(),
-    //         &auth_signature.fmt_circom(),
-    //         &mut proof,
-    //         previous_output,
-    //         wc_path.clone(),
-    //         &r1cs,
-    //         &public_params,
-    //     ) {
-    //         Ok(_) => (),
-    //         Err(_) => {
-    //             println!("Proof continuation failed");
-    //             return Err(GrapevineError::DegreeProofVerificationFailed);
-    //         }
-    //     }
-    //     let compressed = compress_proof(&proof);
-    //     // build request body
-    //     let body = DegreeProofRequest {
-    //         proof: compressed,
-    //         // username: account.username().clone(),
-    //         previous: oid,
-    //         degree: proving_data.degree + 1,
-    //     };
-    //     // handle response from server
-    //     let res: Result<(), GrapevineError> = degree_proof_req(&mut account, body).await;
-    //     match res {
-    //         Ok(_) => (),
-    //         Err(e) => return Err(e),
-    //     }
-    //     println!(
-    //         "Proved degree {} for phrase #{}",
-    //         proving_data.degree + 1,
-    //         proving_data.phrase_index
-    //     );
-    // }
-    // Ok(format!(
-    //     "Success: proved {} new degree proofs",
-    //     proofs.len()
-    // ))
-    Ok(String::from("Unimplemented"))
 }
 
 pub async fn get_my_proofs() -> Result<String, GrapevineError> {
