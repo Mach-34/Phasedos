@@ -1,5 +1,8 @@
-use crate::{compat::ff_ce_from_le_bytes, Fr, MAX_SECRET_CHARS, MAX_USERNAME_CHARS, SECRET_FIELD_LENGTH};
+use crate::{
+    compat::ff_ce_from_le_bytes, Fr, MAX_SECRET_CHARS, MAX_USERNAME_CHARS, SECRET_FIELD_LENGTH,
+};
 use babyjubjub_rs::Fr as Fr_ce;
+use poseidon_rs::Poseidon;
 use std::error::Error;
 
 /**
@@ -13,6 +16,17 @@ pub fn random_fr() -> Fr {
 
 pub fn random_fr_ce() -> Fr_ce {
     ff_ce_from_le_bytes(random_fr().to_bytes())
+}
+
+/**
+ * Computes a nullifier from a secret and saddress
+ *
+ * @param address - address of nullifier secret owner
+ * @param nullifier_secret - secret used to compute nullifier
+ */
+pub fn compute_nullifier(address: Fr_ce, nullifier_secret: Fr_ce) -> Fr_ce {
+    let hasher = Poseidon::new();
+    hasher.hash(vec![nullifier_secret, address]).unwrap()
 }
 
 /**

@@ -6,7 +6,9 @@ use grapevine_common::models::{
     AvailableProofs, DegreeProofValidationData, GrapevineProof, ProvingData, Relationship, User,
 };
 use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
-use mongodb::options::{ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion};
+use mongodb::options::{
+    ClientOptions, FindOneOptions, FindOptions, ServerApi, ServerApiVersion, UpdateOptions,
+};
 use mongodb::{Client, Collection};
 
 use crate::utils::{RelationshipStatus, ToBson};
@@ -239,15 +241,65 @@ impl GrapevineDB {
         let result = self.relationships.update_one(filter, update, None).await;
         // check if successful
         match result {
-            Ok(result) => match result.upserted_id {
-                Some(_) => Ok(()),
-                None => Err(GrapevineError::NoPendingRelationship(
-                    sender.to_string(),
-                    recipient.to_string(),
+            Ok(result) => match result.matched_count {
+                1 => Ok(()),
+                _ => Err(GrapevineError::NoPendingRelationship(
+                    sender.to_hex(),
+                    recipient.to_hex(),
                 )),
             },
             Err(e) => Err(GrapevineError::MongoError(e.to_string())),
         }
+    }
+    /**
+     * Delete a pending relationship from one user to another
+     * @notice relationship must be pending / not active
+     *         Relationships cannot be removed since degree proofs may be built from them
+     *
+     * @param from - the user enabling relationship
+     * @param to - the user receiving relationship
+     * @returns - Ok if successful, Err otherwise
+     */
+    pub async fn reject_relationship(
+        &self,
+        from: &String,
+        to: &String,
+    ) -> Result<(), GrapevineError> {
+        // setup aggregation pipeline to get the ObjectID of the pending relationship to delete
+        let pipeline = pipelines::reject_relationship(from, to);
+
+        // get the OID of the pending relationship to delete
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        let oid: ObjectId = match cursor.next().await {
+            Some(Ok(document)) => document
+                .get("relationship")
+                .unwrap()
+                .as_object_id()
+                .unwrap(),
+            Some(Err(e)) => return Err(GrapevineError::MongoError(e.to_string())),
+            None => {
+                return Err(GrapevineError::NoPendingRelationship(
+                    from.clone(),
+                    to.clone(),
+                ))
+            }
+        };
+
+        // delete the pending relationship
+        let filter = doc! { "_id": oid };
+        match self.relationships.delete_one(filter, None).await {
+            Ok(res) => match res.deleted_count == 1 {
+                true => (),
+                false => {
+                    return Err(GrapevineError::MongoError(
+                        "Failed to delete relationship".to_string(),
+                    ))
+                }
+            },
+            Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+        }
+
+        Ok(())
     }
 
     /**
@@ -542,6 +594,37 @@ impl GrapevineDB {
             }
         } else {
             None
+        }
+    }
+
+    /**
+    * Get details on account:
+       - # of first degree connections
+       - # of second degree connections
+       - # of phrases created
+    */
+    pub async fn get_account_details(&self, user: &ObjectId) -> Option<(u64, u64, u64)> {
+        let mut cursor = self
+            .users
+            .aggregate(pipelines::get_account_details(user), None)
+            .await
+            .unwrap();
+
+        match cursor.next().await.unwrap() {
+            Ok(stats) => {
+                let phrase_count = stats.get_i32("phrase_count").unwrap();
+                let first_degree_connections = stats.get_i32("first_degree_connections").unwrap();
+                let second_degree_connections = stats.get_i32("second_degree_connections").unwrap();
+                return Some((
+                    phrase_count as u64,
+                    first_degree_connections as u64,
+                    second_degree_connections as u64,
+                ));
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+                return None;
+            }
         }
     }
 

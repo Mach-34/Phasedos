@@ -59,6 +59,7 @@ pub async fn prove_identity(
             )));
         }
     };
+
     // validate given username
     if request.username.len() > MAX_USERNAME_CHARS {
         return Err(GrapevineResponse::BadRequest(ErrorMessage(
@@ -592,81 +593,3 @@ pub async fn get_proof_with_params(
         ))),
     }
 }
-
-// /**
-//  * Get total number of connections and
-//  */
-// #[get("/connections/<phrase_index>")]
-// pub async fn get_phrase_connections(
-//     user: AuthenticatedUser,
-//     phrase_index: u32,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<(u64, Vec<u64>)>, GrapevineResponse> {
-//     // check if phrase exists in db
-//     match db.get_phrase_by_index(phrase_index).await {
-//         Ok(_) => (),
-//         Err(e) => match e {
-//             GrapevineError::PhraseNotFound => {
-//                 return Err(GrapevineResponse::NotFound(format!(
-//                     "No phrase found with id {}",
-//                     phrase_index
-//                 )));
-//             }
-//             _ => {
-//                 return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                     Some(e),
-//                     None,
-//                 )))
-//             }
-//         },
-//     }
-
-//     // retrieve all connections for the given phrase
-//     match db.get_phrase_connections(user.0, phrase_index).await {
-//         Some(connection_data) => Ok(Json(connection_data)),
-//         None => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(GrapevineError::MongoError(String::from(
-//                 "Error retrieving degrees in db",
-//             ))),
-//             None,
-//         ))),
-//     }
-// }
-
-// /**
-//  * Get all info about a phrase
-//  */
-// #[get("/phrase/<phrase_index>")]
-// pub async fn get_phrase(
-//     user: AuthenticatedUser,
-//     phrase_index: u32,
-//     db: &State<GrapevineDB>,
-// ) -> Result<Json<DegreeData>, GrapevineResponse> {
-//     // check if phrase exists in db
-//     match db.get_phrase_by_index(phrase_index).await {
-//         Ok(_) => (),
-//         Err(e) => match e {
-//             GrapevineError::PhraseNotFound => {
-//                 return Err(GrapevineResponse::NotFound(format!(
-//                     "No phrase found with id {}",
-//                     phrase_index
-//                 )));
-//             }
-//             _ => {
-//                 return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                     Some(e),
-//                     None,
-//                 )))
-//             }
-//         },
-//     }
-//     println!("2");
-//     // get degree data for this phrase
-//     match db.get_phrase_info(&user.0, phrase_index).await {
-//         Ok(phrase_data) => Ok(Json(phrase_data)),
-//         Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-//             Some(e),
-//             None,
-//         ))),
-//     }
-// }

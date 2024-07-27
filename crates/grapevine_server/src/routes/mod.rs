@@ -9,13 +9,13 @@ lazy_static! {
         user::get_nullifier_secret,
         user::get_relationship,
         user::emit_nullifier,
-        // user::reject_pending_relationship,
-        // user::get_pending_relationships,
-        // user::get_active_relationships,
-        // user::get_account_details,
+        user::reject_pending_relationship,
+        user::get_pending_relationships,
+        user::get_active_relationships,
+        user::get_account_details,
         // user::get_user,
-        // user::get_nonce,
-        // user::get_pubkey,
+        user::get_nonce,
+        user::get_pubkey,
         // user::get_all_degrees
     ];
     pub(crate) static ref PROOF_ROUTES: Vec<Route> = routes![
