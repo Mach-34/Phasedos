@@ -21,7 +21,7 @@ pub struct AvailableProofs {
     pub id: ObjectId,
     pub degree: u8,
     pub scope: String,
-    pub relation: String
+    pub relation: String,
 }
 
 // todo: maybe move this somewhere else? is not used in transport
@@ -35,7 +35,7 @@ pub struct DegreeProofValidationData {
     pub scope_oid: ObjectId,
     pub nullifiers: Vec<[u8; 32]>,
     pub degree: u8,
-    pub inactive: bool
+    pub inactive: bool,
 }
 
 // all data needed from server to prove a degree of separation

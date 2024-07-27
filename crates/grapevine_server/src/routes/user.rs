@@ -5,8 +5,8 @@ use crate::utils::RelationshipStatus;
 use babyjubjub_rs::{decompress_point, decompress_signature, verify};
 use grapevine_common::compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::errors::GrapevineError;
+use grapevine_common::http::requests::CreateUserRequest;
 use grapevine_common::http::requests::{EmitNullifierRequest, GetNonceRequest};
-use grapevine_common::http::{requests::CreateUserRequest, responses::DegreeData};
 use grapevine_common::utils::{compute_nullifier, convert_username_to_fr};
 use grapevine_common::MAX_USERNAME_CHARS;
 use grapevine_common::{
@@ -419,37 +419,6 @@ pub async fn get_pubkey(
         Some(pubkey) => Ok(hex::encode(pubkey.0)),
         None => Err(GrapevineResponse::NotFound(String::from(
             "User not does not exist.",
-        ))),
-    }
-}
-
-/**
- * Return a list of all available (new) degree proofs from existing connections that a user can
- * build from (empty if none)
- *
- * @param username - the username to look up the available proofs for
- * @return - a vector of DegreeData structs containing:
- *             * oid: the ObjectID of the proof to build from
- *             * relation: the separation degree of the proof
- *             * phrase_hash: the poseidon hash of the original phrase at the start of the chain
- * @return status:
- *            * 200 if success
- *            * 401 if signature mismatch or nonce mismatch
- *            * 404 if user not found
- *            * 500 if db fails or other unknown issue
- */
-#[get("/degrees")]
-pub async fn get_all_degrees(
-    user: AuthenticatedUser,
-    db: &State<GrapevineDB>,
-) -> Result<Json<Vec<DegreeData>>, GrapevineResponse> {
-    match db.get_all_degrees(user.0).await {
-        Some(proofs) => Ok(Json(proofs)),
-        None => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::MongoError(String::from(
-                "Error retrieving degrees in db",
-            ))),
-            None,
         ))),
     }
 }

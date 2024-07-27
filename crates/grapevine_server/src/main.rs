@@ -60,10 +60,7 @@ mod test_rocket {
         account::GrapevineAccount,
         auth_secret::AuthSecretEncrypted,
         compat::ff_ce_to_le_bytes,
-        http::{
-            requests::{CreateUserRequest, DegreeProofRequest, NewRelationshipRequest},
-            responses::DegreeData,
-        },
+        http::requests::{CreateUserRequest, DegreeProofRequest, NewRelationshipRequest},
         models::User,
         utils::random_fr,
     };

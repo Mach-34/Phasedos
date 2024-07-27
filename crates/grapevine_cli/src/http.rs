@@ -4,7 +4,6 @@ use grapevine_common::http::requests::{
     CreateUserRequest, DegreeProofRequest, EmitNullifierRequest, GetNonceRequest,
     NewRelationshipRequest,
 };
-use grapevine_common::http::responses::DegreeData;
 use grapevine_common::models::{AvailableProofs, ProvingData};
 // use grapevine_common::models::ProvingData;
 use grapevine_common::{account::GrapevineAccount, errors::GrapevineError};
@@ -194,8 +193,8 @@ pub async fn get_account_details_req(
 
 pub async fn get_degrees_req(
     account: &mut GrapevineAccount,
-) -> Result<Vec<DegreeData>, GrapevineError> {
-    let url = format!("{}/user/degrees", &**SERVER_URL);
+) -> Result<Vec<AvailableProofs>, GrapevineError> {
+    let url = format!("{}/proof/degrees", &**SERVER_URL);
     // produce signature over current nonce
     let signature = hex::encode(account.sign_nonce().compress());
     let client = Client::new();
@@ -212,7 +211,7 @@ pub async fn get_degrees_req(
             account
                 .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
                 .unwrap();
-            let degrees = res.json::<Vec<DegreeData>>().await.unwrap();
+            let degrees = res.json::<Vec<AvailableProofs>>().await.unwrap();
             Ok(degrees)
         }
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
@@ -250,33 +249,6 @@ pub async fn degree_proof_req(
                 .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
                 .unwrap();
             return Ok(());
-        }
-        _ => Err(res.json::<GrapevineError>().await.unwrap()),
-    }
-}
-
-pub async fn get_known_req(
-    account: &mut GrapevineAccount,
-) -> Result<Vec<DegreeData>, GrapevineError> {
-    let url = format!("{}/proof/known", &**SERVER_URL);
-    // produce signature over current nonce
-    let signature = hex::encode(account.sign_nonce().compress());
-    let client = Client::new();
-    let res = client
-        .get(&url)
-        .header("X-Username", account.username())
-        .header("X-Authorization", signature)
-        .send()
-        .await
-        .unwrap();
-    match res.status() {
-        StatusCode::OK => {
-            // increment nonce
-            account
-                .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
-                .unwrap();
-            let proofs = res.json::<Vec<DegreeData>>().await.unwrap();
-            Ok(proofs)
         }
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
     }

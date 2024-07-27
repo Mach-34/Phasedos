@@ -1,7 +1,6 @@
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use grapevine_common::errors::GrapevineError;
-use grapevine_common::http::responses::DegreeData;
 use grapevine_common::models::{
     AvailableProofs, DegreeProofValidationData, GrapevineProof, ProvingData, Relationship, User,
 };
