@@ -31,9 +31,9 @@ enum Commands {
     /// Commands for managing relationships
     #[command(subcommand, verbatim_doc_comment)]
     Relationship(RelationshipCommands),
-    // /// Commands for interacting with phrases and degree proofs
-    // #[command(subcommand, verbatim_doc_comment)]
-    // Phrase(PhraseCommands),
+    /// Commands for interacting with identity and degree proofs
+    #[command(subcommand, verbatim_doc_comment)]
+    Proof(ProofCommands),
 }
 
 #[derive(Subcommand)]
@@ -68,10 +68,8 @@ enum AccountCommands {
     /// Register a new Grapevine account
     /// usage: `grapevine account register <username>`
     #[command(verbatim_doc_comment)]
-    Register {
-        #[clap(value_parser)]
-        username: String,
-    },
+    #[clap(value_parser)]
+    Register { username: String },
     /// Get information about your Grapevine account
     /// usage: `grapevine account info`
     #[command(verbatim_doc_comment)]
@@ -82,31 +80,19 @@ enum AccountCommands {
     Export,
 }
 
-// #[derive(Subcommand)]
-// enum PhraseCommands {
-//     /// Prove knowledge of a phrase. Description is discarded if the phrase already exists
-//     /// usage: `grapevine phrase prove "<phrase>" "<description>"`
-//     #[command(verbatim_doc_comment)]
-//     #[clap(value_parser)]
-//     Prove { phrase: String, description: String },
-//     /// Check for new degree proofs from relationships and build degrees on top of them
-//     /// usage: `grapevine phrase sync`
-//     #[command(verbatim_doc_comment)]
-//     Sync,
-//     /// Get all information known by this account about a given phrase by its index
-//     /// usage: `grapevine phrase get <index>`
-//     #[command(verbatim_doc_comment)]
-//     #[clap(value_parser)]
-//     Get { index: u32 },
-//     /// Return all phrases known by this account (degree 1)
-//     /// usage: `grapevine phrase known`
-//     #[command(verbatim_doc_comment)]
-//     Known,
-//     /// Return all degree proofs created by this account (degree > 1)
-//     /// usage: `grapevine phrase degrees`
-//     #[command(verbatim_doc_comment)]
-//     Degrees,
-// }
+#[derive(Subcommand)]
+enum ProofCommands {
+    /// Retrieve a list of available degree proofs to build from
+    /// usage: `grapevine proof available
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    Available,
+    /// Prove all available degrees
+    /// usage: `grapevine proof prove-available
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    ProveAvailable,
+}
 
 /**
  * CLI for Grapevine
@@ -116,11 +102,15 @@ pub async fn main() {
     let cli = Cli::parse();
 
     let result = match &cli.command {
-        Commands::Health => controllers::health().await,
         Commands::Account(cmd) => match cmd {
             AccountCommands::Register { username } => controllers::register(username).await,
             AccountCommands::Info => controllers::account_details().await,
             AccountCommands::Export => controllers::export_key(),
+        },
+        Commands::Health => controllers::health().await,
+        Commands::Proof(cmd) => match cmd {
+            ProofCommands::Available => controllers::get_available_proofs().await,
+            ProofCommands::ProveAvailable => controllers::prove_all_available().await,
         },
         Commands::Relationship(cmd) => match cmd {
             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
@@ -133,16 +123,6 @@ pub async fn main() {
             }
             RelationshipCommands::List => controllers::get_relationships(true).await,
         },
-        //     Commands::Phrase(cmd) => match cmd {
-        //         PhraseCommands::Prove {
-        //             phrase,
-        //             description,
-        //         } => controllers::prove_phrase(phrase, description).await,
-        //         PhraseCommands::Sync => controllers::prove_all_available().await,
-        //         PhraseCommands::Get { index } => controllers::get_phrase(*index).await,
-        //         PhraseCommands::Known => controllers::get_known_phrases().await,
-        //         PhraseCommands::Degrees => controllers::get_my_proofs().await,
-        //     },
     };
 
     match result {
