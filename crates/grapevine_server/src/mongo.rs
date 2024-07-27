@@ -430,15 +430,15 @@ impl GrapevineDB {
         //                 "phrase": proof.phrase
         //               }
         //             },
-        //             doc! {
-        //               "$graphLookup": {
-        //                 "from": "degree_proofs",
-        //                 "startWith": "$preceding", // Assuming 'preceding' is a field that points to the parent document
-        //                 "connectFromField": "preceding",
-        //                 "connectToField": "_id",
-        //                 "as": "preceding_chain",
-        //               }
-        //             },
+                    // doc! {
+                    //   "$graphLookup": {
+                    //     "from": "degree_proofs",
+                    //     "startWith": "$preceding", // Assuming 'preceding' is a field that points to the parent document
+                    //     "connectFromField": "preceding",
+                    //     "connectToField": "_id",
+                    //     "as": "preceding_chain",
+                    //   }
+                    // },
         //             doc! {
         //                 "$project": {
         //                     "_id": 1,
@@ -710,3 +710,145 @@ impl GrapevineDB {
         }
     }
 }
+
+
+// db.proofs.aggregate([
+//     // 1. Search for a currently active proof
+//     { $match: { relation: ObjectId("66a40f2538a18737e77a2ea4"), scope: ObjectId("66a40f1a38a18737e77a2e98") } },
+//     { $project: { _id: 1, preceding: 1 }},
+//     // 2. Look up all downstream dependent proofs, projecting only whether they are active or not
+//     { $graphLookup: {
+//     	"from": "proofs",
+//         "startWith": "$_id", // Assuming 'preceding' is a field that points to the parent document
+//         "connectFromField": "_id",
+//         "connectToField": "preceding",
+//         "as": "preceding_chain",
+//     }},
+//     {
+//         $project: {
+//             preceding_chain: {
+//                 $map: {
+//                     input: "$preceding_chain",
+//                     as: "chain_doc",
+//                     in: {
+//                         _id: "$$chain_doc._id",
+//                         inactive: "$$chain_doc.inactive"
+//                     }
+//                 }
+//             },
+//             preceding: 1
+//         }
+//     },
+//     // 4. If all preceding are inactive or none found, mark them for deletion including original proof
+//     {
+//         $addFields: {
+//             removable: {
+//                 $cond: [
+//                     { 
+//                         $and: [
+//                             { $eq: [{ $size: "$preceding_chain" }, 0] },
+//                             { $eq: [{ $arrayElemAt: ["$preceding_chain.inactive", 0] }, false] }
+//                         ]
+//                     },
+//                     { $concatArrays: [["$_id"], { $map: { input: "$preceding_chain", as: "doc", in: "$$doc._id" }}] },
+//                     { 
+//                         $cond: [
+//                             { $eq: [{ $size: "$preceding_chain" }, 0] },
+//                             ["$_id"],
+//                             { 
+//                                 $cond: [
+//                                     { $not: [{ $in: [true, "$preceding_chain.inactive"] }] },
+//                                     { $concatArrays: [["$_id"], { $map: { input: "$preceding_chain", as: "doc", in: "$$doc._id" }}] },
+//                                     []
+//                                 ]
+//                             }
+//                         ]
+//                     }
+//                 ]
+//             }
+//         }
+//     },
+//     // 5. If not removable, schedule the document to be marked as inactive
+//     {
+//         $addFields: {
+//             mark_inactive: {
+//                 $cond: {
+//                     if: { $eq: [{ $size: "$removable" }, 0] },
+//                     then: "$_id",
+//                     else: null
+//                 }
+//             },
+//             continue: {
+//             	$cond: {
+//                     if: { $eq: [{ $size: "$removable" }, 0] },
+//                     then: false,
+//                     else: true
+//                 }
+//             }
+//         }
+//     },
+//     // 5. Project the final document structure
+//     { $project: { _id: 1, preceding: 1, mark_inactive: 1, removable: 1, continue: 1 } },
+//     // 6. Go to next level
+//     {
+//         $lookup: {
+//             from: "proofs",
+//             let: {
+//             	precedingId: "$preceding",
+//             	removable: "$removable",
+//             	continue: "$continue",
+//             },
+//             pipeline: [
+//                 { $match: { $expr: { $and: [
+//                 	{ $eq: ["$_id", "$$precedingId"] },
+//                 	{ $eq: ["$inactive", false] },  
+//                 	{ $eq: [true, "$$continue"] } 
+//                 ]}}},
+//                 { $project: { _id: 1, inactive: 1, } },
+//                 { $addFields: { matched_id: "$_id" } },  // Capture the _id in matched_id field
+//                 { $graphLookup: {
+//                     from: "proofs",
+//                     startWith: "$_id",
+//                     connectFromField: "_id",
+//                     connectToField: "preceding",
+//                     as: "next_level",
+//                     restrictSearchWithMatch: { $expr: { $and: [
+//                     	{ $not: { $in: ["$_id", "$$removable"] } },
+//                     	{ $eq: ["$inactive", false] } 
+//                     ]}}
+//                 }},
+//                 { $unwind: "$next_level" },
+//                 { $project: { _id: "$next_level._id", inactive: "$next_level.inactive", matched_id: 1 } },
+//             ],
+//             as: "next_level"
+//         }
+//     },
+//     // 7.
+//     {
+//         $addFields: {
+//             continue: {
+//                 $cond: [
+//                     { $eq: [{ $size: "$next_level" }, 0] },
+//                     false,
+//                     { $cond: [{ $not: [{ $in: [true, "$next_level.inactive"] }] }, true, false ]}
+//                 ]
+//             }
+//         }
+//     },
+//     {
+//         $addFields: {
+//             removable: {
+//                 $cond: [
+//                     { $eq: ["$continue", true] },
+//                     { $concatArrays: ["$removable", { $map: { input: "$next_level", as: "doc", in: "$$doc._id" }}] },
+//                     "$removable"
+//                 ]
+//             },
+//             preceding: { $arrayElemAt: ["$next_level.matched_id", 0] },
+//         }
+//     },
+//     // 8. Project the final document structure
+//     { $project: { _id: 1, removable: 1, mark_inactive: 1, preceding: 1, continue: 1 }}
+// ])
+
+
