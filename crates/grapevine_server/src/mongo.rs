@@ -642,6 +642,13 @@ impl GrapevineDB {
     }
 
     /**
+     * Given a user, find all degree proofs they have created that are currently active
+     */
+    pub async fn get_proven_degrees() {
+        let pipeline = vec![];
+    }
+
+    /**
      * Given a user, find available degrees of separation proofs they can build from
      *   - find degree chains they are not a part of
      *   - find lower degree proofs they can build from

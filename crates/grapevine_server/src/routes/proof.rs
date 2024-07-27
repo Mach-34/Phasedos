@@ -384,8 +384,8 @@ pub async fn get_available_proofs(
 *            * 401 if signature mismatch or nonce mismatch
 *            * 500 if db fails or other unknown issue
 */
-#[get("/degrees")]
-pub async fn get_all_degrees(
+#[get("/proven-degrees")]
+pub async fn get_proven_degrees(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
 ) -> Result<Json<Vec<AvailableProofs>>, GrapevineResponse> {
