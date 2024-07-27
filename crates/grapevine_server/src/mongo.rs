@@ -468,143 +468,53 @@ impl GrapevineDB {
         &self,
         proof: &GrapevineProof,
     ) -> Result<ObjectId, GrapevineError> {
-        // TODO: Implement proof deactivation
+        // set up pipeline to handle updating the social graph
+        let scope = proof.scope.clone().unwrap();
+        let relation = proof.relation.clone().unwrap();
+        let pipeline = pipelines::degree_proof_dependencies(&scope, &relation);
+        let mut cursor = self.proofs.aggregate(pipeline, None).await.unwrap();
+        let mut set_inactive: Option<ObjectId> = None;
+        let mut remove: Vec<ObjectId> = vec![];
+        // figure out how to handle the social graph
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let removable = document.get("removable").unwrap().as_bool().unwrap();
+                    let id = document.get("_id").unwrap().as_object_id().unwrap();
+                    let downstream = document.get("downstream").unwrap().as_array().unwrap();
+                    let downstream: Vec<ObjectId> = downstream
+                        .iter()
+                        .filter_map(|item| item.as_object_id())
+                        .collect();
+                    if !removable {
+                        if set_inactive.is_none() && remove.len() == 0 {
+                            set_inactive = Some(id);
+                        }
+                        break;
+                    } else {
+                        remove.push(id);
+                        remove.extend(downstream);
+                    }
+                }
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+            }
+        }
 
-        // // fetch all proofs preceding this one
-        // let mut proof_chain: Vec<DegreeProof> = vec![];
-        // let mut cursor = self
-        //     .degree_proofs
-        //     .aggregate(
-        //         vec![
-        //             doc! {
-        //               "$match": {
-        //                 "user": user,
-        //                 "phrase": proof.phrase
-        //               }
-        //             },
-        //             doc! {
-        //               "$graphLookup": {
-        //                 "from": "degree_proofs",
-        //                 "startWith": "$preceding", // Assuming 'preceding' is a field that points to the parent document
-        //                 "connectFromField": "preceding",
-        //                 "connectToField": "_id",
-        //                 "as": "preceding_chain",
-        //               }
-        //             },
-        //             doc! {
-        //                 "$project": {
-        //                     "_id": 1,
-        //                     "degree": 1,
-        //                     "inactive": 1,
-        //                     "preceding": 1,
-        //                     "proceeding": 1,
-        //                     "preceding_chain": {
-        //                         "$map": {
-        //                             "input": "$preceding_chain",
-        //                             "as": "chain",
-        //                             "in": {
-        //                                 "_id": "$$chain._id",
-        //                                 "degree": "$$chain.degree",
-        //                                 "inactive": "$$chain.inactive",
-        //                                 "preceding": "$$chain.preceding",
-        //                                 "proceeding": "$$chain.proceeding",
-        //                             }
-        //                         }
-        //                     }
-        //                 }
-        //             },
-        //         ],
-        //         None,
-        //     )
-        //     .await
-        //     .unwrap();
-        // while let Some(result) = cursor.next().await {
-        //     match result {
-        //         Ok(document) => {
-        //             let preceding_chain = document.get("preceding_chain");
-        //             let mut parsed: Vec<DegreeProof> = vec![];
-        //             if preceding_chain.is_some() {
-        //                 parsed =
-        //                     bson::from_bson::<Vec<DegreeProof>>(preceding_chain.unwrap().clone())
-        //                         .unwrap();
-        //             }
-        //             let base_proof = bson::from_document::<DegreeProof>(document).unwrap();
-        //             proof_chain.push(base_proof);
-        //             proof_chain.append(&mut parsed);
-        //         }
-        //         Err(e) => println!("Error: {}", e),
-        //     }
-        // }
-
-        // // Sort by degrees
-        // proof_chain.sort_by(|a, b| b.degree.cmp(&a.degree));
-
-        // let mut delete_entities: Vec<ObjectId> = vec![];
-        // // Tuple containing object id, inactive status, updated proceeding array
-        // let mut update_entitity: (ObjectId, bool, ObjectId) =
-        //     (ObjectId::new(), false, ObjectId::new());
-
-        // // There may be multiple delete values but there will always be one update
-        // let mut index = 0;
-
-        // while index < proof_chain.len() {
-        //     let proof = proof_chain.get(index).unwrap();
-        //     let empty_proceeding =
-        //         proof.proceeding.is_none() || proof.proceeding.clone().unwrap().is_empty();
-
-        //     // If proceeding isn't empty on base proof we simply flag it as inactive and exit
-        //     if index == 0 && !empty_proceeding {
-        //         update_entitity.0 = proof.id.unwrap();
-        //         update_entitity.1 = true;
-
-        //         // Make loop exit
-        //         index = proof_chain.len();
-        //     } else {
-        //         if empty_proceeding && (index == 0 || proof.inactive.unwrap()) {
-        //             delete_entities.push(proof.id.unwrap());
-        //             // Remove from preceding proof's proceeding vec
-        //             let next_proof = proof_chain.get(index + 1).unwrap();
-        //             let mut next_proceeding = next_proof.proceeding.clone().unwrap();
-        //             let pos = next_proceeding
-        //                 .iter()
-        //                 .position(|&x| x == proof.id.unwrap())
-        //                 .unwrap();
-
-        //             update_entitity.0 = next_proof.id.unwrap();
-        //             update_entitity.2 = next_proceeding.remove(pos);
-
-        //             proof_chain[index + 1].proceeding = Some(next_proceeding);
-        //             index += 1;
-        //         // When we reach the last inactive proof we can end the loop
-        //         } else {
-        //             index = proof_chain.len();
-        //         }
-        //     }
-        // }
-
-        // // Delete documents if not empty
-        // if !delete_entities.is_empty() {
-        //     let filter = doc! {
-        //         "_id": {"$in": delete_entities} // Match documents whose IDs are in the provided list
-        //     };
-        //     self.degree_proofs
-        //         .delete_many(filter, None)
-        //         .await
-        //         .expect("Error deleting degree proofs");
-        // }
-
-        // Update document
-        // let update_filter = doc! {"_id": update_entitity.0};
-        // let update;
-        // if update_entitity.1 {
-        //     update = doc! {"$set": { "inactive": true }};
-        // } else {
-        //     update = doc! {"$pull": { "proceeding": update_entitity.2 }};
-        // }
-        // self.degree_proofs
-        //     .update_one(update_filter, update, None)
-        //     .await
-        //     .expect("Error updating degree proof");
+        if set_inactive.is_some() {
+            // set_inactive should never be Some while remove is not empty
+            if remove.len() > 0 {
+                println!("Degree Query Machine Broke");
+                return Err(GrapevineError::InternalError);
+            }
+            // update the proof to be inactive
+            let query = doc! { "_id": set_inactive.unwrap() };
+            let update = doc! { "$set": { "inactive": true }};
+            self.proofs.update_one(query, update, None).await.unwrap();
+        } else if remove.len() > 0 {
+            // delete all the proofs that have no downstream dependencies
+            let filter = doc! { "_id": { "$in": remove.iter().map(|id| Bson::ObjectId(id.clone())).collect::<Vec<Bson>>() }};
+            self.proofs.delete_many(filter, None).await.unwrap();
+        }
 
         // create new proof document
         let proof_oid = self
@@ -615,30 +525,6 @@ impl GrapevineDB {
             .inserted_id
             .as_object_id()
             .unwrap();
-
-        // // reference this proof in previous proof if not first proof in chain
-        // if proof.preceding.is_some() {
-        //     let query = doc! { "_id": proof.preceding.unwrap() };
-        //     let update = doc! { "$push": { "proceeding": bson::to_bson(&proof_oid).unwrap()} };
-        //     self.degree_proofs
-        //         .update_one(query, update, None)
-        //         .await
-        //         .unwrap();
-        // }
-
-        // // push the proof to the user's list of proofs
-        // let query = doc! { "_id": user };
-        // let update = doc! {"$push": { "degree_proofs": bson::to_bson(&proof_oid).unwrap()}};
-        // self.users
-        //     .update_one(query.clone(), update, None)
-        //     .await
-        //     .unwrap();
-
-        // // If a proof is marked inactive then remove from user's list of degree proofs
-        // if update_entitity.1 {
-        //     let update = doc! { "$pull": { "degree_proofs": update_entitity.0 } };
-        //     self.users.update_one(query, update, None).await.unwrap();
-        // }
         Ok(proof_oid)
     }
 

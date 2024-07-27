@@ -358,18 +358,15 @@ pub fn get_relationships_usernames(user: &String, active: bool) -> Vec<Document>
 pub fn available_degrees(user: &String) -> Vec<Document> {
     vec![
         // 1. Match the user
-        doc! { "$match": { "username": user } },
+        doc! {"$match": { "username": user }},
         // 2. Lookup relationships where the user is the recipient
+        // todo: prevent use of inactive + nullified relationships
         doc! {
             "$lookup": {
                 "from": "relationships",
                 "let": { "userId": "$_id" },
                 "pipeline": [
-                    doc! {
-                        "$match": {
-                            "$expr": { "$eq": ["$recipient", "$$userId"] }
-                        }
-                    },
+                    doc! { "$match": { "$expr": { "$eq": ["$recipient", "$$userId"] }}},
                     doc! { "$project": { "sender": 1, "_id": 0 } }
                 ],
                 "as": "userRelationships"
@@ -378,12 +375,12 @@ pub fn available_degrees(user: &String) -> Vec<Document> {
         doc! { "$unwind": "$userRelationships" },
         doc! {
             "$project": {
+                "user": "$_id",
                 "sender": "$userRelationships.sender",
                 "_id": 0
             }
         },
         // 3. Find all proofs where the relation = any of the senders from relationships
-        // todo: filter out inactive proofs and proofs > 8
         doc! {
             "$lookup": {
                 "from": "proofs",
@@ -391,48 +388,93 @@ pub fn available_degrees(user: &String) -> Vec<Document> {
                 "foreignField": "relation",
                 "as": "proofs",
                 "pipeline": [
-                    doc! { "$match": { "inactive": { "$ne": true } } },
+                    doc! { "$match": { "inactive": { "$ne": true }, "degree": { "$lt": 8 } } },
                     doc! { "$project": { "degree": 1, "scope": 1 } }
                 ]
             }
         },
         doc! { "$unwind": "$proofs" },
-        // 4. Intermediate reshape of the document
         doc! {
             "$project": {
                 "_id": "$proofs._id",
+                "user": 1,
                 "degree": "$proofs.degree",
                 "scope": "$proofs.scope",
                 "relation": "$sender"
             }
         },
-        // 5. Lookup the username for the proof chain's identity scope
+        // 4. Sort by scope, then order by lowest degree
+        doc! { "$sort": { "scope": 1, "degree": 1 }},
+        // 5. group by the scope and return the lowest degree value
+        doc! {
+            "$group": {
+                "_id": "$scope",
+                "originalId": { "$first": "$_id" },
+                "degree": { "$first": "$degree" },
+                "relation": { "$first": "$relation" },
+                "user": { "$first": "$user"}
+            }
+        },
+        doc! {
+            "$project": {
+                "_id": "$originalId",
+                "degree": 1,
+                "scope": "$_id",
+                "relation": 1,
+                "user": 1
+            }
+        },
+        // 6. Find matching proofs for the same scope made by the user
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "let": {
+                    "scopeId": "$scope",
+                    "relationId": "$user",
+                    "currentDegree": "$degree"
+                },
+                "pipeline": [
+                    doc! {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": ["$scope", "$$scopeId"] },
+                                    { "$eq": ["$relation", "$$relationId"] },
+                                    { "$lt": ["$degree", { "$add": ["$$currentDegree", 2] }] }
+                                ]
+                            }
+                        }
+                    },
+                    doc! { "$project": { "_id": 1, "degree": 1, "scope": 1, "relation": 1 } }
+                ],
+                "as": "existingProofs"
+            }
+        },
+        // 7. Filter out proofs that would not allow user to build a lower degree proof than they currently have
+        doc! { "$match": { "existingProofs": { "$eq": [] }}},
+        // 8. Match scope and relation usernames
         doc! {
             "$lookup": {
                 "from": "users",
                 "localField": "scope",
                 "foreignField": "_id",
                 "as": "scopeUser",
-                "pipeline": [
-                    doc! { "$project": { "_id": 0, "username": 1 } }
-                ]
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
             }
         },
-        // 6. Lookup the username for the relation given in the available proof to build from
         doc! {
             "$lookup": {
                 "from": "users",
                 "localField": "relation",
                 "foreignField": "_id",
                 "as": "relationUser",
-                "pipeline": [
-                    doc! { "$project": { "_id": 0, "username": 1 } }
-                ]
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
             }
         },
-        // 7. Final projection to format the output
+        // 9. Reshape final document for AvailableProofs struct
         doc! {
             "$project": {
+                "_id": 1,
                 "degree": 1,
                 "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
                 "relation": { "$arrayElemAt": ["$relationUser.username", 0] }
@@ -584,5 +626,158 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
     vec![
         doc! { "$match": { "$or": match_conditions }},
         doc! { "$count": "matchedCount" },
+    ]
+}
+
+/**
+ * Query for getting all removable degree proofs when upserting a new degree proof
+ * @notice assumes scope and relation OID's have been obtained in previous query
+ *
+ * @param scope: The ObjectId of the scope of the degree proof chain
+ * @param relation: The ObjectId of the prover submitting a new degree proof
+ *
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<Document> {
+    vec![
+        // 1. Try to find an active degree proof for the prover on the given identity scope
+        doc! { "$match": { "relation": relation, "scope": scope, "active": true }},
+        // 2. Look at lower degrees to see if they are marked inactive
+        doc! {
+            "$graphLookup": {
+                "from": "proofs",
+                "startWith": "$_id",
+                "connectFromField": "preceding",
+                "connectToField": "_id",
+                "as": "upstream_chain",
+                "depthField": "level",
+                "restrictSearchWithMatch": {
+                    "$expr": {
+                        "$or": [
+                            { "$eq": ["$inactive", true] },
+                            // first level will not be marked inactive yet, so specialized check
+                            { "$and": [
+                                { "$eq": ["$_id", "$$ROOT._id"] },
+                                { "$eq": ["$relation", relation] },
+                                { "$eq": ["$scope", scope] }
+                            ]}
+                        ]
+                    }
+                }
+            }
+        },
+        doc! { "$unwind": "$upstream_chain" },
+        // 3. Project the necessary info for sorting and grouping by level
+        doc! { "$project": { "_id": "$upstream_chain._id", "degree": "$upstream_chain.degree" }},
+        // 4. Look up all downstream proofs from each level
+        doc! {
+            "$graphLookup": {
+                "from": "proofs",
+                "startWith": "$_id",
+                "connectFromField": "_id",
+                "connectToField": "preceding",
+                "as": "downstream_chain",
+                "depthField": "level"
+            }
+        },
+        doc! { "$unwind": "$downstream_chain" },
+        // 5. Project the necessary info for sorting and grouping by level
+        doc! {
+            "$project": {
+                "grouping": "$_id",
+                "grouping_degree": "$degree",
+                "_id": "$downstream_chain._id",
+                "degree": "$downstream_chain.degree",
+                "inactive": "$downstream_chain.inactive"
+            }
+        },
+        // 6. Group so that so the highest degree level for removal claims unique documents under it
+        doc! {
+            "$group": {
+                "_id": "$_id",
+                "doc": { "$first": "$$ROOT" },
+                "maxDegree": { "$max": "$degree" }
+            }
+        },
+        doc! {
+            "$replaceRoot": {
+                "newRoot": {
+                    "$mergeObjects": ["$doc", { "degree": "$maxDegree" }]
+                }
+            }
+        },
+        // 7. Prevent the oids of the preceding relations from being used as children in other relations
+        doc! {
+            "$group": {
+                "_id": "$grouping",
+                "groupings": { "$addToSet": "$_id" },
+                "grouping_degree": { "$first": "$grouping_degree" },
+                "downstream": {
+                    "$push": {
+                        "proofId": "$_id",
+                        "inactive": "$inactive",
+                        "degree": "$degree"
+                    }
+                }
+            }
+        },
+        doc! {
+            "$group": {
+                "_id": null,
+                "allGroupings": { "$addToSet": "$_id" },
+                "docs": { "$push": "$$ROOT" }
+            }
+        },
+        doc! { "$unwind": "$docs" },
+        doc! {
+            "$replaceRoot": {
+                "newRoot": {
+                    "$mergeObjects": ["$docs", { "allGroupings": "$allGroupings" }]
+                }
+            }
+        },
+        doc! {
+            "$project": {
+                "_id": 1,
+                "degree": "$grouping_degree",
+                "downstream": {
+                    "$filter": {
+                        "input": "$downstream",
+                        "as": "item",
+                        "cond": { "$not": { "$in": ["$$item.proofId", "$allGroupings"] } }
+                    }
+                }
+            }
+        },
+        // 8. Reshape to include all OIDs of downstream proofs per level + boolean whether all are inactive or not
+        doc! {
+            "$addFields": {
+                "downstream": {
+                    "$map": {
+                        "input": "$downstream",
+                        "as": "item",
+                        "in": "$$item.proofId"
+                    }
+                },
+                "removable": {
+                    "$cond": {
+                        "if": {
+                            "$eq": [
+                                { "$size": { "$filter": {
+                                    "input": "$downstream",
+                                    "as": "item",
+                                    "cond": { "$eq": ["$$item.inactive", false] }
+                                }}},
+                                { "$size": "$downstream" }
+                            ]
+                        },
+                        "then": true,
+                        "else": false
+                    }
+                }
+            }
+        },
+        // 9. Sort by distance from original proof
+        doc! { "$sort": { "degree": -1 } },
     ]
 }
