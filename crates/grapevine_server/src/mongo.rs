@@ -500,6 +500,9 @@ impl GrapevineDB {
             }
         }
 
+        println!("Inactive: {:?}", set_inactive);
+        println!("Remove: {:?}", remove);
+
         if set_inactive.is_some() {
             // set_inactive should never be Some while remove is not empty
             if remove.len() > 0 {

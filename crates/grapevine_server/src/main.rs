@@ -219,7 +219,6 @@ mod test_rocket {
         ) -> (u16, String) {
             // select the specific proof to build from
             let available_proofs = http_get_available_proofs(&context, prover).await;
-            println!("Available Proofs: {:?}", available_proofs);
             let available_proof = match scope {
                 Some(scope) => available_proofs
                     .iter()
@@ -833,6 +832,9 @@ mod test_rocket {
             // retrieve available proofs as user_b
             let (code, _) = degree_proof_step_by_scope(&context, &mut users[1], None).await;
             assert_eq!(code, Status::Created.code);
+            // ensure no proofs to build from
+            let available = http_get_available_proofs(&context, &mut users[1]).await;
+            assert_eq!(available.len(), 0);
         }
 
         #[rocket::async_test]
@@ -967,14 +969,14 @@ mod test_rocket {
             }
 
             // make relationship for user0->user2
-            // let mut temp_vec = vec![users.remove(2), users.remove(0)];
-            // temp_vec.reverse();
-            // relationship_chain(&context, &mut temp_vec).await;
-            // users.insert(0, temp_vec.remove(0));
-            // users.insert(2, temp_vec.remove(0));
-            // let mut prover = users.remove(2);
-            // let (code, _) =
-            //     degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
+            let mut temp_vec = vec![users.remove(2), users.remove(0)];
+            temp_vec.reverse();
+            relationship_chain(&context, &mut temp_vec).await;
+            users.insert(0, temp_vec.remove(0));
+            users.insert(2, temp_vec.remove(0));
+            let mut prover = users.remove(2);
+            let (code, _) =
+                degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
         }
 
         #[rocket::async_test]
