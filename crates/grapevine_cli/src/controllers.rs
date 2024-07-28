@@ -444,10 +444,6 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
         Ok(data) => data,
         Err(e) => return Err(e),
     };
-    println!(
-        "Proofs of {}'s degrees of separation from users:",
-        account.username()
-    );
 
     if proofs.len() == 0 {
         Ok(String::from("No existing degree proofs."))

@@ -218,7 +218,7 @@ pub fn get_proven_degrees(user: &String) -> Vec<Document> {
                 "as": "proofs",
                 "pipeline": [
                     doc! { "$match": { "inactive": { "$ne": true }, "degree": { "$gte": 1, "$lt": 8 } } },
-                    doc! { "$project": { "degree": 1, "relation": 1, "scope": 1 } }
+                    doc! { "$project": { "degree": 1, "preceding": 1, "relation": 1, "scope": 1 } }
                 ]
             }
         },
@@ -227,12 +227,22 @@ pub fn get_proven_degrees(user: &String) -> Vec<Document> {
             "$project": {
                 "_id": "$proofs._id",
                 "degree": "$proofs.degree",
-                // "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
                 "scope": "$proofs.scope",
-                "relation": "$username"
+                "preceding": "$proofs.preceding",
             }
         },
-        // 3. Match scope username
+        // 3. Lookup preceding relation
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "localField": "preceding",
+                "foreignField": "_id",
+                "as": "precedingProof",
+                "pipeline": [ doc! { "$project": { "_id": 0, "relation": 1 }} ]
+            }
+        },
+        doc! {"$unwind": "$precedingProof"},
+        // 3. Match scope username and preceding relation username
         doc! {
             "$lookup": {
                 "from": "users",
@@ -243,11 +253,20 @@ pub fn get_proven_degrees(user: &String) -> Vec<Document> {
             }
         },
         doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "precedingProof.relation",
+                "foreignField": "_id",
+                "as": "precedingRelationUser",
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
+            }
+        },
+        doc! {
             "$project": {
                 "_id": "$_id",
                 "degree": "$degree",
                 "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
-                "relation": "$relation"
+                "relation": { "$arrayElemAt": ["$precedingRelationUser.username", 0] },
             }
         },
     ]
