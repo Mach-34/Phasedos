@@ -218,7 +218,7 @@ pub fn get_proven_degrees(user: &String) -> Vec<Document> {
                 "as": "proofs",
                 "pipeline": [
                     doc! { "$match": { "inactive": { "$ne": true }, "degree": { "$gte": 1, "$lt": 8 } } },
-                    doc! { "$project": { "degree": 1, "scope": 1 } }
+                    doc! { "$project": { "degree": 1, "relation": 1, "scope": 1 } }
                 ]
             }
         },
@@ -227,7 +227,27 @@ pub fn get_proven_degrees(user: &String) -> Vec<Document> {
             "$project": {
                 "_id": "$proofs._id",
                 "degree": "$proofs.degree",
+                // "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
                 "scope": "$proofs.scope",
+                "relation": "$username"
+            }
+        },
+        // 3. Match scope username
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "scope",
+                "foreignField": "_id",
+                "as": "scopeUser",
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
+            }
+        },
+        doc! {
+            "$project": {
+                "_id": "$_id",
+                "degree": "$degree",
+                "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
+                "relation": "$relation"
             }
         },
     ]

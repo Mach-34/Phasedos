@@ -539,14 +539,14 @@ impl GrapevineDB {
         username: String,
     ) -> Result<Vec<ProofMetadata>, GrapevineError> {
         let pipeline = pipelines::get_proven_degrees(&username);
-        let proofs: Vec<ProofMetadata> = vec![];
+        let mut proofs: Vec<ProofMetadata> = vec![];
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    println!("Document: {:?}", document);
+                    proofs.push(bson::from_document(document).unwrap());
                 }
-                Err(e) => println!("Error: {}", e),
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
             }
         }
         Ok(proofs)
@@ -568,9 +568,7 @@ impl GrapevineDB {
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         while let Some(result) = cursor.next().await {
             match result {
-                Ok(document) => {
-                    available_proofs.push(bson::from_bson(bson::Bson::Document(document)).unwrap())
-                }
+                Ok(document) => available_proofs.push(bson::from_document(document).unwrap()),
                 Err(e) => println!("Error: {}", e),
             }
         }

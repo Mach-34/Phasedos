@@ -442,6 +442,7 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
     synchronize_nonce().await?;
     // send request
     let res = get_proven_degrees_req(&mut account).await;
+    println!("Res: {:?}", res);
     // let data = match res {
     //     Ok(data) => data,
     //     Err(e) => return Err(e),

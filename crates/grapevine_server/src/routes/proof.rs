@@ -390,19 +390,14 @@ pub async fn get_available_proofs(
 pub async fn get_proven_degrees(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<(), GrapevineResponse> {
-    // Result<Json<Vec<AvailableProofs>>, GrapevineResponse> {
-    db.get_proven_degrees(user.0).await;
-    // match db.get_all_degrees(user.0).await {
-    //     Some(proofs) => Ok(Json(proofs)),
-    //     None => Err(GrapevineResponse::InternalError(ErrorMessage(
-    //         Some(GrapevineError::MongoError(String::from(
-    //             "Error retrieving degrees in db",
-    //         ))),
-    //         None,
-    //     ))),
-    // }
-    Ok(())
+) -> Result<Json<Vec<ProofMetadata>>, GrapevineResponse> {
+    match db.get_proven_degrees(user.0).await {
+        Ok(proofs) => Ok(Json(proofs)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(GrapevineError::MongoError(String::from(e.to_string()))),
+            None,
+        ))),
+    }
 }
 
 /**
