@@ -15,15 +15,6 @@ pub struct GrapevineProof {
     pub inactive: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AvailableProofs {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub degree: u8,
-    pub scope: String,
-    pub relation: String,
-}
-
 // todo: maybe move this somewhere else? is not used in transport
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DegreeProofValidationData {

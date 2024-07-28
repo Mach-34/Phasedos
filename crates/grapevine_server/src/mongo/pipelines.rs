@@ -200,6 +200,40 @@ pub fn degree_data(username: &String, proof: &ObjectId) -> Vec<Document> {
 }
 
 /**
+ * Query for getting proven degrees for a user
+ *
+ * @param user: The username of the user to query the collection for degrees
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+pub fn get_proven_degrees(user: &String) -> Vec<Document> {
+    vec![
+        // 1. Match the user
+        doc! {"$match": { "username": user }},
+        // 2. Find all proofs where the relation = user oid
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "localField": "_id",
+                "foreignField": "relation",
+                "as": "proofs",
+                "pipeline": [
+                    doc! { "$match": { "inactive": { "$ne": true }, "degree": { "$gte": 1, "$lt": 8 } } },
+                    doc! { "$project": { "degree": 1, "scope": 1 } }
+                ]
+            }
+        },
+        doc! { "$unwind": "$proofs" },
+        doc! {
+            "$project": {
+                "_id": "$proofs._id",
+                "degree": "$proofs.degree",
+                "scope": "$proofs.scope",
+            }
+        },
+    ]
+}
+
+/**
  * Query for getting a one-way relationship document between users given their usernames
  *
  * @param sender: The username of the sender (creator of the stored auth secret/ nullifier emitter)

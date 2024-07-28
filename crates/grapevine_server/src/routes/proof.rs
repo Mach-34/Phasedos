@@ -8,7 +8,8 @@ use grapevine_circuits::{
     inputs::GrapevineOutputs, nova::verify_grapevine_proof, utils::decompress_proof,
 };
 use grapevine_common::compat::convert_ff_ce_to_ff;
-use grapevine_common::models::{AvailableProofs, ProvingData};
+use grapevine_common::http::responses::ProofMetadata;
+use grapevine_common::models::ProvingData;
 use grapevine_common::{
     crypto::pubkey_to_address,
     errors::GrapevineError,
@@ -284,6 +285,7 @@ pub async fn degree_proof(
             )));
         }
     };
+
     // validate prover address
     let mut verify_err: Option<String> = None;
     let prover_address = Fr::from_repr(validation_data.prover_address).unwrap();
@@ -367,7 +369,7 @@ pub async fn degree_proof(
 pub async fn get_available_proofs(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<Vec<AvailableProofs>>, Status> {
+) -> Result<Json<Vec<ProofMetadata>>, Status> {
     Ok(Json(db.find_available_degrees(user.0).await))
 }
 
@@ -384,11 +386,13 @@ pub async fn get_available_proofs(
 *            * 401 if signature mismatch or nonce mismatch
 *            * 500 if db fails or other unknown issue
 */
-#[get("/proven-degrees")]
+#[get("/proven")]
 pub async fn get_proven_degrees(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<Vec<AvailableProofs>>, GrapevineResponse> {
+) -> Result<(), GrapevineResponse> {
+    // Result<Json<Vec<AvailableProofs>>, GrapevineResponse> {
+    db.get_proven_degrees(user.0).await;
     // match db.get_all_degrees(user.0).await {
     //     Some(proofs) => Ok(Json(proofs)),
     //     None => Err(GrapevineResponse::InternalError(ErrorMessage(
@@ -398,6 +402,7 @@ pub async fn get_proven_degrees(
     //         None,
     //     ))),
     // }
+    Ok(())
 }
 
 /**

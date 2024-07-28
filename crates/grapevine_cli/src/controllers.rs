@@ -1,7 +1,7 @@
 use crate::http::{
     add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
-    get_account_details_req, get_available_proofs_req, get_degrees_req, get_nonce_req,
-    get_nullifier_secret, get_proof_with_params_req, get_pubkey_req, get_relationships_req,
+    get_account_details_req, get_available_proofs_req, get_nonce_req, get_nullifier_secret,
+    get_proof_with_params_req, get_proven_degrees_req, get_pubkey_req, get_relationships_req,
     reject_relationship_req,
 };
 use crate::utils::artifacts_guard;
@@ -441,12 +441,12 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
     // sync nonce
     synchronize_nonce().await?;
     // send request
-    let res = get_degrees_req(&mut account).await;
-    let data = match res {
-        Ok(data) => data,
-        Err(e) => return Err(e),
-    };
-    println!("Data: {:?}", data);
+    let res = get_proven_degrees_req(&mut account).await;
+    // let data = match res {
+    //     Ok(data) => data,
+    //     Err(e) => return Err(e),
+    // };
+    // println!("Data: {:?}", data);
     // println!(
     //     "Proofs of {}'s degrees of separation from phrases/ users:",
     //     account.username()

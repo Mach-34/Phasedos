@@ -1,8 +1,9 @@
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use grapevine_common::errors::GrapevineError;
+use grapevine_common::http::responses::ProofMetadata;
 use grapevine_common::models::{
-    AvailableProofs, DegreeProofValidationData, GrapevineProof, ProvingData, Relationship, User,
+    DegreeProofValidationData, GrapevineProof, ProvingData, Relationship, User,
 };
 use mongodb::bson::{self, doc, oid::ObjectId, Binary, Bson};
 use mongodb::options::{
@@ -529,9 +530,26 @@ impl GrapevineDB {
 
     /**
      * Given a user, find all degree proofs they have created that are currently active
+     *
+     * @param username - the username of the user to find active proofs for
+     * @returns - a list of proof metadata
      */
-    pub async fn get_proven_degrees() {
-        let pipeline = vec![];
+    pub async fn get_proven_degrees(
+        &self,
+        username: String,
+    ) -> Result<Vec<ProofMetadata>, GrapevineError> {
+        let pipeline = pipelines::get_proven_degrees(&username);
+        let proofs: Vec<ProofMetadata> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    println!("Document: {:?}", document);
+                }
+                Err(e) => println!("Error: {}", e),
+            }
+        }
+        Ok(proofs)
     }
 
     /**
@@ -542,11 +560,11 @@ impl GrapevineDB {
      * @param username - the username of the user to find available proofs for
      * @returns - a list of available proofs the user can build from with metadata for ui
      */
-    pub async fn find_available_degrees(&self, username: String) -> Vec<AvailableProofs> {
+    pub async fn find_available_degrees(&self, username: String) -> Vec<ProofMetadata> {
         // find degree chains they are not a part of
         let pipeline = pipelines::available_degrees(&username);
         // get the OID's of degree proofs the user can build from
-        let mut available_proofs: Vec<AvailableProofs> = vec![];
+        let mut available_proofs: Vec<ProofMetadata> = vec![];
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         while let Some(result) = cursor.next().await {
             match result {
