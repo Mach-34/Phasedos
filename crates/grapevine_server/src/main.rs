@@ -123,8 +123,11 @@ mod test_rocket {
         };
         use grapevine_common::{
             account::GrapevineAccount,
-            http::requests::{CreateUserRequest, EmitNullifierRequest},
-            models::{AvailableProofs, GrapevineProof, ProvingData, Relationship},
+            http::{
+                requests::{CreateUserRequest, EmitNullifierRequest},
+                responses::ProofMetadata,
+            },
+            models::{GrapevineProof, ProvingData, Relationship},
             Fr, NovaProof,
         };
 
@@ -455,7 +458,7 @@ mod test_rocket {
         pub async fn http_get_available_proofs(
             context: &GrapevineTestContext,
             user: &mut GrapevineAccount,
-        ) -> Vec<AvailableProofs> {
+        ) -> Vec<ProofMetadata> {
             let username = user.username().clone();
             let signature = generate_nonce_signature(user);
 
@@ -467,7 +470,7 @@ mod test_rocket {
                 .header(Header::new("X-Username", username))
                 .dispatch()
                 .await
-                .into_json::<Vec<AvailableProofs>>()
+                .into_json::<Vec<ProofMetadata>>()
                 .await;
 
             let _ = user.increment_nonce(None);
@@ -530,7 +533,7 @@ mod test_rocket {
         ) -> Option<GrapevineProof> {
             let username = user.username().clone();
             let signature = generate_nonce_signature(user);
-            let uri = format!("/proof/scope/{}", scope);
+            let uri = format!("/proof/{}", scope);
 
             // mock transmit the request
             let res = context

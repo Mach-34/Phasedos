@@ -610,6 +610,98 @@ pub fn proof_by_scope(username: &String, scope: &String) -> Vec<Document> {
     ]
 }
 
+/**
+ * Query for getting proof metadata for a particular prover and scope
+ *
+ * @param username: The username of the prover
+ * @param scope: The username of the identity scope of the proof chain
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+// TODO: Need to handle indentity proof
+pub fn proof_metadata_by_scope(username: &String, scope: &String) -> Vec<Document> {
+    vec![
+        // 1. Find the ObjectIDs of the user and scope
+        doc! {
+            "$facet": {
+                "relation": [
+                    { "$match": { "username": username } },
+                    { "$project": { "_id": 1 } }
+                ],
+                "scope": [
+                    { "$match": { "username": scope } },
+                    { "$project": { "_id": 1 } }
+                ]
+            }
+        },
+        doc! {
+            "$project": {
+                "relation": { "$arrayElemAt": ["$relation._id", 0] },
+                "scope": { "$arrayElemAt": ["$scope._id", 0] }
+            }
+        },
+        // 2. Look up the proof document with the matching relation and scope
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "let": { "relationId": "$relation", "scopeId": "$scope" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": ["$relation", "$$relationId"] },
+                                    { "$eq": ["$scope", "$$scopeId"] }
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "degree": 1,
+                            "scope": 1,
+                            "preceding": 1
+                        }
+                    }
+                ],
+                "as": "proof"
+            }
+        },
+        doc! { "$unwind": "$proof" },
+        // 3. Return only the proof document
+        doc! { "$replaceRoot": { "newRoot": "$proof" }},
+        // 4. Lookup preceding proof and get relation from it
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "localField": "preceding",
+                "foreignField": "_id",
+                "as": "precedingProof",
+                "pipeline": [ doc! { "$project": { "_id": 0, "relation": 1 }} ]
+            }
+        },
+        doc! {"$unwind": "$precedingProof"},
+        // 5. Lookup preceding relation username
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "precedingProof.relation",
+                "foreignField": "_id",
+                "as": "precedingRelationUser",
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
+            }
+        },
+        doc! {
+            "$project": {
+                "_id": 1,
+                "degree": 1,
+                "scope": scope,
+                "relation": { "$arrayElemAt": ["$precedingRelationUser.username", 0] },
+            }
+        },
+    ]
+}
+
 pub fn proving_data(user: &String, proof: &ObjectId) -> Vec<Document> {
     vec![
         // 1. Find the matching proof

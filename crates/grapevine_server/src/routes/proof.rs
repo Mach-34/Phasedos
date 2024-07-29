@@ -400,19 +400,34 @@ pub async fn get_proven_degrees(
     }
 }
 
-/**
- * Allows a user to return their own proof for a given scope
- *
- * @param scope - the username of the scope of the proof chain
- * @returns - the full proof document
- */
-#[get("/scope/<scope>")]
+#[get("/<scope>")]
 pub async fn get_proof_by_scope(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
     scope: String,
 ) -> Result<Json<GrapevineProof>, GrapevineResponse> {
     match db.find_proof_by_scope(&user.0, &scope).await {
+        Some(doc) => Ok(Json(doc)),
+        None => Err(GrapevineResponse::NotFound(format!(
+            "Proof by {} for scope {}",
+            &user.0, &scope
+        ))),
+    }
+}
+
+/**
+ * Allows a user to return their own proof for a given scope
+ *
+ * @param scope - the username of the scope of the proof chain
+ * @returns - the full proof document
+ */
+#[get("/metadata/<scope>")]
+pub async fn get_proof_metadata_by_scope(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+    scope: String,
+) -> Result<Json<ProofMetadata>, GrapevineResponse> {
+    match db.get_proof_metadata_by_scope(&user.0, &scope).await {
         Some(doc) => Ok(Json(doc)),
         None => Err(GrapevineResponse::NotFound(format!(
             "Proof by {} for scope {}",

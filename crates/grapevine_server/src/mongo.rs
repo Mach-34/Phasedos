@@ -594,6 +594,25 @@ impl GrapevineDB {
         }
     }
 
+    pub async fn get_proof_metadata_by_scope(
+        &self,
+        username: &String,
+        scope: &String,
+    ) -> Option<ProofMetadata> {
+        // pipeline to retrieve proof given relation = username and scope = scope
+        let pipeline = pipelines::proof_metadata_by_scope(username, scope);
+        // try to get the returned proof
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        if let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => Some(bson::from_document::<ProofMetadata>(document).unwrap()),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
+
     /**
      * Get a proof from the server with all info needed to prove a degree of separation as a given user
      *

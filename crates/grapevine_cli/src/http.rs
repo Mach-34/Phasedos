@@ -5,7 +5,7 @@ use grapevine_common::http::requests::{
     NewRelationshipRequest,
 };
 use grapevine_common::http::responses::ProofMetadata;
-use grapevine_common::models::ProvingData;
+use grapevine_common::models::{GrapevineProof, ProvingData};
 use grapevine_common::{account::GrapevineAccount, errors::GrapevineError};
 use lazy_static::lazy_static;
 use reqwest::{Client, StatusCode};
@@ -186,6 +186,35 @@ pub async fn get_account_details_req(
                 .unwrap();
             let details = res.json::<(u64, u64, u64)>().await.unwrap();
             Ok(details)
+        }
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
+    }
+}
+
+pub async fn get_degree_by_scope_req(
+    account: &mut GrapevineAccount,
+    scope: &String,
+) -> Result<ProofMetadata, GrapevineError> {
+    let url = format!("{}/proof/metadata/{}", &**SERVER_URL, scope);
+
+    // produce signature over current nonce
+    let signature = hex::encode(account.sign_nonce().compress());
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .header("X-Username", account.username())
+        .header("X-Authorization", signature)
+        .send()
+        .await
+        .unwrap();
+    match res.status() {
+        StatusCode::OK => {
+            // increment nonce
+            account
+                .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
+                .unwrap();
+            let proof = res.json::<ProofMetadata>().await.unwrap();
+            Ok(proof)
         }
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
     }
