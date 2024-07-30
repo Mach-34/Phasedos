@@ -31,26 +31,8 @@ pub enum GrapevineResponse {
 
 #[catch(400)]
 pub fn bad_request(req: &Request) -> GrapevineResponse {
-    let res = req.local_cache(|| ErrorMessage(None, None));
-    GrapevineResponse::BadRequest(ErrorMessage(res.0.clone(), Some(0)))
-    // match req.local_cache(|| ErrorMessage(None, None)) {
-    //     ErrorMessage(Some(err), Some(num)) => {
-    //         // let x = GrapevineError::Signature("".to_string());
-    //         GrapevineResponse::BadRequest(ErrorMessage(Some(err.clone()), Some(0)))
-    //     }
-    //     ErrorMessage(None, None) => GrapevineResponse::BadRequest(ErrorMessage(
-    //         Some(GrapevineError::InternalError),
-    //         Some(0),
-    //     )),
-    //     ErrorMessage(Some(err), None) => {
-    //         // let x = GrapevineError::Signature("".to_string());
-    //         GrapevineResponse::BadRequest(ErrorMessage(Some(err.clone()), Some(0)))
-    //     }
-    //     _ => GrapevineResponse::BadRequest(ErrorMessage(
-    //         Some(GrapevineError::InternalError),
-    //         Some(0),
-    //     )),
-    // }
+    let res = req.local_cache(|| ErrorMessage(None));
+    GrapevineResponse::BadRequest(ErrorMessage(res.0.clone()))
 }
 
 // #[catch(401)]
