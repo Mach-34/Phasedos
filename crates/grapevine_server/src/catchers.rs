@@ -29,19 +29,29 @@ pub enum GrapevineResponse {
     // NotImplemented(String),
 }
 
-// #[catch(400)]
-// pub fn bad_request(req: &Request) -> GrapevineResponse {
-//     match req.local_cache(|| ErrorMessage(None)) {
-//         ErrorMessage(Some(err)) => {
-//             let x = GrapevineError::Signature(("".to_string(), 0));
-//             let y = x.into();
-//             GrapevineResponse::BadRequest(ErrorMessage(Some(err.clone())))
-//         }
-//         ErrorMessage(None) => {
-//             GrapevineResponse::BadRequest(ErrorMessage(Some(GrapevineError::InternalError)))
-//         }
-//     }
-// }
+#[catch(400)]
+pub fn bad_request(req: &Request) -> GrapevineResponse {
+    let res = req.local_cache(|| ErrorMessage(None, None));
+    GrapevineResponse::BadRequest(ErrorMessage(res.0.clone(), Some(0)))
+    // match req.local_cache(|| ErrorMessage(None, None)) {
+    //     ErrorMessage(Some(err), Some(num)) => {
+    //         // let x = GrapevineError::Signature("".to_string());
+    //         GrapevineResponse::BadRequest(ErrorMessage(Some(err.clone()), Some(0)))
+    //     }
+    //     ErrorMessage(None, None) => GrapevineResponse::BadRequest(ErrorMessage(
+    //         Some(GrapevineError::InternalError),
+    //         Some(0),
+    //     )),
+    //     ErrorMessage(Some(err), None) => {
+    //         // let x = GrapevineError::Signature("".to_string());
+    //         GrapevineResponse::BadRequest(ErrorMessage(Some(err.clone()), Some(0)))
+    //     }
+    //     _ => GrapevineResponse::BadRequest(ErrorMessage(
+    //         Some(GrapevineError::InternalError),
+    //         Some(0),
+    //     )),
+    // }
+}
 
 // #[catch(401)]
 // pub fn unauthorized(req: &Request) -> GrapevineResponse {
@@ -62,7 +72,7 @@ pub enum GrapevineResponse {
 // }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ErrorMessage(pub Option<GrapevineError>, pub Option<u64>);
+pub struct ErrorMessage(pub Option<GrapevineError>);
 
 impl<'r> Responder<'r, 'static> for ErrorMessage {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
@@ -72,11 +82,6 @@ impl<'r> Responder<'r, 'static> for ErrorMessage {
         };
         let mut res = Response::build_from(body.respond_to(req)?);
 
-        // optionally add nonce to header
-        if self.1.is_some() {
-            res.raw_header("X-Nonce", self.1.unwrap().to_string())
-                .status(Status::Unauthorized);
-        };
         res.header(ContentType::JSON).ok()
     }
 }

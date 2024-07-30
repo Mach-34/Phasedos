@@ -52,6 +52,7 @@ mod test_rocket {
     use self::utils::{use_public_params, use_r1cs, use_wasm};
 
     use super::*;
+    use catchers::bad_request;
     use grapevine_circuits::{
         inputs::GrapevineArtifacts,
         utils::{compress_proof, decompress_proof},
@@ -103,8 +104,8 @@ mod test_rocket {
                 // mount test routes
                 .mount("/", routes![health])
                 // mount artifact file server
-                .mount("/static", FileServer::from(relative!("static")));
-            // .register("/", catchers![bad_request, not_found, unauthorized]);
+                .mount("/static", FileServer::from(relative!("static")))
+                .register("/", catchers![bad_request]);
 
             GrapevineTestContext {
                 client: Client::tracked(rocket).await.unwrap(),
@@ -539,19 +540,22 @@ mod test_rocket {
             let res = context
                 .client
                 .get(uri)
-                .header(Header::new("X-Authorization", signature))
-                .header(Header::new("X-Username", username))
+                // .header(Header::new("X-Authorization", signature))
+                // .header(Header::new("X-Username", username))
                 .dispatch()
                 .await;
 
             // increment nonce
             let _ = user.increment_nonce(None);
 
+            println!("Response: {:?}", res.into_string().await);
+
             // parse response
-            match res.status().code {
-                200 => Some(res.into_json::<GrapevineProof>().await.unwrap()),
-                _ => None,
-            }
+            // match res.status().code {
+            //     200 => Some(res.into_json::<GrapevineProof>().await.unwrap()),
+            //     _ => None,
+            // }
+            None
         }
         // async fn http_get_relationships(
         //     context: &GrapevineTestContext,
@@ -1129,6 +1133,19 @@ mod test_rocket {
             let expected_message =
                 String::from("{\"ProofFailed\":\"Contains emitted nullifiers\"}");
             assert_eq!(msg, expected_message);
+        }
+
+        #[rocket::async_test]
+        pub async fn test_catcher_return() {
+            // Setup
+            let context = GrapevineTestContext::init().await;
+            GrapevineDB::drop("grapevine_mocked").await;
+
+            let mut account = GrapevineAccount::new("fake_account".to_string());
+            let fake_scope = String::from("fake_scope");
+
+            // make fake request
+            http_get_proof_by_scope(&context, &mut account, &fake_scope).await;
         }
     }
 
