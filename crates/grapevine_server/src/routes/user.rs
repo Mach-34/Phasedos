@@ -60,21 +60,17 @@ pub async fn add_relationship(
                 "Error deserializing body from binary to NewRelationshipRequest: {:?}",
                 e
             );
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::SerdeError(String::from(
-                    "NewRelationshipRequest",
-                ))),
-                None,
-            )));
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::SerdeError(String::from("NewRelationshipRequest")),
+            ))));
         }
     };
 
     // ensure from != to
     if &user.0 == &request.to {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::RelationshipSenderIsTarget),
-            None,
-        )));
+        return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+            GrapevineError::RelationshipSenderIsTarget,
+        ))));
     }
 
     // todo: can combine into one http request
@@ -94,20 +90,14 @@ pub async fn add_relationship(
         .await
     {
         Ok(status) => status,
-        Err(e) => {
-            return Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(e),
-                None,
-            )))
-        }
+        Err(e) => return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     };
     // check if relationship is already active
     let mut pending = false;
     if status == RelationshipStatus::Active {
-        return Err(GrapevineResponse::Conflict(ErrorMessage(
-            Some(GrapevineError::ActiveRelationshipExists(user.0, request.to)),
-            None,
-        )));
+        return Err(GrapevineResponse::Conflict(ErrorMessage(Some(
+            GrapevineError::ActiveRelationshipExists(user.0, request.to),
+        ))));
     } else {
         pending = status == RelationshipStatus::Pending;
     }
@@ -141,10 +131,7 @@ pub async fn add_relationship(
 
     // handle outcome
     match add_error {
-        Some(err) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(err),
-            None,
-        ))),
+        Some(err) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(err)))),
         None => {
             let msg = match pending {
                 true => "activated",
@@ -179,10 +166,7 @@ pub async fn get_nullifier_secret(
     match db.get_relationship(&user.0, &recipient).await {
         // TODO: Solve rocket response error so we can return just encrypted nullifier secret
         Ok(relationship) => Ok(relationship.nullifier_secret_ciphertext.unwrap().to_vec()),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     }
 }
 
@@ -221,12 +205,9 @@ pub async fn emit_nullifier(
                 "Error deserializing body from binary to EmitNullifierRequest: {:?}",
                 e
             );
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::SerdeError(String::from(
-                    "EmitNullifierRequest",
-                ))),
-                None,
-            )));
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::SerdeError(String::from("EmitNullifierRequest")),
+            ))));
         }
     };
 
@@ -244,10 +225,7 @@ pub async fn emit_nullifier(
         .nullify_relationship(&nullifier_bytes, &user.0, &request.recipient)
         .await
     {
-        return Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        )));
+        return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e))));
     };
 
     // delete all proofs that contain the given nullifier
@@ -255,10 +233,7 @@ pub async fn emit_nullifier(
         Ok(_) => Ok(GrapevineResponse::Created(
             "Nullifier emitted successfully".to_string(),
         )),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     }
 }
 
@@ -281,10 +256,7 @@ pub async fn get_relationship(
 ) -> Result<Json<Relationship>, GrapevineResponse> {
     match db.get_relationship(&sender, &recipient).await {
         Ok(res) => Ok(Json(res)),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     }
 }
 
@@ -302,10 +274,7 @@ pub async fn reject_pending_relationship(
             GrapevineError::NoPendingRelationship(from, to) => Err(GrapevineResponse::NotFound(
                 format!("No pending relationship exists from {} to {}", from, to),
             )),
-            _ => Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(e),
-                None,
-            ))),
+            _ => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
         },
     }
 }
@@ -317,10 +286,7 @@ pub async fn get_pending_relationships(
 ) -> Result<Json<Vec<String>>, GrapevineResponse> {
     match db.get_all_relationship_usernames(&user.0, false).await {
         Ok(relationships) => Ok(Json(relationships)),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     }
 }
 
@@ -331,10 +297,7 @@ pub async fn get_active_relationships(
 ) -> Result<Json<Vec<String>>, GrapevineResponse> {
     match db.get_all_relationship_usernames(&user.0, true).await {
         Ok(relationships) => Ok(Json(relationships)),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     }
 }
 
@@ -388,12 +351,11 @@ pub async fn get_nonce(
     match verify(pubkey_decompressed, signature_decompressed, message) {
         true => (),
         false => {
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::Signature(String::from(
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::Signature(String::from(
                     "Could not verify nonce recovery signature",
-                ))),
-                None,
-            )));
+                )),
+            ))));
         }
     };
     // return the stringified nonce
@@ -448,12 +410,9 @@ pub async fn get_account_details(
     };
     match db.get_account_details(&recipient.id.unwrap()).await {
         Some(details) => Ok(Json(details)),
-        None => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::MongoError(String::from(
-                "Error user states",
-            ))),
-            None,
-        ))),
+        None => Err(GrapevineResponse::InternalError(ErrorMessage(Some(
+            GrapevineError::MongoError(String::from("Error user states")),
+        )))),
     }
 }
 

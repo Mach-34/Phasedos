@@ -48,6 +48,12 @@ async fn health() -> &'static str {
 }
 
 #[cfg(test)]
+mod tests {
+    mod helpers;
+    mod user;
+}
+
+#[cfg(test)]
 mod test_rocket {
     use self::utils::{use_public_params, use_r1cs, use_wasm};
 
@@ -86,7 +92,7 @@ mod test_rocket {
         };
     }
 
-    struct GrapevineTestContext {
+    pub struct GrapevineTestContext {
         client: Client,
     }
 
