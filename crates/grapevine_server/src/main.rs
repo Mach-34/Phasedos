@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[get("/health")]
-async fn health() -> &'static str {
+pub async fn health() -> &'static str {
     "Hello, world!"
 }
 
@@ -67,20 +67,17 @@ mod test_rocket {
         account::GrapevineAccount,
         auth_secret::AuthSecretEncrypted,
         compat::ff_ce_to_le_bytes,
-        http::requests::{CreateUserRequest, DegreeProofRequest, NewRelationshipRequest},
-        models::User,
-        utils::random_fr,
+        http::requests::{DegreeProofRequest, NewRelationshipRequest},
     };
     use lazy_static::lazy_static;
     use rocket::{
-        form::validate::Contains,
-        http::{ContentType, Header, Status},
+        http::{Header, Status},
         local::asynchronous::Client,
     };
     use std::sync::Mutex;
     use test_helper::{
         build_create_user_request, http_add_relationship, http_create_user, http_emit_nullifier,
-        http_get_nullifier_secret, http_get_relationship,
+        http_get_nullifier_secret,
     };
 
     lazy_static! {

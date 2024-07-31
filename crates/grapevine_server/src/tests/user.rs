@@ -2,6 +2,8 @@
 #[path = "helpers.rs"]
 mod helpers;
 
+use crate::mongo::GrapevineDB;
+use grapevine_common::account::GrapevineAccount;
 use helpers::GrapevineTestContext;
 
 #[cfg(test)]
@@ -12,10 +14,11 @@ mod user_creation_tests {
     pub async fn test_add_user() {
         // Setup
         let context = GrapevineTestContext::init().await;
-        // GrapevineDB::drop("grapevine_mocked").await;
-        // // Create a new Grapevine Account
-        // let username = "User_A";
-        // let user = GrapevineAccount::new(username.into());
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a new Grapevine Account
+        let username = "User_A";
+        let user = GrapevineAccount::new(username.into());
+        println!("User: {:?}", user);
         // // Build body for create_user_request, including constructing grapevine proof of identity
         // let payload = build_create_user_request(&user);
         // // transmit request to the server

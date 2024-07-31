@@ -1,14 +1,17 @@
-use crate::mongo::GrapevineDB;
-use mongodb::Client;
+use crate::{catchers::bad_request, health, mongo::GrapevineDB, routes};
+use rocket::{
+    fs::{relative, FileServer},
+    local::asynchronous::Client,
+};
 
 pub struct GrapevineTestContext {
     client: Client,
 }
 
 impl GrapevineTestContext {
-    async fn init() -> Self {
+    pub async fn init() -> Self {
         let database_name = String::from("grapevine_mocked");
-        let mongo = GrapevineDB::init(&database_name, &*MONGODB_URI).await;
+        let mongo = GrapevineDB::init(&database_name, &*crate::MONGODB_URI).await;
         let rocket = rocket::build()
             // add mongodb client to context
             .manage(mongo)
