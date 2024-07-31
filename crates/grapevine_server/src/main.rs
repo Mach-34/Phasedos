@@ -50,6 +50,7 @@ pub async fn health() -> &'static str {
 #[cfg(test)]
 mod tests {
     mod helpers;
+    mod http;
     mod user;
 }
 
@@ -82,7 +83,7 @@ mod test_rocket {
 
     lazy_static! {
         static ref USERS: Mutex<Vec<GrapevineAccount>> = Mutex::new(vec![]);
-        static ref ARTIFACTS: GrapevineArtifacts = GrapevineArtifacts {
+        pub static ref ARTIFACTS: GrapevineArtifacts = GrapevineArtifacts {
             params: use_public_params().unwrap(),
             r1cs: use_r1cs().unwrap(),
             wasm_path: use_wasm().unwrap()
