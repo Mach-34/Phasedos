@@ -641,7 +641,7 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
 pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<Document> {
     vec![
         // 1. Try to find an active degree proof for the prover on the given identity scope
-        doc! { "$match": { "relation": relation, "scope": scope, "active": true }},
+        doc! { "$match": { "relation": relation, "scope": scope, "inactive": false }},
         // 2. Look at lower degrees to see if they are marked inactive
         doc! {
             "$graphLookup": {
@@ -766,7 +766,7 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                                 { "$size": { "$filter": {
                                     "input": "$downstream",
                                     "as": "item",
-                                    "cond": { "$eq": ["$$item.inactive", false] }
+                                    "cond": { "$eq": ["$$item.inactive", true] }
                                 }}},
                                 { "$size": "$downstream" }
                             ]
