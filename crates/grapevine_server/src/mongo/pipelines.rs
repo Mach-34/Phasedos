@@ -1,5 +1,5 @@
 use crate::utils::ToBson;
-use mongodb::bson::{doc, oid::ObjectId, Document};
+use mongodb::bson::{doc, oid::ObjectId, Bson, Document};
 
 /**
  * Query for getting first and second degree connection details
@@ -641,7 +641,7 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
 pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<Document> {
     vec![
         // 1. Try to find an active degree proof for the prover on the given identity scope
-        doc! { "$match": { "relation": relation, "scope": scope, "inactive": false }},
+        doc! {"$match": { "relation": relation, "scope": scope, "inactive": false }},
         // 2. Look at lower degrees to see if they are marked inactive
         doc! {
             "$graphLookup": {
@@ -655,18 +655,19 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                     "$expr": {
                         "$or": [
                             { "$eq": ["$inactive", true] },
-                            // first level will not be marked inactive yet, so specialized check
-                            { "$and": [
-                                { "$eq": ["$_id", "$$ROOT._id"] },
-                                { "$eq": ["$relation", relation] },
-                                { "$eq": ["$scope", scope] }
-                            ]}
+                            {
+                                "$and": [
+                                    { "$eq": ["$_id", "$$ROOT._id"] },
+                                    { "$eq": ["$relation", relation] },
+                                    { "$eq": ["$scope", scope] }
+                                ]
+                            }
                         ]
                     }
                 }
             }
         },
-        doc! { "$unwind": "$upstream_chain" },
+        doc! { "$unwind": { "path": "$upstream_chain" }},
         // 3. Project the necessary info for sorting and grouping by level
         doc! { "$project": { "_id": "$upstream_chain._id", "degree": "$upstream_chain.degree" }},
         // 4. Look up all downstream proofs from each level
@@ -680,7 +681,9 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 "depthField": "level"
             }
         },
-        doc! { "$unwind": "$downstream_chain" },
+        doc! {
+            "$unwind": { "path": "$downstream_chain", "preserveNullAndEmptyArrays": true }
+        },
         // 5. Project the necessary info for sorting and grouping by level
         doc! {
             "$project": {
@@ -691,10 +694,10 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 "inactive": "$downstream_chain.inactive"
             }
         },
-        // 6. Group so that so the highest degree level for removal claims unique documents under it
+        // 6. Group so that the highest degree level for removal claims unique documents under it
         doc! {
             "$group": {
-                "_id": "$_id",
+                "_id": "$grouping",
                 "doc": { "$first": "$$ROOT" },
                 "maxDegree": { "$max": "$degree" }
             }
@@ -723,12 +726,14 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
         },
         doc! {
             "$group": {
-                "_id": null,
+                "_id": Bson::Null,
                 "allGroupings": { "$addToSet": "$_id" },
                 "docs": { "$push": "$$ROOT" }
             }
         },
-        doc! { "$unwind": "$docs" },
+        doc! {
+            "$unwind": "$docs"
+        },
         doc! {
             "$replaceRoot": {
                 "newRoot": {
@@ -749,31 +754,39 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 }
             }
         },
-        // 8. Reshape to include all OIDs of downstream proofs per level + boolean whether all are inactive or not
+        // 8. If a downstream array contains null, set it to be empty array
         doc! {
             "$addFields": {
                 "downstream": {
-                    "$map": {
-                        "input": "$downstream",
-                        "as": "item",
-                        "in": "$$item.proofId"
-                    }
-                },
-                "removable": {
                     "$cond": {
                         "if": {
-                            "$eq": [
-                                { "$size": { "$filter": {
-                                    "input": "$downstream",
-                                    "as": "item",
-                                    "cond": { "$eq": ["$$item.inactive", true] }
-                                }}},
-                                { "$size": "$downstream" }
+                            "$and": [
+                                { "$isArray": "$downstream" },
+                                { "$eq": [{ "$size": "$downstream" }, 1] },
+                                { "$eq": [{ "$arrayElemAt": ["$downstream", 0] }, { "degree": Bson::Null }] }
                             ]
                         },
-                        "then": true,
-                        "else": false
+                        "then": Bson::Array(vec![]),
+                        "else": "$downstream"
                     }
+                }
+            }
+        },
+        // 9. Reshape to include all OIDs of downstream proofs per level + boolean whether all are inactive or not
+        doc! {
+            "$addFields": {
+                "downstream": {
+                    "$map": { "input": "$downstream", "as": "item", "in": "$$item.proofId" }
+                },
+                "removable": {
+                    "$eq": [
+                        { "$size": { "$filter": {
+                            "input": "$downstream",
+                            "as": "item",
+                            "cond": { "$eq": ["$$item.inactive", true] }
+                        }}},
+                        { "$size": "$downstream" }
+                    ]
                 }
             }
         },

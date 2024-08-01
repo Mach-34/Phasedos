@@ -891,7 +891,7 @@ mod test_rocket {
             users.insert(0, temp_vec.remove(0));
             users.insert(2, temp_vec.remove(0));
             // build proof from user 0 to user 2
-            for i in 2..4 {
+            for i in 2..5 {
                 let mut prover = users.remove(i);
                 let (code, _) =
                     degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
