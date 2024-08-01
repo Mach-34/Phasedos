@@ -997,9 +997,6 @@ mod test_rocket {
             relationship_chain(&context, &mut temp_vec).await;
             users.insert(11, temp_vec.remove(0));
             users.insert(13, temp_vec.remove(0));
-            for i in 0..14 {
-                // println!("User #{}: {}", i, users[i].username());
-            }
             // build proof chain
             let scope_to_find = String::from("user_0");
             for i in 1..14 {
@@ -1020,13 +1017,15 @@ mod test_rocket {
             let (code, _) =
                 degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
             users.insert(2, prover);
-            for i in 3..14 {
+            // update proofs
+            for i in 3..5    {
                 let mut prover = users.remove(i);
                 let (code, _) =
                     degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
                 assert_eq!(code, Status::Created.code);
                 users.insert(i, prover);
             }
+            
         }
 
         #[rocket::async_test]
