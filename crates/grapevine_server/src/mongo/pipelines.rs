@@ -632,6 +632,7 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
 /**
  * Query for getting all removable degree proofs when upserting a new degree proof
  * @notice assumes scope and relation OID's have been obtained in previous query
+ * @todo: only return "removable" oids if they are actually removable
  *
  * @param scope: The ObjectId of the scope of the degree proof chain
  * @param relation: The ObjectId of the prover submitting a new degree proof

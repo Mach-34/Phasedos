@@ -479,7 +479,6 @@ impl GrapevineDB {
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    println!("Found one: {:?}", document);
                     let removable = document.get("removable").unwrap().as_bool().unwrap();
                     let id = document.get("_id").unwrap().as_object_id().unwrap();
                     let downstream = document.get("downstream").unwrap().as_array().unwrap();
@@ -501,8 +500,9 @@ impl GrapevineDB {
             }
         }
 
-        println!("Inactive: {:?}", set_inactive);
-        println!("Remove: {:?}", remove);
+        // nice for testing to validate right proofs are removed or not, so leaving here
+        // println!("Inactive: {:?}", set_inactive);
+        // println!("Remove: {:?}", remove);
 
         if set_inactive.is_some() {
             // set_inactive should never be Some while remove is not empty

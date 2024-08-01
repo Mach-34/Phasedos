@@ -902,6 +902,7 @@ mod test_rocket {
 
         #[rocket::async_test]
         pub async fn test_nonlinear_reordering() {
+            // todo: this test is disgusting and must be fixed
             // user_0
             //   |- user_1
             //        |- user_2
@@ -1013,12 +1014,9 @@ mod test_rocket {
             relationship_chain(&context, &mut temp_vec).await;
             users.insert(0, temp_vec.remove(0));
             users.insert(2, temp_vec.remove(0));
-            let mut prover = users.remove(2);
-            let (code, _) =
-                degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
-            users.insert(2, prover);
+            
             // update proofs
-            for i in 3..5    {
+            for i in 2..14    {
                 let mut prover = users.remove(i);
                 let (code, _) =
                     degree_proof_step_by_scope(&context, &mut prover, Some(&scope_to_find)).await;
