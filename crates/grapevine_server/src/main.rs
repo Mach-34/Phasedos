@@ -76,10 +76,7 @@ mod test_rocket {
         local::asynchronous::Client,
     };
     use std::sync::Mutex;
-    use test_helper::{
-        build_create_user_request, http_add_relationship, http_create_user, http_emit_nullifier,
-        http_get_nullifier_secret,
-    };
+    use test_helper::{build_create_user_request, http_emit_nullifier, http_get_nullifier_secret};
 
     lazy_static! {
         static ref USERS: Mutex<Vec<GrapevineAccount>> = Mutex::new(vec![]);
@@ -158,58 +155,6 @@ mod test_rocket {
         }
 
         /**
-         * Build a grapevine identity proof (degree 0) given a grapevine account
-         *
-         * @return the grapevine proof
-         */
-        pub fn build_identity_proof(from: &GrapevineAccount) -> NovaProof {
-            // get inputs
-            let private_key = &from.private_key();
-            let identity_inputs = GrapevineInputs::identity_step(private_key);
-            grapevine_circuits::nova::identity_proof(&ARTIFACTS, &identity_inputs).unwrap()
-        }
-
-        /**
-         * Handles repeatable process of parsing proving data, decompressing proofs, verifying -> outputs, etc
-         *
-         * @param user - the account to handle the proving data
-         * @param data - the proving data to handle
-         * @param degree - the degree of the proof to build
-         * @returns - the proof to build from and inputs for the next degree proof
-         */
-        pub fn build_degree_inputs(
-            user: &GrapevineAccount,
-            proving_data: &ProvingData,
-            degree: u8,
-        ) -> (NovaProof, GrapevineInputs, GrapevineOutputs) {
-            let mut proof = decompress_proof(&proving_data.proof[..]);
-            let res = verify_grapevine_proof(&proof, &ARTIFACTS.params, degree as usize)
-                .unwrap()
-                .0;
-            let outputs = GrapevineOutputs::try_from(res).unwrap();
-            // decrypt the auth secret
-            let auth_secret_encrypted = AuthSecretEncrypted {
-                ephemeral_key: proving_data.ephemeral_key,
-                signature_ciphertext: proving_data.signature_ciphertext,
-                nullifier_ciphertext: proving_data.nullifier_ciphertext,
-            };
-            let auth_secret = auth_secret_encrypted.decrypt(user.private_key());
-            // build the inputs for the degree proof
-            let auth_signature = decompress_signature(&auth_secret.signature).unwrap();
-            let relation_pubkey = decompress_point(proving_data.relation_pubkey).unwrap();
-            let relation_nullifier = Fr::from_repr(auth_secret.nullifier).unwrap();
-            let inputs = GrapevineInputs::degree_step(
-                &user.private_key(),
-                &relation_pubkey,
-                &relation_nullifier,
-                &outputs.scope,
-                &auth_signature,
-            );
-
-            (proof, inputs, outputs)
-        }
-
-        /**
          * Full degree proof step
          *
          * @param context - the mocked rocket http server context
@@ -270,17 +215,6 @@ mod test_rocket {
         }
 
         /**
-         * Signs a nonce used to authenticate user on the server
-         *
-         * @param user - account signing nonce
-         * @return - account's signature over nonce
-         */
-        fn generate_nonce_signature(user: &GrapevineAccount) -> String {
-            let nonce_signature = user.sign_nonce();
-            hex::encode(nonce_signature.compress())
-        }
-
-        /**
          * Builds chain of relationships between accounts
          *
          * @param accounts - the accounts to build relationships between
@@ -299,66 +233,6 @@ mod test_rocket {
                     .new_relationship_request(accounts[i].username(), &accounts[i].pubkey());
                 http_add_relationship(&context, &mut accounts[i + 1], &request).await;
             }
-        }
-
-        /**
-         * Mock http request to create a new user
-         *
-         * @param context - the mocked rocket http server context
-         * @param payload - the body of the request
-         * @return - (http status code, returned message)
-         */
-        pub async fn http_create_user(
-            context: &GrapevineTestContext,
-            payload: &CreateUserRequest,
-        ) -> (u16, String) {
-            // serialze the payload
-            let serialized = bincode::serialize(&payload).unwrap();
-            // mock transmit the request
-            let res = context
-                .client
-                .post("/proof/identity")
-                .body(serialized)
-                .dispatch()
-                .await;
-            let code = res.status().code;
-            let message = res.into_string().await.unwrap();
-            (code, message)
-        }
-
-        /**
-         * Mock http request to create a new relationship
-         *
-         * @param context - the mocked rocket http server context
-         * @param from - the account sending the relationship creation request
-         * @param payload - the body of the request
-         * @return - (http status code, returned message)
-         */
-        pub async fn http_add_relationship(
-            context: &GrapevineTestContext,
-            from: &mut GrapevineAccount,
-            payload: &NewRelationshipRequest,
-        ) -> (u16, String) {
-            // serialize the payload
-            let serialized = bincode::serialize(&payload).unwrap();
-
-            let username = from.username().clone();
-            let signature = generate_nonce_signature(from);
-
-            // mock transmit the request
-            let res = context
-                .client
-                .post("/user/relationship/add")
-                .header(Header::new("X-Authorization", signature))
-                .header(Header::new("X-Username", username))
-                .body(serialized)
-                .dispatch()
-                .await;
-            let code = res.status().code;
-            let message = res.into_string().await.unwrap();
-            // Increment nonce after request
-            let _ = from.increment_nonce(None);
-            (code, message)
         }
 
         /**
