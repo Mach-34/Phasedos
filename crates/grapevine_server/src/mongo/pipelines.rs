@@ -1,5 +1,5 @@
 use crate::utils::ToBson;
-use mongodb::bson::{doc, oid::ObjectId, Document};
+use mongodb::bson::{doc, oid::ObjectId, Bson, Document};
 
 /**
  * Query for getting first and second degree connection details
@@ -797,6 +797,7 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
 /**
  * Query for getting all removable degree proofs when upserting a new degree proof
  * @notice assumes scope and relation OID's have been obtained in previous query
+ * @todo: only return "removable" oids if they are actually removable
  *
  * @param scope: The ObjectId of the scope of the degree proof chain
  * @param relation: The ObjectId of the prover submitting a new degree proof
@@ -806,7 +807,9 @@ pub fn nullifiers_emitted(nullifiers: &Vec<[u8; 32]>) -> Vec<Document> {
 pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<Document> {
     vec![
         // 1. Try to find an active degree proof for the prover on the given identity scope
-        doc! { "$match": { "relation": relation, "scope": scope, "active": true }},
+        doc! { "$match": { "relation": relation, "scope": scope, "inactive": false }},
+        // Project to exclude proof and nullifiers
+        doc! { "$project": { "proof": 0, "nullifiers": 0 }},
         // 2. Look at lower degrees to see if they are marked inactive
         doc! {
             "$graphLookup": {
@@ -820,20 +823,26 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                     "$expr": {
                         "$or": [
                             { "$eq": ["$inactive", true] },
-                            // first level will not be marked inactive yet, so specialized check
-                            { "$and": [
-                                { "$eq": ["$_id", "$$ROOT._id"] },
-                                { "$eq": ["$relation", relation] },
-                                { "$eq": ["$scope", scope] }
-                            ]}
+                            {
+                                "$and": [
+                                    { "$eq": ["$_id", "$$ROOT._id"] },
+                                    { "$eq": ["$relation", relation] },
+                                    { "$eq": ["$scope", scope] }
+                                ]
+                            }
                         ]
                     }
                 }
             }
         },
-        doc! { "$unwind": "$upstream_chain" },
+        doc! { "$unwind": { "path": "$upstream_chain" }},
         // 3. Project the necessary info for sorting and grouping by level
-        doc! { "$project": { "_id": "$upstream_chain._id", "degree": "$upstream_chain.degree" }},
+        doc! {
+            "$project": {
+                "_id": "$upstream_chain._id",
+                "degree": "$upstream_chain.degree"
+            }
+        },
         // 4. Look up all downstream proofs from each level
         doc! {
             "$graphLookup": {
@@ -845,7 +854,7 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 "depthField": "level"
             }
         },
-        doc! { "$unwind": "$downstream_chain" },
+        doc! { "$unwind": { "path": "$downstream_chain", "preserveNullAndEmptyArrays": true }},
         // 5. Project the necessary info for sorting and grouping by level
         doc! {
             "$project": {
@@ -856,22 +865,43 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 "inactive": "$downstream_chain.inactive"
             }
         },
-        // 6. Group so that so the highest degree level for removal claims unique documents under it
+        // 6. Group so that the highest degree level for removal claims unique documents under it
         doc! {
             "$group": {
                 "_id": "$_id",
-                "doc": { "$first": "$$ROOT" },
-                "maxDegree": { "$max": "$degree" }
+                "docs": { "$push": "$$ROOT" },
+                "maxGroupingDegree": { "$max": "$grouping_degree" }
             }
         },
+        // Group by `grouping` and keep only the highest `grouping_degree` for each `_id`
         doc! {
-            "$replaceRoot": {
-                "newRoot": {
-                    "$mergeObjects": ["$doc", { "degree": "$maxDegree" }]
-                }
+            "$group": {
+                "_id": "$docs.grouping",
+                "grouping_degree": { "$max": "$maxGroupingDegree" },
+                "docs": { "$push": "$docs" }
             }
         },
-        // 7. Prevent the oids of the preceding relations from being used as children in other relations
+        doc! { "$unwind": "$docs" },
+        doc! { "$unwind": "$docs" },
+        // Match documents with the highest `grouping_degree`
+        doc! {
+            "$match": {
+                "$expr": { "$eq": ["$docs.grouping_degree", "$grouping_degree"] }
+            }
+        },
+        // Project the desired fields
+        doc! {
+            "$project": {
+                "grouping": "$docs.grouping",
+                "grouping_degree": "$docs.grouping_degree",
+                "_id": "$docs._id",
+                "degree": "$docs.degree",
+                "inactive": "$docs.inactive"
+            }
+        },
+        // Sort by `grouping_degree` and `degree`
+        doc! { "$sort": { "grouping_degree": 1, "degree": 1 }},
+        // 7. Group by `grouping`, keeping all `_id` in `groupings`, and collect downstream proofs
         doc! {
             "$group": {
                 "_id": "$grouping",
@@ -886,6 +916,7 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 }
             }
         },
+        // 8. Group all documents and collect all groupings
         doc! {
             "$group": {
                 "_id": null,
@@ -894,6 +925,7 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
             }
         },
         doc! { "$unwind": "$docs" },
+        // Replace the root with the merged document
         doc! {
             "$replaceRoot": {
                 "newRoot": {
@@ -901,6 +933,7 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                 }
             }
         },
+        // Project the final structure with filtered downstream proofs
         doc! {
             "$project": {
                 "_id": 1,
@@ -909,12 +942,30 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                     "$filter": {
                         "input": "$downstream",
                         "as": "item",
-                        "cond": { "$not": { "$in": ["$$item.proofId", "$allGroupings"] } }
+                        "cond": { "$not": { "$in": ["$$item.proofId", "$allGroupings"] }}
                     }
                 }
             }
         },
-        // 8. Reshape to include all OIDs of downstream proofs per level + boolean whether all are inactive or not
+        // 9. Fix downstream array if it contains an empty object
+        doc! {
+            "$addFields": {
+                "downstream": {
+                    "$cond": {
+                        "if": {
+                            "$and": [
+                                { "$isArray": "$downstream" },
+                                { "$eq": [{ "$size": "$downstream" }, 1] },
+                                { "$eq": [{ "$arrayElemAt": ["$downstream", 0] }, {}] }
+                            ]
+                        },
+                        "then": Bson::Array(vec![]),
+                        "else": "$downstream"
+                    }
+                }
+            }
+        },
+        // 10. Reshape downstream proofs to include only proofId and determine if removable
         doc! {
             "$addFields": {
                 "downstream": {
@@ -925,24 +976,18 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
                     }
                 },
                 "removable": {
-                    "$cond": {
-                        "if": {
-                            "$eq": [
-                                { "$size": { "$filter": {
-                                    "input": "$downstream",
-                                    "as": "item",
-                                    "cond": { "$eq": ["$$item.inactive", false] }
-                                }}},
-                                { "$size": "$downstream" }
-                            ]
-                        },
-                        "then": true,
-                        "else": false
-                    }
+                    "$eq": [
+                        { "$size": { "$filter": {
+                            "input": "$downstream",
+                            "as": "item",
+                            "cond": { "$eq": ["$$item.inactive", true] }
+                        }}},
+                        { "$size": "$downstream" }
+                    ]
                 }
             }
         },
-        // 9. Sort by distance from original proof
-        doc! { "$sort": { "degree": -1 } },
+        // 11. Sort by degree in descending order
+        doc! { "$sort": { "degree": -1 }},
     ]
 }

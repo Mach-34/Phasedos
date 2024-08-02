@@ -240,7 +240,6 @@ pub async fn degree_proof(
         }
         Err(e) => return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     };
-    // match db.contains_emitted_nullifiers()
 
     // get all degree data needed to authorize this proof
     let previous_proof_oid = ObjectId::from_str(&request.previous).unwrap();
