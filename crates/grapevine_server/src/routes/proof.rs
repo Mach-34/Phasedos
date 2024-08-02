@@ -8,14 +8,12 @@ use grapevine_circuits::{
     inputs::GrapevineOutputs, nova::verify_grapevine_proof, utils::decompress_proof,
 };
 use grapevine_common::compat::convert_ff_ce_to_ff;
-use grapevine_common::models::{AvailableProofs, ProvingData};
+use grapevine_common::http::responses::ProofMetadata;
+use grapevine_common::models::ProvingData;
 use grapevine_common::{
     crypto::pubkey_to_address,
     errors::GrapevineError,
-    http::{
-        requests::{CreateUserRequest, DegreeProofRequest},
-        responses::DegreeData,
-    },
+    http::requests::{CreateUserRequest, DegreeProofRequest},
     models::{GrapevineProof, User},
     Fr, MAX_USERNAME_CHARS,
 };
@@ -184,171 +182,6 @@ pub async fn prove_identity(
     }
 }
 
-// /**
-//  * Create a degree 1 proof (knowledge of phrase) for a phrase. Create new proof doc if exists
-//  *
-//  * @param data - binary serialized NewPhraseRequest containing:
-//  *             * hash: the hash of the phrase
-//  *             * ciphertext: the encrypted phrase
-//  *             * description: the description of the phrase
-//  *
-//  * @return status:
-//  *             * 201 if success
-//  *             * 400 if deserialization fails
-//  *             * 401 if signature mismatch or nonce mismatch
-//  *             * 404 if user not found
-//  *             * 409 if phrase already exists
-//  *             * 500 if db fails or other unknown issue
-//  */
-// #[post("/phrase", data = "<data>")]
-// pub async fn prove_phrase(
-//     user: AuthenticatedUser,
-//     data: Data<'_>,
-//     db: &State<GrapevineDB>,
-// ) -> Result<GrapevineResponse, GrapevineResponse> {
-//     // stream in data
-//     let mut buffer = Vec::new();
-// let mut stream = data.open(2.mebibytes()); // Adjust size limit as needed
-// if let Err(e) = stream.read_to_end(&mut buffer).await {
-//     println!("Error reading request body: {:?}", e);
-//     return Err(GrapevineResponse::TooLarge(
-//         "Request body execeeds 2 MiB".to_string(),
-//     ));
-// }
-// let request = match bincode::deserialize::<PhraseRequest>(&buffer) {
-//     Ok(req) => req,
-//     Err(e) => {
-//         println!(
-//             "Error deserializing body from binary to PhraseRequest: {:?}",
-//             e
-//         );
-//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//             Some(GrapevineError::SerdeError(String::from("NewPhraseRequest"))),
-//             None,
-//         )));
-//     }
-// };
-
-// // verify the proof
-// let decompressed_proof = decompress_proof(&request.proof);
-// let verify_res = verify_grapevine_proof(&decompressed_proof, &*PUBLIC_PARAMS, 3);
-// let (phrase_hash, auth_hash) = match verify_res {
-//     Ok(res) => (res.0[3].to_bytes(), res.0[2].to_bytes()),
-//     Err(e) => {
-//         println!("Proof verification failed: {:?}", e);
-//         return Err(GrapevineResponse::BadRequest(ErrorMessage(
-//             Some(GrapevineError::DegreeProofVerificationFailed),
-//             None,
-//         )));
-//     }
-// };
-
-//     // check if phrase exists in db
-//     let mut phrase_oid: Option<ObjectId> = match db.get_phrase_by_hash(&phrase_hash).await {
-//         Ok(oid) => Some(oid),
-//         Err(e) => match e {
-//             GrapevineError::PhraseNotFound => None,
-//             _ => {
-//                 return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                     Some(e),
-//                     None,
-//                 )))
-//             }
-//         },
-//     };
-//     let exists = phrase_oid.is_some();
-
-//     // handle whether phrase exists or not
-//     let phrase_index = match exists {
-//         true => {
-//             // if phrase exists:
-//             // get the phrase index
-//             let index = match db.get_phrase_index(&phrase_oid.unwrap()).await {
-//                 Ok(index) => index,
-//                 Err(e) => {
-//                     println!("Error getting phrase index: {:?}", e);
-//                     return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                         Some(e),
-//                         None,
-//                     )));
-//                 }
-//             };
-//             // check that there is not a degree conflict
-//             match db.check_degree_conflict(&user.0, index, 1).await {
-//                 Ok(conflict) => match conflict {
-//                     true => {
-//                         return Err(GrapevineResponse::Conflict(ErrorMessage(
-//                             Some(GrapevineError::DegreeProofExists),
-//                             None,
-//                         )))
-//                     }
-//                     false => (),
-//                 },
-//                 Err(e) => {
-//                     return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                         Some(e),
-//                         None,
-//                     )));
-//                 }
-//             };
-//             index
-//         }
-//         false => {
-//             // if phrase does not exist, create it
-//             let (oid, index) = match db.create_phrase(phrase_hash, request.description).await {
-//                 Ok(res) => res,
-//                 Err(e) => {
-//                     println!("Error adding proof: {:?}", e);
-//                     return Err(GrapevineResponse::InternalError(ErrorMessage(
-//                         Some(e),
-//                         None,
-//                     )));
-//                 }
-//             };
-//             phrase_oid = Some(oid);
-//             index
-//         }
-//     };
-
-//     // get user doc
-//     let user = db.get_user(&user.0).await.unwrap();
-//     // build DegreeProof model
-//     let proof_doc = DegreeProof {
-//         id: None,
-//         inactive: Some(false),
-//         phrase: phrase_oid,
-//         auth_hash: Some(auth_hash),
-//         user: Some(user.id.unwrap()),
-//         degree: Some(1),
-//         ciphertext: Some(request.ciphertext),
-//         proof: Some(request.proof.clone()),
-//         preceding: None,
-//         proceeding: Some(vec![]),
-//     };
-
-//     // Add the proof to the db
-//     match db.add_proof(&user.id.unwrap(), &proof_doc).await {
-//         Ok(_) => {
-//             let response_data = PhraseCreationResponse {
-//                 phrase_index,
-//                 new_phrase: !exists,
-//             };
-//             Ok(GrapevineResponse::Created(
-//                 serde_json::to_string(&response_data).unwrap(),
-//             ))
-//         }
-//         Err(e) => {
-//             println!("Error adding proof: {:?}", e);
-//             Err(GrapevineResponse::InternalError(ErrorMessage(
-//                 Some(GrapevineError::MongoError(String::from(
-//                     "Failed to add proof to db",
-//                 ))),
-//                 None,
-//             )))
-//         }
-//     }
-// }
-
 /**
  * Build from a previous degree of connection proof and add it to the database
  *
@@ -451,6 +284,7 @@ pub async fn degree_proof(
             )));
         }
     };
+
     // validate prover address
     let mut verify_err: Option<String> = None;
     let prover_address = Fr::from_repr(validation_data.prover_address).unwrap();
@@ -534,8 +368,50 @@ pub async fn degree_proof(
 pub async fn get_available_proofs(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<Vec<AvailableProofs>>, Status> {
+) -> Result<Json<Vec<ProofMetadata>>, Status> {
     Ok(Json(db.find_available_degrees(user.0).await))
+}
+
+/**
+* Returns a list of degree proofs a user has created
+*
+* @return - a vector of AvailableProof structs containing:
+*             * oid: the ObjectID of the proof to build from
+*             * degree: the separation degree of the proof
+*             * relation: immediate connection user has generated degree proof from
+*             * scope: the identity proof owner
+* @return status:
+*            * 200 if success
+*            * 401 if signature mismatch or nonce mismatch
+*            * 500 if db fails or other unknown issue
+*/
+#[get("/proven")]
+pub async fn get_proven_degrees(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<ProofMetadata>>, GrapevineResponse> {
+    match db.get_proven_degrees(user.0).await {
+        Ok(proofs) => Ok(Json(proofs)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
+            Some(GrapevineError::MongoError(String::from(e.to_string()))),
+            None,
+        ))),
+    }
+}
+
+#[get("/<scope>")]
+pub async fn get_proof_by_scope(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+    scope: String,
+) -> Result<Json<GrapevineProof>, GrapevineResponse> {
+    match db.find_proof_by_scope(&user.0, &scope).await {
+        Some(doc) => Ok(Json(doc)),
+        None => Err(GrapevineResponse::NotFound(format!(
+            "Proof by {} for scope {}",
+            &user.0, &scope
+        ))),
+    }
 }
 
 /**
@@ -544,13 +420,13 @@ pub async fn get_available_proofs(
  * @param scope - the username of the scope of the proof chain
  * @returns - the full proof document
  */
-#[get("/scope/<scope>")]
-pub async fn get_proof_by_scope(
+#[get("/metadata/<scope>")]
+pub async fn get_proof_metadata_by_scope(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
     scope: String,
-) -> Result<Json<GrapevineProof>, GrapevineResponse> {
-    match db.find_proof_by_scope(&user.0, &scope).await {
+) -> Result<Json<ProofMetadata>, GrapevineResponse> {
+    match db.get_proof_metadata_by_scope(&user.0, &scope).await {
         Some(doc) => Ok(Json(doc)),
         None => Err(GrapevineResponse::NotFound(format!(
             "Proof by {} for scope {}",
