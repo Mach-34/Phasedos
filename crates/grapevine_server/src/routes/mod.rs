@@ -23,6 +23,8 @@ lazy_static! {
         proof::degree_proof,
         proof::get_available_proofs,
         proof::get_proof_with_params,
-        proof::get_proof_by_scope
+        proof::get_proof_by_scope,
+        proof::get_proof_metadata_by_scope,
+        proof::get_proven_degrees
     ];
 }

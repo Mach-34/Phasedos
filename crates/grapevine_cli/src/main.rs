@@ -85,13 +85,20 @@ enum ProofCommands {
     /// Retrieve a list of available degree proofs to build from
     /// usage: `grapevine proof available
     #[command(verbatim_doc_comment)]
-    #[clap(value_parser)]
     Available,
+    /// List all your degree proofs
+    /// usage: `grapevine proof list`
+    #[command(verbatim_doc_comment)]
+    List,
     /// Prove all available degrees
     /// usage: `grapevine proof prove-available
     #[command(verbatim_doc_comment)]
-    #[clap(value_parser)]
     ProveAvailable,
+    /// Get your degree proof for a given scope
+    /// usage: `grapevine proof scope <username>
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    Scope { username: String },
 }
 
 /**
@@ -110,7 +117,11 @@ pub async fn main() {
         Commands::Health => controllers::health().await,
         Commands::Proof(cmd) => match cmd {
             ProofCommands::Available => controllers::get_available_proofs().await,
+            ProofCommands::List => controllers::get_my_proofs().await,
             ProofCommands::ProveAvailable => controllers::prove_all_available().await,
+            ProofCommands::Scope { username } => {
+                controllers::get_proof_metadata_by_scope(username).await
+            }
         },
         Commands::Relationship(cmd) => match cmd {
             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,

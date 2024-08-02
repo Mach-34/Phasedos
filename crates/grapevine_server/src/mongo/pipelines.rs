@@ -200,6 +200,79 @@ pub fn degree_data(username: &String, proof: &ObjectId) -> Vec<Document> {
 }
 
 /**
+ * Query for getting proven degrees for a user
+ *
+ * @param user: The username of the user to query the collection for degrees
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+pub fn get_proven_degrees(user: &String) -> Vec<Document> {
+    vec![
+        // 1. Match the user
+        doc! {"$match": { "username": user }},
+        // 2. Find all proofs where the relation = user oid
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "localField": "_id",
+                "foreignField": "relation",
+                "as": "proofs",
+                "pipeline": [
+                    doc! { "$match": { "inactive": { "$ne": true }, "degree": { "$gte": 1, "$lt": 8 } } },
+                    doc! { "$project": { "degree": 1, "preceding": 1, "relation": 1, "scope": 1 } }
+                ]
+            }
+        },
+        doc! { "$unwind": "$proofs" },
+        doc! {
+            "$project": {
+                "_id": "$proofs._id",
+                "degree": "$proofs.degree",
+                "scope": "$proofs.scope",
+                "preceding": "$proofs.preceding",
+            }
+        },
+        // 3. Lookup preceding relation
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "localField": "preceding",
+                "foreignField": "_id",
+                "as": "precedingProof",
+                "pipeline": [ doc! { "$project": { "_id": 0, "relation": 1 }} ]
+            }
+        },
+        doc! {"$unwind": "$precedingProof"},
+        // 3. Match scope username and preceding relation username
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "scope",
+                "foreignField": "_id",
+                "as": "scopeUser",
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
+            }
+        },
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "precedingProof.relation",
+                "foreignField": "_id",
+                "as": "precedingRelationUser",
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
+            }
+        },
+        doc! {
+            "$project": {
+                "_id": "$_id",
+                "degree": "$degree",
+                "scope": { "$arrayElemAt": ["$scopeUser.username", 0] },
+                "relation": { "$arrayElemAt": ["$precedingRelationUser.username", 0] },
+            }
+        },
+    ]
+}
+
+/**
  * Query for getting a one-way relationship document between users given their usernames
  *
  * @param sender: The username of the sender (creator of the stored auth secret/ nullifier emitter)
@@ -534,6 +607,98 @@ pub fn proof_by_scope(username: &String, scope: &String) -> Vec<Document> {
         doc! { "$unwind": "$proof" },
         // 3. Return only the proof document
         doc! { "$replaceRoot": { "newRoot": "$proof" }},
+    ]
+}
+
+/**
+ * Query for getting proof metadata for a particular prover and scope
+ *
+ * @param username: The username of the prover
+ * @param scope: The username of the identity scope of the proof chain
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+// TODO: Need to handle indentity proof
+pub fn proof_metadata_by_scope(username: &String, scope: &String) -> Vec<Document> {
+    vec![
+        // 1. Find the ObjectIDs of the user and scope
+        doc! {
+            "$facet": {
+                "relation": [
+                    { "$match": { "username": username } },
+                    { "$project": { "_id": 1 } }
+                ],
+                "scope": [
+                    { "$match": { "username": scope } },
+                    { "$project": { "_id": 1 } }
+                ]
+            }
+        },
+        doc! {
+            "$project": {
+                "relation": { "$arrayElemAt": ["$relation._id", 0] },
+                "scope": { "$arrayElemAt": ["$scope._id", 0] }
+            }
+        },
+        // 2. Look up the proof document with the matching relation and scope
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "let": { "relationId": "$relation", "scopeId": "$scope" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": ["$relation", "$$relationId"] },
+                                    { "$eq": ["$scope", "$$scopeId"] }
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "degree": 1,
+                            "scope": 1,
+                            "preceding": 1
+                        }
+                    }
+                ],
+                "as": "proof"
+            }
+        },
+        doc! { "$unwind": "$proof" },
+        // 3. Return only the proof document
+        doc! { "$replaceRoot": { "newRoot": "$proof" }},
+        // 4. Lookup preceding proof and get relation from it
+        doc! {
+            "$lookup": {
+                "from": "proofs",
+                "localField": "preceding",
+                "foreignField": "_id",
+                "as": "precedingProof",
+                "pipeline": [ doc! { "$project": { "_id": 0, "relation": 1 }} ]
+            }
+        },
+        doc! {"$unwind": "$precedingProof"},
+        // 5. Lookup preceding relation username
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "precedingProof.relation",
+                "foreignField": "_id",
+                "as": "precedingRelationUser",
+                "pipeline": [ doc! { "$project": { "_id": 0, "username": 1 }} ]
+            }
+        },
+        doc! {
+            "$project": {
+                "_id": 1,
+                "degree": 1,
+                "scope": scope,
+                "relation": { "$arrayElemAt": ["$precedingRelationUser.username", 0] },
+            }
+        },
     ]
 }
 

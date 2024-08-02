@@ -1,8 +1,8 @@
 use crate::http::{
     add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
-    get_account_details_req, get_available_proofs_req, get_degrees_req, get_nonce_req,
-    get_nullifier_secret, get_proof_with_params_req, get_pubkey_req, get_relationships_req,
-    reject_relationship_req,
+    get_account_details_req, get_available_proofs_req, get_degree_by_scope_req, get_nonce_req,
+    get_nullifier_secret, get_proof_with_params_req, get_proven_degrees_req, get_pubkey_req,
+    get_relationships_req, reject_relationship_req,
 };
 use crate::utils::artifacts_guard;
 use crate::utils::fs::{use_public_params, use_r1cs, use_wasm, ACCOUNT_PATH};
@@ -168,14 +168,13 @@ pub async fn get_available_proofs() -> Result<String, GrapevineError> {
     // sync nonce
     synchronize_nonce().await?;
 
-    let res = get_available_proofs_req(&mut account).await;
-    match res {
-        Ok(data) => {
+    match get_available_proofs_req(&mut account).await {
+        Ok(proofs) => {
             let degree_col_width = 8;
             let relation_col_width = 4;
 
             // calculate longest scope username
-            let scope_col_width = data.iter().fold(0, |acc, x| {
+            let scope_col_width = proofs.iter().fold(0, |acc, x| {
                 if acc < x.scope.len() {
                     x.scope.len()
                 } else {
@@ -190,10 +189,10 @@ pub async fn get_available_proofs() -> Result<String, GrapevineError> {
                 "Degree", "Scope", "Relation"
             );
             output.push_str(&str);
-            for i in 0..data.len() {
+            for proof in proofs {
                 output.push_str(&format!(
                     "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n",
-                    data[i].degree, data[i].scope, data[i].relation
+                    proof.degree, proof.scope, proof.relation
                 ));
             }
             Ok(output)
@@ -441,41 +440,70 @@ pub async fn get_my_proofs() -> Result<String, GrapevineError> {
     // sync nonce
     synchronize_nonce().await?;
     // send request
-    let res = get_degrees_req(&mut account).await;
-    let data = match res {
+    let proofs = match get_proven_degrees_req(&mut account).await {
         Ok(data) => data,
         Err(e) => return Err(e),
     };
-    println!(
-        "Proofs of {}'s degrees of separation from phrases/ users:",
-        account.username()
-    );
-    for degree in data {
-        println!(
-            "=-=-=-=-=-=-=[Phrase #{}]=-=-=-=-=-=-=",
-            degree.phrase_index
-        );
-        println!("Phrase description: \"{}\"", degree.description);
-        println!("Phrase hash: 0x{}", hex::encode(degree.phrase_hash));
-        println!(
-            "Degrees of separation from origin: {}",
-            degree.degree.unwrap()
-        );
-        if degree.relation.is_none() {
-            // println!("Phrase created by this user");
-            // let phrase = account.decrypt_phrase(&degree.secret_phrase.unwrap());
-            // println!("Secret phrase: \"{}\"", phrase);
-        } else {
-            println!("Your relation: {}", degree.relation.unwrap());
-            if degree.preceding_relation.is_some() {
-                println!(
-                    "2nd degree relation: {}",
-                    degree.preceding_relation.unwrap()
-                );
+
+    if proofs.len() == 0 {
+        Ok(String::from("No existing degree proofs."))
+    } else {
+        let degree_col_width = 8;
+        let relation_col_width = 4;
+
+        // calculate longest scope username
+        let scope_col_width = proofs.iter().fold(0, |acc, x| {
+            if acc < x.scope.len() {
+                x.scope.len()
+            } else {
+                acc
             }
+        }) + 8;
+
+        let mut output = String::new();
+
+        let str = format!(
+            "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n\n",
+            "Degree", "Scope", "Preceding Relation"
+        );
+        output.push_str(&str);
+        for proof in proofs {
+            output.push_str(&format!(
+                "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n",
+                proof.degree, proof.scope, proof.relation
+            ));
         }
+        Ok(output)
     }
-    Ok(String::from("Unimplemented"))
+}
+
+pub async fn get_proof_metadata_by_scope(username: &String) -> Result<String, GrapevineError> {
+    // get account
+    let mut account = get_account()?;
+    // sync nonce
+    synchronize_nonce().await?;
+    // send request
+    let metadata = match get_degree_by_scope_req(&mut account, username).await {
+        Ok(data) => data,
+        Err(e) => return Err(e),
+    };
+
+    let degree_col_width = 8;
+    let relation_col_width = 4;
+    let scope_col_width = metadata.scope.len() + 8;
+
+    let mut output = String::new();
+    let col_labels = format!(
+        "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n\n",
+        "Degree", "Scope", "Preceding Relation"
+    );
+    let col_values = format!(
+        "{: <degree_col_width$} {: <scope_col_width$} {: <relation_col_width$}\n\n",
+        metadata.degree, metadata.scope, metadata.relation
+    );
+    output.push_str(&col_labels);
+    output.push_str(&col_values);
+    Ok(output)
 }
 
 pub fn make_or_get_account(username: String) -> Result<GrapevineAccount, GrapevineError> {
