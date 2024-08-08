@@ -51,6 +51,28 @@ impl GrapevineInputs {
         }
     }
 
+    #[cfg(target_family = "wasm")]
+    pub fn identity_step(prover_key: String) -> Self {
+        // convert prover key from string to 
+        let prover_key_bytes = hex::decode(prover_key).unwrap();
+        let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
+        // get the pubkey used by the prover
+        let prover_pubkey = prover_key.public();
+        // get the account address
+        let address = pubkey_to_address(&prover_pubkey);
+        // sign the address
+        let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&address));
+        let scope_signature = prover_key.sign(message).unwrap();
+        // return the struct
+        Self {
+            nullifier: None,
+            prover_pubkey,
+            relation_pubkey: None,
+            scope_signature,
+            auth_signature: None,
+        }
+    }
+
     /**
      * Generates the step private inputs for a degree step
      *
@@ -81,6 +103,12 @@ impl GrapevineInputs {
             auth_signature: Some(auth_signature.clone()),
         }
     }
+
+    #[cfg(target_family = "wasm")]
+    pub fn degree_step(
+        prover_key: &String,
+        
+    )
 
     /**
      * Formats a given input struct for circom, including a chaff step

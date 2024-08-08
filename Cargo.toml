@@ -1,3 +1,5 @@
+cargo-features = ["per-package-target"]
+
 [workspace]
 
 members = [
@@ -5,6 +7,7 @@ members = [
     "crates/grapevine_circuits",
     "crates/grapevine_server",
     "crates/grapevine_common",
+    "crates/grapevine_wasm"
 ]
 default-members = ["crates/grapevine_cli"]
 resolver = "2"
