@@ -362,7 +362,7 @@ pub async fn get_proven_degrees(
     }
 }
 
-#[get("/<scope>")]
+#[get("/scope/<scope>")]
 pub async fn get_proof_by_scope(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,

@@ -238,6 +238,7 @@ pub async fn emit_nullifier(
 }
 
 /**
+ * TODO: Remove after tests are written
  * Route used to fetch a relationship while testing
  *
  * @param recipient - recipient username

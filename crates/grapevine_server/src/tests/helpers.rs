@@ -1,5 +1,5 @@
 use crate::{
-    catchers::bad_request,
+    catchers::{bad_request, not_found, unauthorized},
     health,
     mongo::GrapevineDB,
     routes,
@@ -27,6 +27,7 @@ use lazy_static::lazy_static;
 use rocket::{
     fs::{relative, FileServer},
     local::asynchronous::Client,
+    Route,
 };
 use std::sync::Mutex;
 
@@ -58,7 +59,7 @@ impl GrapevineTestContext {
             .mount("/", routes![health])
             // mount artifact file server
             .mount("/static", FileServer::from(relative!("static")))
-            .register("/", catchers![bad_request]);
+            .register("/", catchers![bad_request, not_found, unauthorized]);
 
         GrapevineTestContext {
             client: Client::tracked(rocket).await.unwrap(),
@@ -163,6 +164,29 @@ pub async fn degree_proof_step_by_scope(
     };
     // submit degree proof and return result
     http_submit_degree_proof(&context, prover, degree_proof_request).await
+}
+
+/**
+ * Get path segments of a route
+ *
+ * @param route - route being parsed for path segements
+ * @return - string vector of path segments
+ */
+pub fn parse_path_segments(route: &Route) -> String {
+    route
+        .uri
+        .path()
+        .trim_start_matches('/')
+        .split('/')
+        .map(|seg| {
+            if seg.starts_with('<') && seg.ends_with('>') {
+                seg[1..seg.len() - 1].to_string()
+            } else {
+                seg.to_string()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("/")
 }
 
 /// Request Helpers

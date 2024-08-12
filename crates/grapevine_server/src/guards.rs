@@ -48,7 +48,17 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
         let signature = match request.headers().get_one("X-Authorization") {
             Some(data) => {
                 // attempt to parse the signature
-                let bytes: [u8; 64] = hex::decode(data).unwrap().try_into().unwrap();
+                let bytes: [u8; 64] = match hex::decode(data).unwrap().try_into() {
+                    Ok(val) => val,
+                    Err(_) => {
+                        request.local_cache(|| {
+                            ErrorMessage(Some(GrapevineError::HeaderError(String::from(
+                                "invalid hex string provided for X-Authorization header",
+                            ))))
+                        });
+                        return Failure((Status::BadRequest, ErrorMessage(None)));
+                    }
+                };
                 match decompress_signature(&bytes) {
                     Ok(signature) => signature,
                     Err(_) => {
