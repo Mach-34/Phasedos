@@ -65,6 +65,7 @@ mod test_rocket {
         utils::random_fr,
     };
     use lazy_static::lazy_static;
+    use nova_scotia::FileLocation;
     use rocket::{
         form::validate::Contains,
         http::{ContentType, Header, Status},
@@ -81,7 +82,7 @@ mod test_rocket {
         static ref ARTIFACTS: GrapevineArtifacts = GrapevineArtifacts {
             params: use_public_params().unwrap(),
             r1cs: use_r1cs().unwrap(),
-            wasm_path: use_wasm().unwrap()
+            wasm_location: FileLocation::PathBuf(use_wasm().unwrap())
         };
     }
 

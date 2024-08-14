@@ -58,7 +58,7 @@ pub fn identity_proof(
     let private_inputs = inputs.fmt_circom();
     // create the degree proof
     create_recursive_circuit(
-        FileLocation::PathBuf(artifacts.wasm_path.clone()),
+        artifacts.wasm_location.clone(),
         artifacts.r1cs.clone(),
         private_inputs.to_vec(),
         Z0_PRIMARY.clone(),
@@ -88,7 +88,7 @@ pub fn degree_proof(
     continue_recursive_circuit(
         proof,
         previous_output.clone(),
-        FileLocation::PathBuf(artifacts.wasm_path.clone()),
+        artifacts.wasm_location.clone(),
         artifacts.r1cs.clone(),
         private_inputs.to_vec(),
         Z0_PRIMARY.clone(),
@@ -137,9 +137,9 @@ mod test {
             let r1cs_path = String::from("circom/artifacts/grapevine.r1cs");
             let r1cs = get_r1cs(Some(r1cs_path));
             // set wasm path
-            let wasm_path = current_dir().unwrap().join("circom/artifacts/grapevine.wasm");
+            let wasm_location = FileLocation::PathBuf(current_dir().unwrap().join("circom/artifacts/grapevine.wasm"));
             // return artifacts struct
-            GrapevineArtifacts { params, r1cs, wasm_path }
+            GrapevineArtifacts { params, r1cs, wasm_location }
         };
         pub static ref ZERO: Fr = Fr::from(0);
         pub static ref KEYS: Vec<PrivateKey> = {

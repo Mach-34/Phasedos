@@ -5,6 +5,7 @@ use grapevine_common::crypto::pubkey_to_address;
 use grapevine_common::utils::random_fr_ce;
 use grapevine_common::{Fr, Params};
 use nova_scotia::circom::circuit::R1CS;
+use nova_scotia::FileLocation;
 use num_bigint::{BigInt, Sign};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -14,7 +15,7 @@ use std::convert::{TryFrom, TryInto};
 pub struct GrapevineArtifacts {
     pub params: Params,
     pub r1cs: R1CS<Fr>,
-    pub wasm_path: PathBuf,
+    pub wasm_location: FileLocation,
 }
 
 #[derive(Clone, Debug)]
@@ -106,7 +107,7 @@ impl GrapevineInputs {
 
     #[cfg(target_family = "wasm")]
     pub fn degree_step(
-        prover_key: &String,
+        prover_key: String,
         relation_pubkey: String,
         relation_nullifier: String,
         scope_address: String,

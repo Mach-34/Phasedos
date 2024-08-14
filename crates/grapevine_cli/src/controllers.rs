@@ -19,7 +19,7 @@ use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::{DegreeProofRequest, EmitNullifierRequest};
 use grapevine_common::utils::{random_fr, to_array_32};
 use grapevine_common::Fr;
-use nova_scotia::continue_recursive_circuit;
+use nova_scotia::{continue_recursive_circuit, FileLocation};
 
 use std::path::Path;
 
@@ -98,7 +98,7 @@ pub async fn register(username: &String) -> Result<String, GrapevineError> {
     let artifacts = GrapevineArtifacts {
         params: use_public_params().unwrap(),
         r1cs: use_r1cs().unwrap(),
-        wasm_path: use_wasm().unwrap(),
+        wasm_location: FileLocation::PathBuf(use_wasm().unwrap()),
     };
 
     let proof = identity_proof(&artifacts, &identity_inputs).unwrap();
@@ -236,7 +236,7 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
     let artifacts = GrapevineArtifacts {
         params: use_public_params().unwrap(),
         r1cs: use_r1cs().unwrap(),
-        wasm_path: use_wasm().unwrap(),
+        wasm_location: FileLocation::PathBuf(use_wasm().unwrap()),
     };
 
     let proof_count = proofs.len();

@@ -33,7 +33,7 @@ wasm-bindgen.workspace = true
 [dev-dependencies]
 criterion = "0.5.1"
 
-[[bench]]
-name = "proof"
-path = "benches/proof.rs"
-harness = false
+# [[bench]]
+# name = "proof"
+# path = "benches/proof.rs"
+# harness = false
