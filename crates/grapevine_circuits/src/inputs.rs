@@ -107,8 +107,28 @@ impl GrapevineInputs {
     #[cfg(target_family = "wasm")]
     pub fn degree_step(
         prover_key: &String,
-        
-    )
+        relation_pubkey: String,
+        relation_nullifier: String,
+        scope_address: String,
+        auth_signature: String,
+    ) -> Self {
+        // convert prover key from hexstring to private key
+        let prover_key_bytes = hex::decode(prover_key).unwrap();
+        let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
+        // convert the relation pubkey from hexstring and decompress
+        let relation_pubkey_bytes = hex::decode(relation_pubkey).unwrap();
+        let relation_pubkey = Point::decompress(&relation_pubkey_bytes).unwrap();
+        // convert the relation nullifier from hexstring to field element
+        let relation_nullifier_bytes = hex::decode(relation_nullifier).unwrap();
+        let relation_nullifier = ff_ce_from_le_bytes(relation_nullifier_bytes.try_into().unwrap());
+        // convert the scope address from hexstring to field element
+        let scope_address_bytes = hex::decode(scope_address).unwrap();
+        let scope_address = ff_ce_from_le_bytes(scope_address_bytes.try_into().unwrap());
+        // convert the auth signature from hexstring and decompress
+        let auth_signature_bytes = hex::decode(auth_signature).unwrap();
+        let auth_signature = Signature::decompress(&auth_signature_bytes).unwrap();
+        Self::degree_step(&prover_key, &relation_pubkey, &relation_nullifier, &scope_address, &auth_signature)
+    }
 
     /**
      * Formats a given input struct for circom, including a chaff step
