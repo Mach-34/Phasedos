@@ -18,6 +18,7 @@ ff_ce.workspace = true
 wasm-bindgen.workspace = true
 nova-scotia.workspace = true
 nova-snark.workspace = true
+num-bigint.workspace = true
 
 serde = "1.0.190"
 serde_json = "1.0.107"

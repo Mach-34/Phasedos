@@ -1,4 +1,4 @@
-use grapevine_common::{Fr, Params, G1, G2};
+use grapevine_common::{compat::ff_ce_to_le_bytes, crypto::pubkey_to_address, Fr, Params, G1, G2};
 // use ff::PrimeField;
 // use grapevine_circuits::{start_input, utils::build_step_inputs, z0_secondary};
 // use grapevine_common::{
@@ -15,11 +15,13 @@ use grapevine_circuits::{Z0_PRIMARY, Z0_SECONDARY, inputs::{GrapevineArtifacts, 
 use nova_scotia::{circom::{circuit::R1CS, reader::load_r1cs}, continue_recursive_circuit, create_recursive_circuit, FileLocation};
 use utils::{bigint_to_fr, destringify_proof_outputs, fr_to_bigint, stringify_proof_outputs};
 use wasm_bindgen::prelude::*;
-
+use babyjubjub_rs::PrivateKey;
+use num_bigint::{BigInt, Sign};
 pub use wasm_bindgen_rayon::init_thread_pool;
 // pub mod types;
 pub mod types;
 pub mod utils;
+
 
 #[wasm_bindgen]
 extern "C" {
@@ -53,7 +55,33 @@ extern "C" {
 macro_rules! console_log {
     // Note that this is using the `log` function imported above during
     // `bare_bones`
-    ($($t:tt)*) => ($log(&format_args!($($t)*).to_string()))
+    ($($t:tt)*) => ($crate::log(&format_args!($($t)*).to_string()))
+}
+
+pub fn identity_step_helper(prover_key: String) -> GrapevineInputs {
+    // convert prover key from string to 
+    console_log!("Converting prover key: {:?}", &prover_key);
+    let prover_key_bytes = hex::decode(prover_key).unwrap();
+    console_log!("Importing prover key: {:?}", &prover_key_bytes);
+    let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
+    // get the pubkey used by the prover
+    console_log!("Getting prover pubkey:");
+    let prover_pubkey = prover_key.public();
+    // get the account address
+    console_log!("Getting prover address");
+    let address = pubkey_to_address(&prover_pubkey);
+    // sign the address
+    console_log!("Creating message to sign");
+    let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&address));
+    console_log!("Signing message");
+    let scope_signature = prover_key.sign(message).unwrap();
+    GrapevineInputs {
+        nullifier: None,
+        prover_pubkey,
+        relation_pubkey: None,
+        scope_signature,
+        auth_signature: None,
+    }
 }
 
 /**
@@ -93,11 +121,16 @@ pub async fn identity_proof(
 ) -> String {
     console_error_panic_hook::set_once();
     // create artifacts
+    console_log!("Creating artifacts");
     let artifacts = get_artifacts(params_string, r1cs_url, wasm_url).await;
     // create inputs from prover key
-    let inputs = GrapevineInputs::identity_step(prover_key);
+    console_log!("Generating inputs");
+    // let inputs = GrapevineInputs::identity_step(prover_key);
+    let inputs = identity_step_helper(prover_key);
+    console_log!("Formatting inputs for circom");
     let private_inputs = inputs.fmt_circom();
     // create the degree proof
+    console_log!("Creating proof");
     let proof = create_recursive_circuit(
         artifacts.wasm_location.clone(),
         artifacts.r1cs.clone(),
@@ -106,7 +139,9 @@ pub async fn identity_proof(
         &artifacts.params,
     ).await.unwrap();
     // compress proof and return
+    console_log!("Compressing proof");
     let compressed = compress_proof(&proof);
+    console_log!("Serializing proof");
     serde_json::to_string(&compressed).unwrap()
 }
 

@@ -23,11 +23,11 @@ pub struct GrapevineArtifacts {
 
 #[derive(Clone, Debug)]
 pub struct GrapevineInputs {
-    nullifier: Option<Fr>,
-    prover_pubkey: Point,
-    relation_pubkey: Option<Point>,
-    scope_signature: Signature,
-    auth_signature: Option<Signature>,
+    pub nullifier: Option<Fr>,
+    pub prover_pubkey: Point,
+    pub relation_pubkey: Option<Point>,
+    pub scope_signature: Signature,
+    pub auth_signature: Option<Signature>,
 }
 
 impl GrapevineInputs {

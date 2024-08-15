@@ -13,40 +13,7 @@ use std::io::Read;
 
 pub const PARAMS_CHUNKS: usize = 10;
 
-/**
- * Retrieves gzipped params from a url and unzips it
- *
- * @param url - the url to retrieve the params from
- * @param chunks - the number of file chunks
- *   - if < 2 no chunks added
- *   - if >= 2, append -{chunk #} to the url for each chunk
- */
-#[wasm_bindgen]
-pub async fn retrieve_chunked_params(url: String) -> String {
-    // retrieve the chunked params and assemble
-    let mut artifact_gz = Vec::<u8>::new();
-    let client = reqwest::Client::new();
-    for i in 0..PARAMS_CHUNKS {
-        let artifact_url = format!("{}params_{}.gz", url, i);
-        let mut chunk = client
-            .get(&artifact_url)
-            .header(CONTENT_TYPE, "application/x-binary")
-            .send()
-            .await
-            .unwrap()
-            .bytes()
-            .await
-            .unwrap()
-            .to_vec();
-        artifact_gz.append(&mut chunk);
-    }
-    // decompress the artifact
-    let mut decoder = GzDecoder::new(&artifact_gz[..]);
-    let mut serialized = String::new();
-    decoder.read_to_string(&mut serialized).unwrap();
 
-    serialized
-}
 
 /**
  * Checks the validity of an auth secret
