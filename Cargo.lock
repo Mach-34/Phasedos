@@ -1404,6 +1404,7 @@ version = "0.1.0"
 dependencies = [
  "babyjubjub-rs",
  "bincode",
+ "blake-hash",
  "console_error_panic_hook",
  "ff",
  "ff_ce",

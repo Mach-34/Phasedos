@@ -142,3 +142,28 @@ pub fn sign_scope(from: &PrivateKey, scope: &Fr) -> Signature {
     let scope_message = BigInt::from_bytes_le(Sign::Plus, &scope.to_bytes()[..]);
     from.sign(scope_message).unwrap()
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use babyjubjub_rs::PrivateKey;
+    use crate::compat::ff_ce_to_le_bytes;
+
+    #[test]
+    pub fn test_pubkey() {
+        // check matches circomlibjs computed address
+        // let private_key_hex = "0001020304050607080900010203040506070809000102030405060708090001";
+        let private_key_hex = "cb9d33e3fbb84808e164cc75fced9380edb92e5c0c72cc9951def29c469fd3d8";
+        let private_key = PrivateKey::import(hex::decode(private_key_hex).unwrap()).unwrap();
+        let public_key = private_key.public();
+        println!("Pubkey X: {:?}", hex::encode(ff_ce_to_le_bytes(&public_key.x)));
+        println!("Pubkey Y: {:?}", hex::encode(ff_ce_to_le_bytes(&public_key.y)));
+        // println!("Privkey: {:?}", hex::encode(&private_key.key));
+
+        // let address = pubkey_to_address(&public_key);
+        // let address_hex = hex::encode(ff_ce_to_le_bytes(&address));
+        // println!("address: 0x{}", address_hex);
+        // let expected_address = "0ad7018c9a01e469c28837aba39004fdb5bc0dea26c2a16abcb02816dd4b2720";
+        // assert_eq!(address_hex, expected_address);
+    }
+}
