@@ -1308,7 +1308,7 @@ dependencies = [
  "grapevine_common",
  "hex",
  "lazy_static",
- "nova-scotia 0.5.0 (git+https://github.com/nalinbhardwaj/Nova-Scotia/)",
+ "nova-scotia",
  "nova-snark",
  "num-bigint 0.4.4",
  "poseidon-rs 0.0.8",
@@ -1333,7 +1333,7 @@ dependencies = [
  "grapevine_common",
  "hex",
  "lazy_static",
- "nova-scotia 0.5.0 (git+https://github.com/nalinbhardwaj/Nova-Scotia/)",
+ "nova-scotia",
  "nova-snark",
  "num-bigint 0.4.4",
  "poseidon-rs 0.0.10",
@@ -1356,7 +1356,7 @@ dependencies = [
  "ff",
  "ff_ce",
  "hex",
- "nova-scotia 0.5.0 (git+https://github.com/nalinbhardwaj/Nova-Scotia/)",
+ "nova-scotia",
  "nova-snark",
  "num-bigint 0.4.4",
  "poseidon-rs 0.0.8",
@@ -1368,6 +1368,7 @@ dependencies = [
  "sha256",
  "sha3",
  "uuid",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1385,7 +1386,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "mongodb",
- "nova-scotia 0.5.0 (git+https://github.com/nalinbhardwaj/Nova-Scotia/)",
+ "nova-scotia",
  "num-bigint 0.4.4",
  "rocket",
  "serde",
@@ -1413,7 +1414,7 @@ dependencies = [
  "grapevine_common",
  "hex",
  "js-sys",
- "nova-scotia 0.5.0 (git+https://github.com/Mach-34/Nova-Scotia)",
+ "nova-scotia",
  "nova-snark",
  "num",
  "poseidon-rs 0.0.10",
@@ -2054,30 +2055,6 @@ dependencies = [
  "pasta_curves",
  "serde",
  "trait-set",
-]
-
-[[package]]
-name = "nova-scotia"
-version = "0.5.0"
-source = "git+https://github.com/Mach-34/Nova-Scotia#8900aca7c576bb6b99341072c5585bc655deec73"
-dependencies = [
- "anyhow",
- "bellperson",
- "byteorder",
- "ff",
- "hex-literal",
- "itertools 0.9.0",
- "js-sys",
- "nova-snark",
- "num-bigint 0.4.4",
- "num-traits",
- "pasta_curves",
- "rayon",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-rayon",
 ]
 
 [[package]]
@@ -3210,7 +3187,6 @@ dependencies = [
  "bytes",
  "hex",
  "sha2",
- "tokio",
 ]
 
 [[package]]

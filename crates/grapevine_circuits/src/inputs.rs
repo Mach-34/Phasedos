@@ -1,5 +1,6 @@
 use babyjubjub_rs::{new_key, Point, PrivateKey, Signature};
-use ff_ce::PrimeField;
+use ff_ce::PrimeField as PrimeFieldCE;
+use ff::PrimeField;
 use grapevine_common::compat::{convert_ff_to_ff_ce, ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::crypto::pubkey_to_address;
 use grapevine_common::utils::random_fr_ce;
@@ -11,6 +12,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::convert::{TryFrom, TryInto};
+
+pub const PROOF_OUTPUT_SIZE: usize = 12;
 
 pub struct GrapevineArtifacts {
     pub params: Params,
@@ -34,6 +37,7 @@ impl GrapevineInputs {
      * @param prover_key - the private key of the identity proof creator
      * @returns - the inputs for a circuit to prove an identity step
      */
+    #[cfg(not(target_family = "wasm"))]
     pub fn identity_step(prover_key: &PrivateKey) -> Self {
         // get the pubkey used by the prover
         let prover_pubkey = prover_key.public();
@@ -83,6 +87,7 @@ impl GrapevineInputs {
      * @param scope_address - the identity proof creator at the beginning of the proof chain
      * @returns - the inputs for a circuit to prove a degree step
      */
+    #[cfg(not(target_family = "wasm"))]
     pub fn degree_step(
         prover_key: &PrivateKey,
         relation_pubkey: &Point,
@@ -106,6 +111,7 @@ impl GrapevineInputs {
     }
 
     #[cfg(target_family = "wasm")]
+    // todo: handle unwrap errors
     pub fn degree_step(
         prover_key: String,
         relation_pubkey: String,
@@ -114,21 +120,36 @@ impl GrapevineInputs {
         auth_signature: String,
     ) -> Self {
         // convert prover key from hexstring to private key
+        use babyjubjub_rs::{decompress_point, decompress_signature};
         let prover_key_bytes = hex::decode(prover_key).unwrap();
         let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
         // convert the relation pubkey from hexstring and decompress
-        let relation_pubkey_bytes = hex::decode(relation_pubkey).unwrap();
-        let relation_pubkey = Point::decompress(&relation_pubkey_bytes).unwrap();
+        let relation_pubkey_bytes: [u8; 32] = hex::decode(relation_pubkey).unwrap().try_into().unwrap();
+        let relation_pubkey = decompress_point(relation_pubkey_bytes).unwrap();
         // convert the relation nullifier from hexstring to field element
         let relation_nullifier_bytes = hex::decode(relation_nullifier).unwrap();
-        let relation_nullifier = ff_ce_from_le_bytes(relation_nullifier_bytes.try_into().unwrap());
-        // convert the scope address from hexstring to field element
-        let scope_address_bytes = hex::decode(scope_address).unwrap();
-        let scope_address = ff_ce_from_le_bytes(scope_address_bytes.try_into().unwrap());
+        let relation_nullifier = Fr::from_repr(relation_nullifier_bytes.try_into().unwrap()).unwrap();
+        // get scope address bytes
+        let scope_address_bytes: [u8; 32] = hex::decode(scope_address).unwrap().try_into().unwrap();
         // convert the auth signature from hexstring and decompress
-        let auth_signature_bytes = hex::decode(auth_signature).unwrap();
-        let auth_signature = Signature::decompress(&auth_signature_bytes).unwrap();
-        Self::degree_step(&prover_key, &relation_pubkey, &relation_nullifier, &scope_address, &auth_signature)
+        let auth_signature_bytes: [u8; 64] = hex::decode(auth_signature).unwrap().try_into().unwrap();
+        let auth_signature = decompress_signature(&auth_signature_bytes).unwrap();
+        
+        // repeat degree step logic
+        // todo: remove duplicate
+        // get the pubkey used by the prover
+        let prover_pubkey = prover_key.public();
+        // sign the scope address
+        let message = BigInt::from_bytes_le(Sign::Plus, &scope_address_bytes);
+        let scope_signature = prover_key.sign(message).unwrap();
+        // return the struct
+        Self {
+            nullifier: Some(relation_nullifier.clone()),
+            prover_pubkey,
+            relation_pubkey: Some(relation_pubkey.clone()),
+            scope_signature,
+            auth_signature: Some(auth_signature.clone()),
+        }
     }
 
     /**
@@ -186,7 +207,7 @@ pub struct GrapevineOutputs {
 impl TryFrom<Vec<Fr>> for GrapevineOutputs {
     type Error = ConversionError;
     fn try_from(outputs: Vec<Fr>) -> Result<Self, Self::Error> {
-        if outputs.len() != 12 {
+        if outputs.len() != PROOF_OUTPUT_SIZE {
             return Err(ConversionError);
         };
         Ok(Self {

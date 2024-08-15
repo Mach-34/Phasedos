@@ -10,7 +10,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 serde_json.workspace = true
 bson.workspace = true
-babyjubjub-rs.workspace = true
 hex.workspace = true
 ff.workspace = true
 ff_ce.workspace = true
@@ -25,10 +24,17 @@ reqwest.workspace = true
 sha3.workspace = true
 
 serde_bytes = "0.11.14"
-sha256 = "1.4.0"
+sha256 = { version = "1.4.0", default-features = false }
 aes = "0.8.3"
 cbc = "0.1.2"
 ahash = "0.8.9"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+babyjubjub-rs = "0.0.11"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+babyjubjub-rs.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
