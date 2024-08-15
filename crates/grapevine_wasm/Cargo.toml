@@ -26,7 +26,9 @@ ff = { version = "0.13", features = ["derive"] }
 flate2 = "1.0.28"
 hex = "0.4.3"
 reqwest = { version = "0.11.23", features = ["json"] }
-babyjubjub-rs = "0.0.11"
+# babyjubjub-rs = "0.0.11"
+babyjubjub-rs = { path = "../../babyjubjub-rs" }
+
 
 console_error_panic_hook = "0.1.7"
 getrandom = { version = "0.2", features = ["js"]}
@@ -47,3 +49,9 @@ blake-hash = { version = "0.4.1", default-features = false }
 serde_json.workspace = true
 
 
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = ['--enable-simd']
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = ['--enable-simd']
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['--enable-simd']

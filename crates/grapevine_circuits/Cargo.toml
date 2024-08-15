@@ -28,7 +28,8 @@ flate2 = "1.0.28"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
-babyjubjub-rs = "0.0.11"
+# babyjubjub-rs = "0.0.11"
+babyjubjub-rs = { path = "../../babyjubjub-rs" }
 # blake-hash = { version = "0.4.1", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -41,3 +42,10 @@ criterion = "0.5.1"
 # name = "proof"
 # path = "benches/proof.rs"
 # harness = false
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = ['--enable-simd']
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = ['--enable-simd']
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['--enable-simd']

@@ -21,7 +21,8 @@ license = "MIT or Apache-2.0"
 grapevine_circuits = { path = "crates/grapevine_circuits" }
 grapevine_common = { path = "crates/grapevine_common" }
 mongodb = "2.8.0"
-babyjubjub-rs = {version = "0.0.11", features = ["aarch64"] }
+babyjubjub-rs = { path = "./babyjubjub-rs", features = ["aarch64"] }
+
 ff = { version = "0.13", features = ["derive"] }
 ff_ce = { version = "0.11", features = ["derive"] }
 hex = "0.4.3"
