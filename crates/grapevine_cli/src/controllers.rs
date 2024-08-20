@@ -274,7 +274,7 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
         let verified = verify_grapevine_proof(
             &proof,
             &artifacts.params,
-            (available_proof.degree * 2) as usize,
+            (available_proof.degree) as usize,
         );
         let previous_output = match verified {
             Ok(data) => data.0,

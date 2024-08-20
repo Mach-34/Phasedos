@@ -40,6 +40,7 @@ pub async fn get_nonce_req(body: GetNonceRequest) -> Result<u64, GrapevineError>
     let url = format!("{}/user/nonce", &**SERVER_URL);
     let client = Client::new();
     let res = client.post(&url).json(&body).send().await.unwrap();
+    println!("{:?}", &res);
     match res.status() {
         StatusCode::OK => {
             let nonce = res.text().await.unwrap();

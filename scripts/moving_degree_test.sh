@@ -62,71 +62,27 @@ grapevine account register alice
 grapevine relationship add bob
 printf "\n"
 ## create degree 1 proof (phrase proof)
-grapevine phrase prove "It was cryptography all along" "The very first phrase of the word!"
 printf "\n"
 mv grapevine.key alice.key
-## accept relationship request from alice to bob
-mv bob.key grapevine.key
-grapevine relationship add alice
-printf "\n"
-mv grapevine.key bob.key
+# ## accept relationship request from alice to bob
+# mv bob.key grapevine.key
+# grapevine relationship add alice
+# printf "\n"
 
-## Note: though you can prove a single proof, there is not an easy way to get the necessary object ID to target a specific proof. so just use prove-new-degrees since it picks it uj
-## Prove degree 2 relationshpi to alice's phrase as bob 
-mv bob.key grapevine.key
-grapevine phrase sync
-printf "\n"
-mv grapevine.key bob.key
+# ## Prove degree 2 relationship to alice's phrase as bob
+# grapevine proof prove-available
+# mv grapevine.key bob.key
 
-# ## Prove degree 3 relationship to allice's phrase as charlie through bob
-mv charlie.key grapevine.key
-grapevine phrase sync
-printf "\n"
-mv grapevine.key charlie.key
+# ## Prove degree 3 relationship to alice's phrase as charlie through bob
 
-## Prove degree 4 relationship to alice's phrase as the_user through charlie
-mv the_user.key grapevine.key
-grapevine phrase sync
-## Get all proofs as the user (show degree 4)
-printf "\n"
-grapevine phrase degrees
-printf "\n"
-mv grapevine.key the_user.key
+# mv charlie.key grapevine.key
+# grapevine proof prove-available
+# mv grapevine.key charlie.key
 
-## Make connection to bob
-mv bob.key grapevine.key
-grapevine relationship add the_user
-printf "\n"
-mv grapevine.key bob.key
-mv the_user.key grapevine.key
-grapevine relationship add bob
-printf "\n"
-
-## Prove degree 3 relationship to alice's phrase as the_user through bob
-grapevine phrase sync
-printf "\n"
-## Get all proofs as the user (show degree 3 and old proof removed)
-grapevine phrase degrees
-printf "\n"
-mv grapevine.key the_user.key
-
-
-## Make connection to alice
-mv alice.key grapevine.key
-grapevine relationship add the_user
-printf "\n"
-mv grapevine.key alice.key
-mv the_user.key grapevine.key
-grapevine relationship add alice
-printf "\n"
-
-## Prove degree 2 relationship to alice
-grapevine phrase sync
-printf "\n"
-## Get all proofs as the user (show degree 3 and old proof removed)
-grapevine phrase degrees
-printf "\n"
-mv grapevine.key the_user.key
+# ## Prove degree 4 relationship to alice's phrase as the_user through charlie
+# mv the_user.key grapevine.key
+# grapevine proof prove-available
+# mv grapevine.key the_user.key
 
 ## CLEANUP
 # rm alice.key bob.key
