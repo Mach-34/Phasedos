@@ -70,18 +70,18 @@ grapevine relationship add alice
 printf "\n"
 
 ## Prove degree 2 relationship to alice's phrase as bob
-grapevine proof prove-available
+grapevine proof sync
 mv grapevine.key bob.key
 
 ## Prove degree 3 relationship to alice's phrase as charlie through bob
 
 mv charlie.key grapevine.key
-grapevine proof prove-available
+grapevine proof sync
 mv grapevine.key charlie.key
 
 ## Prove degree 4 relationship to alice's phrase as the_user through charlie
 mv the_user.key grapevine.key
-grapevine proof prove-available
+grapevine proof sync
 mv grapevine.key the_user.key
 
 ## Make connection from the_user to bob
@@ -90,7 +90,7 @@ grapevine relationship add the_user
 mv grapevine.key bob.key
 mv the_user.key grapevine.key
 grapevine relationship add bob
-grapevine proof prove-available
+grapevine proof sync
 mv grapevine.key the_user.key
 
 ## Make connection from the_user to alice
@@ -99,7 +99,7 @@ grapevine relationship add the_user
 mv grapevine.key alice.key
 mv the_user.key grapevine.key
 grapevine relationship add alice
-grapevine proof prove-available
+grapevine proof sync
 mv grapevine.key the_user.key
 
 ## CLEANUP

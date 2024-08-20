@@ -91,9 +91,9 @@ enum ProofCommands {
     #[command(verbatim_doc_comment)]
     List,
     /// Prove all available degrees
-    /// usage: `grapevine proof prove-available
+    /// usage: `grapevine proof sync
     #[command(verbatim_doc_comment)]
-    ProveAvailable,
+    Sync,
     /// Get your degree proof for a given scope
     /// usage: `grapevine proof scope <username>
     #[command(verbatim_doc_comment)]
@@ -118,7 +118,7 @@ pub async fn main() {
         Commands::Proof(cmd) => match cmd {
             ProofCommands::Available => controllers::get_available_proofs().await,
             ProofCommands::List => controllers::get_my_proofs().await,
-            ProofCommands::ProveAvailable => controllers::prove_all_available().await,
+            ProofCommands::Sync => controllers::prove_all_available().await,
             ProofCommands::Scope { username } => {
                 controllers::get_proof_metadata_by_scope(username).await
             }
