@@ -648,7 +648,7 @@ impl GrapevineDB {
        - # of second degree connections
        - # of phrases created
     */
-    pub async fn get_account_details(&self, user: &ObjectId) -> Option<(u32, u32)> {
+    pub async fn get_account_details(&self, user: &String) -> Option<(u32, u32)> {
         let mut cursor = self
             .users
             .aggregate(pipelines::count_degrees(user), None)
