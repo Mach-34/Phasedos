@@ -1,6 +1,7 @@
 use crate::tests::helpers::{generate_nonce_signature, GrapevineTestContext};
 use grapevine_common::{
     account::GrapevineAccount,
+    errors::GrapevineError,
     http::{
         requests::{
             CreateUserRequest, DegreeProofRequest, EmitNullifierRequest, NewRelationshipRequest,
@@ -25,7 +26,7 @@ use rocket::http::Header;
 pub async fn http_create_user(
     context: &GrapevineTestContext,
     payload: &CreateUserRequest,
-) -> (u16, String) {
+) -> (u16, Result<String, GrapevineError>) {
     // serialze the payload
     let serialized = bincode::serialize(&payload).unwrap();
     // mock transmit the request
@@ -35,9 +36,16 @@ pub async fn http_create_user(
         .body(serialized)
         .dispatch()
         .await;
+
     let code = res.status().code;
-    let message = res.into_string().await.unwrap();
-    (code, message)
+
+    if code >= 300 {
+        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
+        (code, Err(error_msg))
+    } else {
+        let message = res.into_string().await.unwrap();
+        (code, Ok(message))
+    }
 }
 
 /**
@@ -52,7 +60,7 @@ pub async fn http_add_relationship(
     context: &GrapevineTestContext,
     from: &mut GrapevineAccount,
     payload: &NewRelationshipRequest,
-) -> (u16, String) {
+) -> (u16, Result<String, GrapevineError>) {
     // serialize the payload
     let serialized = bincode::serialize(&payload).unwrap();
 
@@ -69,10 +77,86 @@ pub async fn http_add_relationship(
         .dispatch()
         .await;
     let code = res.status().code;
-    let message = res.into_string().await.unwrap();
     // Increment nonce after request
     let _ = from.increment_nonce(None);
-    (code, message)
+
+    if code >= 300 {
+        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
+        (code, Err(error_msg))
+    } else {
+        let msg = res.into_string().await.unwrap();
+        (code, Ok(msg))
+    }
+}
+
+/**
+ * Mock http request to get a list of pending relationships for a user
+ *
+ * @param context - the mocked rocket http server context
+ * @param user - the account for witch pending relationships are fetched
+ * @return - (http status code, returned message)
+ */
+pub async fn http_get_pending_relationships(
+    context: &GrapevineTestContext,
+    user: &mut GrapevineAccount,
+) -> Result<Vec<String>, GrapevineError> {
+    let username = user.username().clone();
+    let signature = generate_nonce_signature(user);
+
+    let res = context
+        .client
+        .get("/user/relationship/pending")
+        .header(Header::new("X-Authorization", signature))
+        .header(Header::new("X-Username", username))
+        .dispatch()
+        .await;
+
+    let code = res.status().code;
+    let _ = user.increment_nonce(None);
+
+    if code >= 300 {
+        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
+        Err(error_msg)
+    } else {
+        let pending_reqs = res.into_json::<Vec<String>>().await.unwrap();
+        Ok(pending_reqs)
+    }
+}
+
+/**
+ * Mock http request to reject a pending relationship
+ *
+ * @param context - the mocked rocket http server context
+ * @param user - the account to which a relationship creation request has been sent
+ * @param from - the account sending the relationship creation request
+ * @return - (http status code, returned message)
+ */
+pub async fn http_reject_relationship(
+    context: &GrapevineTestContext,
+    user: &mut GrapevineAccount,
+    from: &str,
+) -> Result<(), GrapevineError> {
+    let username = user.username().clone();
+    let signature = generate_nonce_signature(user);
+
+    // mock transmit the request
+    let res = context
+        .client
+        .post(format!("/user/relationship/reject/{}", from))
+        .header(Header::new("X-Authorization", signature))
+        .header(Header::new("X-Username", username))
+        .dispatch()
+        .await;
+
+    let code = res.status().code;
+    let _ = user.increment_nonce(None);
+
+    if code >= 300 {
+        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
+        Err(error_msg)
+    } else {
+        Ok(())
+    }
 }
 
 /**

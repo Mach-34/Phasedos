@@ -155,8 +155,8 @@ mod auth_guard_tests {
         let signature = generate_nonce_signature(&user);
 
         // create user
-        let request = build_create_user_request(&user);
-        http_create_user(&context, &request).await;
+        let payload = build_create_user_request(&user);
+        http_create_user(&context, &payload).await;
 
         let url = "/user/details";
         let res = context
