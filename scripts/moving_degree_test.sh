@@ -64,25 +64,43 @@ printf "\n"
 ## create degree 1 proof (phrase proof)
 printf "\n"
 mv grapevine.key alice.key
-# ## accept relationship request from alice to bob
-# mv bob.key grapevine.key
-# grapevine relationship add alice
-# printf "\n"
+## accept relationship request from alice to bob
+mv bob.key grapevine.key
+grapevine relationship add alice
+printf "\n"
 
-# ## Prove degree 2 relationship to alice's phrase as bob
-# grapevine proof prove-available
-# mv grapevine.key bob.key
+## Prove degree 2 relationship to alice's phrase as bob
+grapevine proof prove-available
+mv grapevine.key bob.key
 
-# ## Prove degree 3 relationship to alice's phrase as charlie through bob
+## Prove degree 3 relationship to alice's phrase as charlie through bob
 
-# mv charlie.key grapevine.key
-# grapevine proof prove-available
-# mv grapevine.key charlie.key
+mv charlie.key grapevine.key
+grapevine proof prove-available
+mv grapevine.key charlie.key
 
-# ## Prove degree 4 relationship to alice's phrase as the_user through charlie
-# mv the_user.key grapevine.key
-# grapevine proof prove-available
-# mv grapevine.key the_user.key
+## Prove degree 4 relationship to alice's phrase as the_user through charlie
+mv the_user.key grapevine.key
+grapevine proof prove-available
+mv grapevine.key the_user.key
+
+## Make connection from the_user to bob
+mv bob.key grapevine.key
+grapevine relationship add the_user
+mv grapevine.key bob.key
+mv the_user.key grapevine.key
+grapevine relationship add bob
+grapevine proof prove-available
+mv grapevine.key the_user.key
+
+## Make connection from the_user to alice
+mv alice.key grapevine.key
+grapevine relationship add the_user
+mv grapevine.key alice.key
+mv the_user.key grapevine.key
+grapevine relationship add alice
+grapevine proof prove-available
+mv grapevine.key the_user.key
 
 ## CLEANUP
 # rm alice.key bob.key

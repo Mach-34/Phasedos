@@ -257,9 +257,8 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
             Err(e) => return Err(e),
         };
 
-        println!("Scope: {}", available_proof.scope);
+        println!("==============[{} (Degree {})==============", available_proof.scope, available_proof.degree + 1);
         println!("Relation: {}", available_proof.relation);
-        println!("Degree being proved: {}", available_proof.degree + 1);
         println!("Proving...");
 
         // prepare inputs
@@ -328,7 +327,7 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
         );
     }
     Ok(format!(
-        "Success: proved {} new degree proof{}",
+        "\nSuccess: proved {} new degree proof{}",
         proof_count,
         if proof_count == 1 { "" } else { "s" }
     ))
