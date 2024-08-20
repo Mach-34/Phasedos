@@ -15,6 +15,31 @@ if [ -f grapevine.key ]; then
   mv grapevine.key real.key
 fi
 
+## Check if artifacts match
+WASM_SHASUM="802c3bab4e326d1f2f9fd4285ea8cd67d3ba0a335a9a9ac3369402d693bf9635"
+R1CS_SHASUM="faf8ad304e7edff59d1fd2f200501efbdfbf198f394c339636730c30e02f01ac"
+PARAMS_SHASUM="797b5ebb6d2165cbe0d1923c9452a5442f93e91e33b84937a8753d69b9c99d9f"
+check_shasum() {
+    local expected_shasum="$1"
+    local filepath="$2"
+
+    # Check if the file exists
+    if [ -f "$filepath" ]; then
+        # Calculate the sha256sum of the file
+        local file_shasum=$(sha256sum "$filepath" | awk '{ print $1 }')
+
+        # Check if the calculated shasum matches the expected one
+        if [ "$file_shasum" != "$expected_shasum" ]; then
+            # If it does not match, delete the file
+            rm "$filepath"
+        fi
+    fi
+}
+
+check_shasum "$WASM_SHASUM" "grapevine.wasm"
+check_shasum "$R1CS_SHASUM" "grapevine.r1cs"
+check_shasum "$PARAMS_SHASUM" "public_params.json"
+
 ### 1.
 ### alice <---- bob <---- charlie <---- the_user
 ### 

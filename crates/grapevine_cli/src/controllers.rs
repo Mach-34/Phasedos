@@ -43,12 +43,11 @@ pub async fn account_details() -> Result<String, GrapevineError> {
         Ok(_) => {
             let details = res.unwrap();
             Ok(format!(
-                "Username: {}\nPublic key: 0x{}\n# 1st degree connections: {}\n# 2nd degree connections: {}\n# phrases created: {}",
+                "Username: {}\nPublic key: 0x{}\n# 1st degree connections: {}\n# 2nd degree connections: {}\n",
                 account.username(),
                 pubkey,
+                details.0,
                 details.1,
-                details.2,
-                details.0
             ))
         }
         Err(e) => Err(e),
@@ -245,8 +244,6 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
         proof_count,
         if proof_count == 1 { "" } else { "s" }
     );
-
-    // TODO: FIX ONCE PROVING IS TESTED //
 
     for i in 0..proof_count {
         let available_proof = proofs[i].clone();

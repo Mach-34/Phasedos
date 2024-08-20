@@ -648,22 +648,20 @@ impl GrapevineDB {
        - # of second degree connections
        - # of phrases created
     */
-    pub async fn get_account_details(&self, user: &ObjectId) -> Option<(u64, u64, u64)> {
+    pub async fn get_account_details(&self, user: &ObjectId) -> Option<(u32, u32)> {
         let mut cursor = self
             .users
-            .aggregate(pipelines::get_account_details(user), None)
+            .aggregate(pipelines::count_degrees(user), None)
             .await
             .unwrap();
 
         match cursor.next().await.unwrap() {
             Ok(stats) => {
-                let phrase_count = stats.get_i32("phrase_count").unwrap();
-                let first_degree_connections = stats.get_i32("first_degree_connections").unwrap();
-                let second_degree_connections = stats.get_i32("second_degree_connections").unwrap();
+                let first_degree_count = stats.get_i32("first_degrees").unwrap();
+                let second_degree_count = stats.get_i32("second_degrees").unwrap();
                 return Some((
-                    phrase_count as u64,
-                    first_degree_connections as u64,
-                    second_degree_connections as u64,
+                    first_degree_count as u32,
+                    second_degree_count as u32,
                 ));
             }
             Err(e) => {
