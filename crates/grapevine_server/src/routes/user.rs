@@ -437,16 +437,8 @@ pub async fn get_pubkey(
 pub async fn get_account_details(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
-) -> Result<Json<(u64, u64, u64)>, GrapevineResponse> {
-    let recipient = match db.get_user(&user.0).await {
-        Some(user) => user,
-        None => {
-            return Err(GrapevineResponse::NotFound(String::from(
-                "Recipient does not exist.".to_string(),
-            )));
-        }
-    };
-    match db.get_account_details(&recipient.id.unwrap()).await {
+) -> Result<Json<(u32, u32)>, GrapevineResponse> {
+    match db.get_account_details(&user.0).await {
         Some(details) => Ok(Json(details)),
         None => Err(GrapevineResponse::InternalError(ErrorMessage(
             Some(GrapevineError::MongoError(String::from(

@@ -166,7 +166,7 @@ pub async fn add_relationship_req(
 
 pub async fn get_account_details_req(
     account: &mut GrapevineAccount,
-) -> Result<(u64, u64, u64), GrapevineError> {
+) -> Result<(u32, u32), GrapevineError> {
     let url = format!("{}/user/details", &**SERVER_URL);
     // produce signature over current nonce
     let signature = hex::encode(account.sign_nonce().compress());
@@ -184,7 +184,7 @@ pub async fn get_account_details_req(
             account
                 .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
                 .unwrap();
-            let details = res.json::<(u64, u64, u64)>().await.unwrap();
+            let details = res.json::<(u32, u32)>().await.unwrap();
             Ok(details)
         }
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
