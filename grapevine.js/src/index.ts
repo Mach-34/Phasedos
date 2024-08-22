@@ -8,7 +8,7 @@ let key = "cb9d33e3fbb84808e164cc75fced9380edb92e5c0c72cc9951def29c469fd3d8"
  * @param value 
  */
 let convertValue = (value: Uint8Array, F: any): Buffer => {
-    const hexBE = F.toObject(value).toString(16);
+    const hexBE = F.toObject(value).toString(16).padStart(64, "0");
     let buf = Buffer.from(hexBE, 'hex');
     return buf.reverse()
 }
