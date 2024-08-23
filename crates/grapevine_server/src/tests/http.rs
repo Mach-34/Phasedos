@@ -135,7 +135,7 @@ pub async fn http_reject_relationship(
     context: &GrapevineTestContext,
     user: &mut GrapevineAccount,
     from: &str,
-) -> Result<(), GrapevineError> {
+) -> Result<(), String> {
     let username = user.username().clone();
     let signature = generate_nonce_signature(user);
 
@@ -152,7 +152,7 @@ pub async fn http_reject_relationship(
     let _ = user.increment_nonce(None);
 
     if code >= 300 {
-        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
+        let error_msg = res.into_string().await.unwrap();
         Err(error_msg)
     } else {
         Ok(())

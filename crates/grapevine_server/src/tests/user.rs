@@ -3,13 +3,14 @@ use crate::tests::{
     helpers::{build_create_user_request, GrapevineTestContext},
     http::{
         http_add_relationship, http_create_user, http_emit_nullifier, http_get_nullifier_secret,
+        http_get_pending_relationships,
     },
 };
 use grapevine_common::{
     account::GrapevineAccount,
     compat::{convert_ff_ce_to_ff, ff_ce_to_le_bytes},
 };
-use rocket::http::Status;
+use rocket::http::{Header, Status};
 
 #[cfg(test)]
 mod user_creation_tests {
@@ -214,12 +215,18 @@ mod user_creation_tests {
 }
 
 #[cfg(test)]
-mod relationship_tests {
+mod relationship_creation_tests {
     use grapevine_common::errors::GrapevineError;
 
-    use crate::tests::http::{http_get_pending_relationships, http_reject_relationship};
+    use crate::tests::helpers::generate_nonce_signature;
 
     use super::*;
+
+    #[ignore]
+    #[rocket::async_test]
+    pub async fn test_relationship_bodysize_exceeded() {
+        todo!("Unimplimented");
+    }
 
     #[rocket::async_test]
     pub async fn test_relationship_creation_invalid_req_body() {
@@ -228,17 +235,25 @@ mod relationship_tests {
         // Create a request where proof creator is different from asserted pubkey
         let mut user_a = GrapevineAccount::new("user_a".into());
 
-        let mut user_b = GrapevineAccount::new("user_b".into());
-
         let user_request_a = build_create_user_request(&user_a);
-        let user_request_b = build_create_user_request(&user_b);
         _ = http_create_user(&context, &user_request_a).await;
-        _ = http_create_user(&context, &user_request_b).await;
 
-        // add relationship as user_a to user_b
-        let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+        let username = user_a.username().clone();
+        let signature = generate_nonce_signature(&user_a);
 
-        _ = http_add_relationship(&context, &mut user_a, &request).await;
+        let res = context
+            .client
+            .post("/user/relationship/add")
+            .header(Header::new("X-Authorization", signature))
+            .header(Header::new("X-Username", username))
+            .body(vec![])
+            .dispatch()
+            .await;
+
+        assert_eq!(res.status().code, 400);
+        let msg = res.into_json::<GrapevineError>().await.unwrap();
+        let expected = GrapevineError::SerdeError(String::from("NewRelationshipRequest"));
+        assert_eq!(expected.to_string(), msg.to_string());
     }
 
     #[rocket::async_test]
@@ -292,6 +307,45 @@ mod relationship_tests {
         );
     }
 
+    #[ignore]
+    #[rocket::async_test]
+    pub async fn test_cannot_request_already_active_relationship() {
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let mut user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        // add relationship as user_a to user_b
+        let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &request).await;
+
+        // accept relation from user_a as user_b
+        let request = user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+        _ = http_add_relationship(&context, &mut user_b, &request).await;
+
+        // attempt to add relationship between user_a and user_b again
+        let duplicate_request =
+            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+        let res = http_add_relationship(&context, &mut user_a, &duplicate_request).await;
+        println!("Res: {:?}", res);
+    }
+}
+
+#[cfg(test)]
+mod relationship_rejection_tests {
+
+    use crate::tests::http::http_reject_relationship;
+
+    use super::*;
+
     #[rocket::async_test]
     pub async fn test_reject_relationship() {
         let context = GrapevineTestContext::init().await;
@@ -326,37 +380,6 @@ mod relationship_tests {
 
     #[ignore]
     #[rocket::async_test]
-    pub async fn test_cannot_request_already_active_relationship() {
-        let context = GrapevineTestContext::init().await;
-        GrapevineDB::drop("grapevine_mocked").await;
-        // Create a request where proof creator is different from asserted pubkey
-        let mut user_a = GrapevineAccount::new("user_a".into());
-
-        let mut user_b = GrapevineAccount::new("user_b".into());
-
-        let user_request_a = build_create_user_request(&user_a);
-        let user_request_b = build_create_user_request(&user_b);
-        _ = http_create_user(&context, &user_request_a).await;
-        _ = http_create_user(&context, &user_request_b).await;
-
-        // add relationship as user_a to user_b
-        let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
-
-        _ = http_add_relationship(&context, &mut user_a, &request).await;
-
-        // accept relation from user_a as user_b
-        let request = user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
-        _ = http_add_relationship(&context, &mut user_b, &request).await;
-
-        // attempt to add relationship between user_a and user_b again
-        let duplicate_request =
-            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
-        let res = http_add_relationship(&context, &mut user_a, &duplicate_request).await;
-        println!("Res: {:?}", res);
-    }
-
-    #[ignore]
-    #[rocket::async_test]
     pub async fn test_cannot_reject_nonexistent_relationship() {
         let context = GrapevineTestContext::init().await;
         GrapevineDB::drop("grapevine_mocked").await;
@@ -371,7 +394,7 @@ mod relationship_tests {
         _ = http_create_user(&context, &user_request_b).await;
 
         // attempt to reject a relationship with User A as User B
-        let reject_res = http_reject_relationship(&context, &mut user_b, user_a.username()).await;
+        let reject_res = http_reject_relationship(&context, &mut user_b, "fakeusername").await;
         println!("Reject res: {:?}", reject_res);
     }
 
@@ -384,9 +407,15 @@ mod relationship_tests {
 
     #[ignore]
     #[rocket::async_test]
-    pub async fn test_cannot_act_nullified_relationship() {
+    pub async fn test_cannot_reject_nullified_relationship() {
         todo!("Unimplemented")
     }
+}
+
+#[cfg(test)]
+mod relationship_nullification_test {
+
+    use super::*;
 
     #[ignore]
     #[rocket::async_test]
