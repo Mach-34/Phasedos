@@ -16,6 +16,7 @@ fi
 ## clean up previous keyfiles if they exist
 rm user_a.key user_b.key
 
+# CHECK RELATIONSHIP ADDING/ REJECTION
 ## create first test user
 grapevine account register user_a
 mv grapevine.key user_a.key
@@ -61,12 +62,42 @@ mv grapevine.key user_a.key
 mv user_b.key grapevine.key
 echo "Switched from User A to User B!"
 grapevine relationship list
+mv grapevine.key user_b.key
+# CHECK RELATIONSHIP NULLIFICATIION
 
-## nullify relationship with User A
+## create proofs with User A and B
+mv user_a.key grapevine.key
+grapevine proof sync
+mv grapevine.key user_a.key
+mv user_b.key grapevine.key
+grapevine proof sync
+mv grapevine.key user_b.key
 
+# ## create user c with relationship with Bob
+grapevine account register user_c
+grapevine relationship add user_b
+mv grapevine.key user_c.key
+mv user_b.key grapevine.key
+grapevine relationship add user_c
+mv grapevine.key user_b.key
+
+## Check that user c has available proof to build with alice as degree 1
+mv user_c.key grapevine.key
+grapevine proof available
+mv grapevine.key user_c.key
+
+## User a nullifies relationship from user b
+mv user_a.key grapevine.key
+grapevine relationship remove user_b
+mv grapevine.key user_a.key
+
+## Check that user c does not have available proof to build with alice as degree 1
+mv user_c.key grapevine.key
+grapevine proof available
+mv grapevine.key user_c.key
 
 ## CLEANUP
-# rm alice.key bob.key
-# if [ -f real.key ]; then
-#   mv real.key grapevine.key
-# fi
+rm ~/.grapevine/user_a.key ~/.grapevine/user_b.key ~/.grapevine/user_c.key
+if [ -f real.key ]; then
+  mv real.key grapevine.key
+fi

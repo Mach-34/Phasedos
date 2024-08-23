@@ -15,6 +15,31 @@ if [ -f grapevine.key ]; then
   mv grapevine.key real.key
 fi
 
+## Check if artifacts match
+WASM_SHASUM="802c3bab4e326d1f2f9fd4285ea8cd67d3ba0a335a9a9ac3369402d693bf9635"
+R1CS_SHASUM="faf8ad304e7edff59d1fd2f200501efbdfbf198f394c339636730c30e02f01ac"
+PARAMS_SHASUM="797b5ebb6d2165cbe0d1923c9452a5442f93e91e33b84937a8753d69b9c99d9f"
+check_shasum() {
+    local expected_shasum="$1"
+    local filepath="$2"
+
+    # Check if the file exists
+    if [ -f "$filepath" ]; then
+        # Calculate the sha256sum of the file
+        local file_shasum=$(sha256sum "$filepath" | awk '{ print $1 }')
+
+        # Check if the calculated shasum matches the expected one
+        if [ "$file_shasum" != "$expected_shasum" ]; then
+            # If it does not match, delete the file
+            rm "$filepath"
+        fi
+    fi
+}
+
+check_shasum "$WASM_SHASUM" "grapevine.wasm"
+check_shasum "$R1CS_SHASUM" "grapevine.r1cs"
+check_shasum "$PARAMS_SHASUM" "public_params.json"
+
 ### 1.
 ### alice <---- bob <---- charlie <---- the_user
 ### 
@@ -62,70 +87,44 @@ grapevine account register alice
 grapevine relationship add bob
 printf "\n"
 ## create degree 1 proof (phrase proof)
-grapevine phrase prove "It was cryptography all along" "The very first phrase of the word!"
 printf "\n"
 mv grapevine.key alice.key
 ## accept relationship request from alice to bob
 mv bob.key grapevine.key
 grapevine relationship add alice
 printf "\n"
+
+## Prove degree 2 relationship to alice's phrase as bob
+grapevine proof sync
 mv grapevine.key bob.key
 
-## Note: though you can prove a single proof, there is not an easy way to get the necessary object ID to target a specific proof. so just use prove-new-degrees since it picks it uj
-## Prove degree 2 relationshpi to alice's phrase as bob 
-mv bob.key grapevine.key
-grapevine phrase sync
-printf "\n"
-mv grapevine.key bob.key
+## Prove degree 3 relationship to alice's phrase as charlie through bob
 
-# ## Prove degree 3 relationship to allice's phrase as charlie through bob
 mv charlie.key grapevine.key
-grapevine phrase sync
-printf "\n"
+grapevine proof sync
 mv grapevine.key charlie.key
 
 ## Prove degree 4 relationship to alice's phrase as the_user through charlie
 mv the_user.key grapevine.key
-grapevine phrase sync
-## Get all proofs as the user (show degree 4)
-printf "\n"
-grapevine phrase degrees
-printf "\n"
+grapevine proof sync
 mv grapevine.key the_user.key
 
-## Make connection to bob
+## Make connection from the_user to bob
 mv bob.key grapevine.key
 grapevine relationship add the_user
-printf "\n"
 mv grapevine.key bob.key
 mv the_user.key grapevine.key
 grapevine relationship add bob
-printf "\n"
-
-## Prove degree 3 relationship to alice's phrase as the_user through bob
-grapevine phrase sync
-printf "\n"
-## Get all proofs as the user (show degree 3 and old proof removed)
-grapevine phrase degrees
-printf "\n"
+grapevine proof sync
 mv grapevine.key the_user.key
 
-
-## Make connection to alice
+## Make connection from the_user to alice
 mv alice.key grapevine.key
 grapevine relationship add the_user
-printf "\n"
 mv grapevine.key alice.key
 mv the_user.key grapevine.key
 grapevine relationship add alice
-printf "\n"
-
-## Prove degree 2 relationship to alice
-grapevine phrase sync
-printf "\n"
-## Get all proofs as the user (show degree 3 and old proof removed)
-grapevine phrase degrees
-printf "\n"
+grapevine proof sync
 mv grapevine.key the_user.key
 
 ## CLEANUP
