@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 mod controllers;
 mod http;
+mod test;
 mod utils;
 
 ///    ______                           _
