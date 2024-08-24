@@ -135,7 +135,7 @@ pub async fn http_reject_relationship(
     context: &GrapevineTestContext,
     user: &mut GrapevineAccount,
     from: &str,
-) -> Result<(), String> {
+) -> (u16, Result<(), String>) {
     let username = user.username().clone();
     let signature = generate_nonce_signature(user);
 
@@ -153,9 +153,9 @@ pub async fn http_reject_relationship(
 
     if code >= 300 {
         let error_msg = res.into_string().await.unwrap();
-        Err(error_msg)
+        (code, Err(error_msg))
     } else {
-        Ok(())
+        (code, Ok(()))
     }
 }
 
@@ -173,7 +173,7 @@ pub async fn http_emit_nullifier(
     nullifier_secret: [u8; 32],
     sender: &mut GrapevineAccount,
     recipient: &String,
-) -> u16 {
+) -> (u16, Result<(), String>) {
     let username = sender.username().clone();
     let signature = generate_nonce_signature(sender);
 
@@ -195,8 +195,14 @@ pub async fn http_emit_nullifier(
 
     // Increment nonce after request
     let _ = sender.increment_nonce(None);
+    let code = res.status().code;
 
-    res.status().code
+    if code >= 300 {
+        let error_msg = res.into_string().await.unwrap();
+        (code, Err(error_msg))
+    } else {
+        (code, Ok(()))
+    }
 }
 
 pub async fn http_get_available_proofs(

@@ -225,7 +225,16 @@ pub async fn emit_nullifier(
         .nullify_relationship(&nullifier_bytes, &user.0, &request.recipient)
         .await
     {
-        return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e))));
+        return match e {
+            GrapevineError::NoRelationship(from, to) => Err(GrapevineResponse::NotFound(format!(
+                "No active relationship exists from {} to {}",
+                from, to
+            ))),
+            GrapevineError::RelationshipNullified => {
+                Err(GrapevineResponse::Conflict(ErrorMessage(Some(e))))
+            }
+            _ => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
+        };
     };
 
     // delete all proofs that contain the given nullifier

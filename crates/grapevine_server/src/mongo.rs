@@ -346,12 +346,33 @@ impl GrapevineDB {
         recipient: &String,
     ) -> Result<(), GrapevineError> {
         // setup aggregation pipeline for finding the
-        let pipeline = pipelines::get_relationship(&sender, &recipient, false);
+        let pipeline = pipelines::get_relationship(&sender, &recipient, true);
         // get oid for relationship
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
+                    // ensure relationship isn't pending
+                    let is_pending = !document.get("active").unwrap().as_bool().unwrap();
+                    if is_pending {
+                        // TODO: make custom error type
+                        return Err(GrapevineError::NoRelationship(
+                            sender.to_string(),
+                            recipient.to_string(),
+                        ));
+                    }
+
+                    // ensure relation isn't already nullified
+                    let is_nullified = !document
+                        .get("emitted_nullifier")
+                        .unwrap()
+                        .as_null()
+                        .is_some();
+
+                    if is_nullified {
+                        return Err(GrapevineError::RelationshipNullified);
+                    }
+
                     // update relationship document by adding emitted nullifier
                     let query = doc! {"_id": document.get("_id").unwrap() };
                     let update =
@@ -364,9 +385,9 @@ impl GrapevineDB {
                 Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
             }
         } else {
-            // TODO: Create relationship not found type
-            Err(GrapevineError::MongoError(
-                "Relationship not found".to_string(),
+            Err(GrapevineError::NoRelationship(
+                sender.to_string(),
+                recipient.to_string(),
             ))
         }
     }
@@ -659,10 +680,7 @@ impl GrapevineDB {
             Ok(stats) => {
                 let first_degree_count = stats.get_i32("first_degrees").unwrap();
                 let second_degree_count = stats.get_i32("second_degrees").unwrap();
-                return Some((
-                    first_degree_count as u32,
-                    second_degree_count as u32,
-                ));
+                return Some((first_degree_count as u32, second_degree_count as u32));
             }
             Err(e) => {
                 println!("Error: {:?}", e);

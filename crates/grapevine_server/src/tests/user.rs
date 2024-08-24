@@ -228,6 +228,12 @@ mod relationship_creation_tests {
         todo!("Unimplimented");
     }
 
+    #[ignore]
+    #[rocket::async_test]
+    pub async fn test_relationship_on_nonexistent_user() {
+        todo!("Unimplemented");
+    }
+
     #[rocket::async_test]
     pub async fn test_relationship_creation_invalid_req_body() {
         let context = GrapevineTestContext::init().await;
@@ -254,6 +260,25 @@ mod relationship_creation_tests {
         let msg = res.into_json::<GrapevineError>().await.unwrap();
         let expected = GrapevineError::SerdeError(String::from("NewRelationshipRequest"));
         assert_eq!(expected.to_string(), msg.to_string());
+    }
+
+    #[rocket::async_test]
+    pub async fn test_no_relationship_with_self() {
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let user_request = build_create_user_request(&user_a);
+        _ = http_create_user(&context, &user_request).await;
+        let request = user_a.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+        let res = http_add_relationship(&context, &mut user_a, &request).await;
+        assert_eq!(res.0, 400);
+        assert_eq!(
+            GrapevineError::RelationshipSenderIsTarget.to_string(),
+            res.1.unwrap_err().to_string()
+        );
     }
 
     #[rocket::async_test]
@@ -286,25 +311,6 @@ mod relationship_creation_tests {
         let expected_secret = user_b.decrypt_nullifier_secret(expected_nullifier_secret_ciphertext);
         let empirical_secret = user_b.decrypt_nullifier_secret(nullifier_secret_ciphertext);
         assert_eq!(expected_secret, empirical_secret);
-    }
-
-    #[rocket::async_test]
-    pub async fn test_no_relationship_with_self() {
-        let context = GrapevineTestContext::init().await;
-        GrapevineDB::drop("grapevine_mocked").await;
-        // Create a request where proof creator is different from asserted pubkey
-        let mut user_a = GrapevineAccount::new("user_a".into());
-
-        let user_request = build_create_user_request(&user_a);
-        _ = http_create_user(&context, &user_request).await;
-        let request = user_a.new_relationship_request(user_a.username(), &user_a.pubkey());
-
-        let res = http_add_relationship(&context, &mut user_a, &request).await;
-        assert_eq!(res.0, 400);
-        assert_eq!(
-            GrapevineError::RelationshipSenderIsTarget.to_string(),
-            res.1.unwrap_err().to_string()
-        );
     }
 
     #[ignore]
@@ -371,16 +377,35 @@ mod relationship_rejection_tests {
 
         // reject User A's request as User B
         let reject_res = http_reject_relationship(&context, &mut user_b, user_a.username()).await;
-        assert!(reject_res.is_ok());
+        assert!(reject_res.1.is_ok());
 
         // list pending User B
         let pending_res_after = http_get_pending_relationships(&context, &mut user_b).await;
         assert_eq!(pending_res_after.unwrap().len(), 0);
     }
 
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_cannot_reject_nonexistent_relationship() {
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let user_a = GrapevineAccount::new("user_a".into());
+        let mut user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        // attempt to reject a relationship with user_a as user_b
+        let expected = "No pending relationship exists from fakeusername to user_b";
+        let (code, msg) = http_reject_relationship(&context, &mut user_b, "fakeusername").await;
+        assert_eq!(code, 404);
+        assert_eq!(expected, msg.unwrap_err());
+    }
+
+    #[rocket::async_test]
+    pub async fn test_cannot_reject_active_relationship() {
         let context = GrapevineTestContext::init().await;
         GrapevineDB::drop("grapevine_mocked").await;
         // Create a request where proof creator is different from asserted pubkey
@@ -393,22 +418,65 @@ mod relationship_rejection_tests {
         _ = http_create_user(&context, &user_request_a).await;
         _ = http_create_user(&context, &user_request_b).await;
 
-        // attempt to reject a relationship with User A as User B
-        let reject_res = http_reject_relationship(&context, &mut user_b, "fakeusername").await;
-        println!("Reject res: {:?}", reject_res);
+        // add relationship as user_a to user_b
+        let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &request).await;
+
+        let request = user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+        // accept relation from user_a as user_b
+        _ = http_add_relationship(&context, &mut user_b, &request).await;
+
+        // attempt to reject a relationship with user_a as user_b
+        let expected = "No pending relationship exists from fakeusername to user_b";
+        let (code, msg) = http_reject_relationship(&context, &mut user_b, "fakeusername").await;
+        assert_eq!(code, 404);
+        assert_eq!(expected, msg.unwrap_err());
     }
 
-    #[ignore]
-    #[rocket::async_test]
-    pub async fn test_cannot_reject_active_relationship() {
-        // nullifiy, don't reject
-        todo!("Unimplemented")
-    }
-
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_cannot_reject_nullified_relationship() {
-        todo!("Unimplemented")
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let mut user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        // add relationship as user_a to user_b
+        let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &request).await;
+
+        let request = user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+        // accept relation from user_a as user_b
+        _ = http_add_relationship(&context, &mut user_b, &request).await;
+
+        // nullify relationship as user_b with user_a
+        let encrypted_nullifier_secret =
+            http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
+
+        let nullifier_secret = user_b.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+        // emit nullifier as user_b
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_b,
+            user_a.username(),
+        )
+        .await;
+
+        // attempt to reject relatioship as User B
+        let expected = "No pending relationship exists from user_a to user_b";
+        let (code, msg) = http_reject_relationship(&context, &mut user_b, user_a.username()).await;
+        assert_eq!(code, 404);
+        assert_eq!(expected, msg.unwrap_err());
     }
 }
 
@@ -417,7 +485,6 @@ mod relationship_nullification_test {
 
     use super::*;
 
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_nullifier_emission() {
         let context = GrapevineTestContext::init().await;
@@ -429,20 +496,20 @@ mod relationship_nullification_test {
 
         let user_request_a = build_create_user_request(&user_a);
         let user_request_b = build_create_user_request(&user_b);
-        http_create_user(&context, &user_request_a).await;
-        http_create_user(&context, &user_request_b).await;
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
 
         // add relationship as user_a to user_b
         let user_a_relationship_request =
             user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
 
-        http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+        _ = http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
 
         // accept relation from user_a as user_b
         let user_b_relationship_request =
             user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
 
-        http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+        _ = http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
 
         let encrypted_nullifier_secret =
             http_get_nullifier_secret(&context, &mut user_a, user_b.username()).await;
@@ -450,7 +517,7 @@ mod relationship_nullification_test {
         let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
 
         // emit nullifier as user_a
-        let code = http_emit_nullifier(
+        let (code, _) = http_emit_nullifier(
             &context,
             ff_ce_to_le_bytes(&nullifier_secret),
             &mut user_a,
@@ -474,21 +541,128 @@ mod relationship_nullification_test {
         // );
     }
 
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_cannot_nullify_pending_relationship() {
-        todo!("Unimplemented")
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        // add relationship as user_a to user_b
+        let relationship_request =
+            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &relationship_request).await;
+
+        // nullify relationship as user_a with user_b
+        let encrypted_nullifier_secret =
+            http_get_nullifier_secret(&context, &mut user_a, user_b.username()).await;
+
+        let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+        // attempt to nullify pending relationship from user_a to user_b
+        let expected = "No active relationship exists from user_a to user_b";
+        let (code, msg) = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_b.username(),
+        )
+        .await;
+        assert_eq!(code, 404);
+        assert_eq!(msg.unwrap_err(), expected);
     }
 
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_cannot_nullify_nullified_relationship() {
-        todo!("Unimplemented")
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let mut user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        // add relationship as user_a to user_b
+        let user_a_relationship_request =
+            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+        // accept relation from user_a as user_b
+        let user_b_relationship_request =
+            user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+        // nullify relationship as user_a with user_b
+        let encrypted_nullifier_secret =
+            http_get_nullifier_secret(&context, &mut user_a, user_b.username()).await;
+
+        let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+        // nullify pending relationship from user_a to user_b
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_b.username(),
+        )
+        .await;
+
+        // attempt to nullify nullified relationship
+        let expected = "\"RelationshipNullified\"";
+        let (code, msg) = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_b.username(),
+        )
+        .await;
+        assert_eq!(code, 409);
+        assert_eq!(expected, msg.unwrap_err());
     }
 
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_cannot_nullify_nonexistent_relationship() {
-        todo!("Unimplemented")
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let mut user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        let relationship_request =
+            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        let nullifier_secret =
+            user_a.decrypt_nullifier_secret(relationship_request.nullifier_secret_ciphertext);
+
+        let expected = "No active relationship exists from user_a to user_b";
+        let (code, msg) = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_b.username(),
+        )
+        .await;
+        assert_eq!(code, 404);
+        assert_eq!(msg.unwrap_err(), expected);
     }
 }
