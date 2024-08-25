@@ -146,6 +146,23 @@ pub async fn add_relationship(
 }
 
 /**
+ * Gets a list of relationships where the counterparty has nullified their relationship with you
+ *
+ * @return status:
+ *            * 201 if success
+ */
+#[get("/relationship/nullified")]
+pub async fn get_nullified_relationships(
+    user: AuthenticatedUser,
+    db: &State<GrapevineDB>,
+) -> Result<Json<Vec<String>>, GrapevineResponse> {
+    match db.get_nullified_relationships(&user.0).await {
+        Ok(relationships) => Ok(Json(relationships)),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
+    }
+}
+
+/**
  * Gets the nullfier secret of a given relationship
  *
  * @param recipient - username of the nullifier recipient in relationship

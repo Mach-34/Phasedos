@@ -739,4 +739,30 @@ impl GrapevineDB {
             Ok(false)
         }
     }
+
+    /**
+     * Determines whether any nullifiers for a given proof are emitted in relationships
+     *
+     * @param user - username of the account checking for nullified relationships
+     * @returns - vec of usernames of counterparties that have nullified a relationship with the querying user
+     */
+    pub async fn get_nullified_relationships(
+        &self,
+        user: &String,
+    ) -> Result<Vec<String>, GrapevineError> {
+        let pipeline = pipelines::nullified_relationships(&user);
+        // get the usernames of counterparties that have nullified their relationship with you
+        let mut nullified_relationships: Vec<String> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let username = document.get("username").unwrap().as_str().unwrap();
+                    nullified_relationships.push(String::from(username));
+                }
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+            }
+        }
+        Ok(nullified_relationships)
+    }
 }

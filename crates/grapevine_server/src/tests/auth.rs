@@ -213,7 +213,8 @@ lazy_static! {
         String::from("reject_pending_relationship"),
         String::from("get_pending_relationship"),
         String::from("get_active_relationship"),
-        String::from("get_account_details")
+        String::from("get_account_details"),
+        String::from("get_nullified_relationships")
     ];
 }
 

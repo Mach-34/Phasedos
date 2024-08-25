@@ -499,6 +499,8 @@ mod relationship_rejection_tests {
 #[cfg(test)]
 mod relationship_nullification_test {
 
+    use crate::tests::http::http_get_nullified_relationships;
+
     use super::*;
 
     #[rocket::async_test]
@@ -680,5 +682,109 @@ mod relationship_nullification_test {
         .await;
         assert_eq!(code, 404);
         assert_eq!(msg.unwrap_err(), expected);
+    }
+
+    #[rocket::async_test]
+    pub async fn test_list_relationships_to_nullify() {
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+        let mut user_b = GrapevineAccount::new("user_b".into());
+        let mut user_c = GrapevineAccount::new("user_c".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        let user_request_c = build_create_user_request(&user_c);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+        _ = http_create_user(&context, &user_request_c).await;
+
+        // add relationship as user_a to user_b
+        let user_a_relationship_request =
+            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+        // accept relation from user_a as user_b
+        let user_b_relationship_request =
+            user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+        // add relationship as user_a to user_c
+        let user_a_relationship_request =
+            user_a.new_relationship_request(user_c.username(), &user_c.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+        // accept relation from user_a as user_c
+        let user_c_relationship_request =
+            user_c.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_c, &user_c_relationship_request).await;
+
+        // nullified return should be length 0
+        let nullified = http_get_nullified_relationships(&context, &mut user_a).await;
+        assert_eq!(nullified.len(), 0);
+
+        let encrypted_nullifier_secret =
+            http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
+
+        let nullifier_secret = user_b.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+        // emit nullifier as user_b
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_b,
+            user_a.username(),
+        )
+        .await;
+
+        // list relationships to nullify as User A
+        let nullified = http_get_nullified_relationships(&context, &mut user_a).await;
+        assert_eq!(nullified[0], "user_b");
+
+        // emit nullifier as user_c
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_c,
+            user_a.username(),
+        )
+        .await;
+
+        // list relationships to nullify as User A
+        let nullified = http_get_nullified_relationships(&context, &mut user_a).await;
+        assert_eq!(nullified.len(), 2);
+        assert_eq!(nullified[1], "user_c");
+
+        // emit nullifier as user_a to nullify relationship with user_b
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_b.username(),
+        )
+        .await;
+
+        // list relationships to nullify as User A
+        let nullified = http_get_nullified_relationships(&context, &mut user_a).await;
+        assert_eq!(nullified.len(), 1);
+        assert_eq!(nullified[0], "user_c");
+
+        // emit nullifier as user_a to nullify relationship with user_c
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_c.username(),
+        )
+        .await;
+
+        // list relationships to nullify as User A
+        let nullified = http_get_nullified_relationships(&context, &mut user_a).await;
+        assert_eq!(nullified.len(), 0);
     }
 }

@@ -904,3 +904,80 @@ pub fn degree_proof_dependencies(scope: &ObjectId, relation: &ObjectId) -> Vec<D
         doc! { "$sort": { "degree": -1 }},
     ]
 }
+
+/**
+ * Query for getting a list of nullified relationships
+ *
+ * @param user: The username of the prover
+ * @returns the aggregation pipeline needed to retrieve the data from mongo
+ */
+pub fn nullified_relationships(user: &String) -> Vec<Document> {
+    vec![
+        // 1. Match the user
+        doc! {"$match": { "username": user}},
+        // 2. Lookup relationships where the user is the sender and has not emitted a nullifier
+        doc! {
+            "$lookup": {
+                "from": "relationships",
+                "let": { "userId": "$_id" },
+                "pipeline": [
+                    doc! { "$match": { "$expr": {
+                        "$and": [
+                            { "$eq": ["$sender", "$$userId"] },
+                            { "$eq": ["$emitted_nullifier", null] }
+                        ]
+                    }}},
+                    doc! { "$project": { "recipient": 1, "_id": 0 } }
+                ],
+                "as": "senderRelationships"
+            }
+        },
+        doc! { "$unwind": "$senderRelationships" },
+        doc! {
+            "$project": {
+                "user": "$_id",
+                "recipient": "$senderRelationships.recipient",
+                "_id": 0
+            }
+        },
+        // 3. Check whether nullifier has been emitted in relationship where user is recipient
+        doc! {
+            "$lookup": {
+                "from": "relationships",
+                "let": { "senderId": "$recipient", "recipientId": "$user" },
+                "pipeline": [
+                    doc! { "$match": { "$expr": {
+                        "$and": [
+                            { "$eq": ["$sender", "$$senderId"] },
+                            { "$eq": ["$recipient", "$$recipientId"] },
+                            { "$ne": ["$emitted_nullifier", null] }
+                        ]
+                    }}},
+                    doc! { "$project": { "sender": 1, "_id": 0 } }
+                ],
+                "as": "recipientRelationships"
+            }
+        },
+        doc! { "$unwind": "$recipientRelationships" },
+        doc! {
+            "$project": {
+                "user": "$recipientRelationships.sender",
+            }
+        },
+        // 4. Look up username of user
+        doc! {
+            "$lookup": {
+                "from": "users",
+                "localField": "user",
+                "foreignField": "_id",
+                "as": "userDetails"
+              }
+        },
+        doc! { "$unwind": "$userDetails" },
+        doc! {
+           "$project": {
+               "username": "$userDetails.username"
+           }
+        },
+    ]
+}
