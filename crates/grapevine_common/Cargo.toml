@@ -31,14 +31,10 @@ ahash = "0.8.9"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
-# babyjubjub-rs = "0.0.11"
-babyjubjub-rs = { path = "../../babyjubjub-rs" }
-# blake-hash = { version = "0.4.1", default-features = false }
+babyjubjub-rs = "0.0.11"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# babyjubjub-rs.workspace = true
-babyjubjub-rs = { path = "../../babyjubjub-rs" }
-
+babyjubjub-rs.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
