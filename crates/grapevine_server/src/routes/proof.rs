@@ -49,27 +49,22 @@ pub async fn prove_identity(
                 "Error deserializing body from binary to CreateUserRequest: {:?}",
                 e
             );
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::SerdeError(String::from(
-                    "CreateUserRequest",
-                ))),
-                None,
-            )));
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::SerdeError(String::from("CreateUserRequest")),
+            ))));
         }
     };
 
     // validate given username
     if request.username.len() > MAX_USERNAME_CHARS {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::UsernameTooLong(request.username.clone())),
-            None,
-        )));
+        return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+            GrapevineError::UsernameTooLong(request.username.clone()),
+        ))));
     };
     if !request.username.is_ascii() {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::UsernameNotAscii(request.username.clone())),
-            None,
-        )));
+        return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+            GrapevineError::UsernameNotAscii(request.username.clone()),
+        ))));
     };
 
     // check if pubkey or username exists
@@ -88,14 +83,13 @@ pub async fn prove_identity(
                 _ => None,
             };
             if err_msg.is_some() {
-                return Err(GrapevineResponse::Conflict(ErrorMessage(err_msg, None)));
+                return Err(GrapevineResponse::Conflict(ErrorMessage(err_msg)));
             }
         }
     } else {
-        return Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::InternalError),
-            None,
-        )));
+        return Err(GrapevineResponse::InternalError(ErrorMessage(Some(
+            GrapevineError::InternalError,
+        ))));
     }
 
     // get the address from the pubkey
@@ -111,12 +105,9 @@ pub async fn prove_identity(
         Ok(res) => GrapevineOutputs::try_from(res.0).unwrap(),
         Err(e) => {
             println!("Proof verification failed: {:?}", e);
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::ProofFailed(String::from(
-                    "Given proof is not verifiable",
-                ))),
-                None,
-            )));
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::ProofFailed(String::from("Given proof is not verifiable")),
+            ))));
         }
     };
     // verify the expected outputs of the proof
@@ -135,10 +126,9 @@ pub async fn prove_identity(
         ));
     }
     if verify_err.is_some() {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::ProofFailed(verify_err.unwrap())),
-            None,
-        )));
+        return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+            GrapevineError::ProofFailed(verify_err.unwrap()),
+        ))));
     }
 
     // create the User document in the db
@@ -151,12 +141,7 @@ pub async fn prove_identity(
     };
     let user_oid = match db.create_user(user_doc).await {
         Ok(oid) => oid,
-        Err(e) => {
-            return Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(e),
-                None,
-            )))
-        }
+        Err(e) => return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     };
 
     // add the proof
@@ -175,10 +160,7 @@ pub async fn prove_identity(
             "Created user {}",
             request.username
         ))),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(e),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     }
 }
 
@@ -216,12 +198,9 @@ pub async fn degree_proof(
     let request = match bincode::deserialize::<DegreeProofRequest>(&buffer) {
         Ok(req) => req,
         Err(_) => {
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::SerdeError(String::from(
-                    "DegreeProofRequest",
-                ))),
-                None,
-            )))
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::SerdeError(String::from("DegreeProofRequest")),
+            ))))
         }
     };
 
@@ -237,12 +216,9 @@ pub async fn degree_proof(
         Ok(res) => GrapevineOutputs::try_from(res.0).unwrap(),
         Err(e) => {
             println!("Proof verification failed: {:?}", e);
-            return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                Some(GrapevineError::ProofFailed(String::from(
-                    "Given proof is not verifiable",
-                ))),
-                None,
-            )));
+            return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                GrapevineError::ProofFailed(String::from("Given proof is not verifiable")),
+            ))));
         }
     };
 
@@ -257,20 +233,12 @@ pub async fn degree_proof(
     match db.contains_emitted_nullifiers(&nullifiers).await {
         Ok(res) => {
             if res {
-                return Err(GrapevineResponse::BadRequest(ErrorMessage(
-                    Some(GrapevineError::ProofFailed(
-                        "Contains emitted nullifiers".into(),
-                    )),
-                    None,
-                )));
+                return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+                    GrapevineError::ProofFailed("Contains emitted nullifiers".into()),
+                ))));
             };
         }
-        Err(e) => {
-            return Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(e),
-                None,
-            )))
-        }
+        Err(e) => return Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
     };
 
     // get all degree data needed to authorize this proof
@@ -313,10 +281,9 @@ pub async fn degree_proof(
         }
     }
     if verify_err.is_some() {
-        return Err(GrapevineResponse::BadRequest(ErrorMessage(
-            Some(GrapevineError::ProofFailed(verify_err.unwrap())),
-            None,
-        )));
+        return Err(GrapevineResponse::BadRequest(ErrorMessage(Some(
+            GrapevineError::ProofFailed(verify_err.unwrap()),
+        ))));
     }
 
     // build new proof
@@ -339,12 +306,9 @@ pub async fn degree_proof(
         Ok(_) => Ok(Status::Created),
         Err(e) => {
             println!("Error adding proof: {:?}", e);
-            Err(GrapevineResponse::InternalError(ErrorMessage(
-                Some(GrapevineError::MongoError(String::from(
-                    "Failed to add proof to db",
-                ))),
-                None,
-            )))
+            Err(GrapevineResponse::InternalError(ErrorMessage(Some(
+                GrapevineError::MongoError(String::from("Failed to add proof to db")),
+            ))))
         }
     }
 }
@@ -392,14 +356,13 @@ pub async fn get_proven_degrees(
 ) -> Result<Json<Vec<ProofMetadata>>, GrapevineResponse> {
     match db.get_proven_degrees(user.0).await {
         Ok(proofs) => Ok(Json(proofs)),
-        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(
-            Some(GrapevineError::MongoError(String::from(e.to_string()))),
-            None,
-        ))),
+        Err(e) => Err(GrapevineResponse::InternalError(ErrorMessage(Some(
+            GrapevineError::MongoError(String::from(e.to_string())),
+        )))),
     }
 }
 
-#[get("/<scope>")]
+#[get("/scope/<scope>")]
 pub async fn get_proof_by_scope(
     user: AuthenticatedUser,
     db: &State<GrapevineDB>,
