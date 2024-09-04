@@ -383,7 +383,10 @@ pub async fn nullify_relationship(recipient: &String) -> Result<String, Grapevin
     // sync nonce
     synchronize_nonce().await?;
 
-    let encrypted_nullifier_secret = get_nullifier_secret(&mut account, recipient).await.unwrap();
+    let encrypted_nullifier_secret = match get_nullifier_secret(&mut account, recipient).await {
+        Ok(data) => data,
+        Err(e) => return Err(e),
+    };
     let bytes: [u8; 48] = encrypted_nullifier_secret.try_into().unwrap();
     let nullifier_secret = account.decrypt_nullifier_secret(bytes);
 
