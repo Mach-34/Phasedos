@@ -1,6 +1,8 @@
 use crate::http::reset_db;
 use crate::tests::helpers::{
-    account_info_cmd, create_account_cmd, grapevine_dir, move_key, restore_key,
+    account_info_cmd, add_relationship_cmd, create_account_cmd, grapevine_dir,
+    list_active_relationships_cmd, list_pending_relationships_cmd, move_key,
+    reject_relationship_cmd, remove_file, remove_relationship_cmd, rename_file, restore_key,
 };
 use assert_cmd::Command;
 
@@ -209,22 +211,26 @@ mod account_tests {
 
 #[cfg(test)]
 mod health_tests {
-    #[ignore]
+
+    use crate::tests::helpers::health_check_cmd;
+
     #[test]
     fn test_healthcheck() {
-        todo!("Unimplemented")
+        let server_url = "http://localhost:8000";
+        let output = health_check_cmd();
+        let expected_output = format!("SERVER URL IS: {}\nHealth check passed\n", server_url);
+        assert_eq!(expected_output, output);
     }
 }
 
 #[cfg(test)]
 mod proof_tests {
-    use crate::tests::helpers::get_scope_cmd;
+    use crate::tests::helpers::{get_scope_cmd, list_degrees_cmd, sync_available_degrees};
 
     use super::*;
 
-    #[ignore]
     #[tokio::test]
-    async fn test_scope_user_not_found() {
+    async fn test_sync_degrees_no_available_degrees() {
         // clear db
         reset_db().await;
         // load in grapevine dir
@@ -237,57 +243,251 @@ mod proof_tests {
         // create accounts
         _ = create_account_cmd(&username);
 
-        let output = get_scope_cmd("fake_user");
-        println!("Output: {:?}", output);
+        let output = sync_available_degrees();
+        let expected_output = "No new degree proofs found for user \"user_a\"\n";
+
+        assert_eq!(expected_output, output);
+
+        // restore to prior testing state
+        restore_key(&grapevine_dir);
+    }
+
+    #[tokio::test]
+    async fn test_sync_degrees() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+        let username_b = String::from("user_b");
+
+        // create accounts
+        _ = create_account_cmd(&username);
+
+        // move User A key to allow creation of User B
+        rename_file(&grapevine_dir, "grapevine.key", "user_a.key");
+
+        _ = create_account_cmd(&username_b);
+
+        // create relationship with User A
+        _ = add_relationship_cmd(&username);
+
+        // switch back to User A
+        rename_file(&grapevine_dir, "grapevine.key", "user_b.key");
+        rename_file(&grapevine_dir, "user_a.key", "grapevine.key");
+
+        // add relationship with User B and make relationships active
+        _ = add_relationship_cmd(&username_b);
+
+        // create degree proofs
+        let output = sync_available_degrees();
+        let expected_output = "Proving 1 new degree...\n==============[user_b (Degree 1)==============\nRelation: user_b\nProving...\nProved degree 1 for scope user_b\n\nSuccess: proved 1 new degree proof\n";
+
+        assert_eq!(expected_output, output);
+
+        // restore to prior testing state
+        restore_key(&grapevine_dir);
+        remove_file(&grapevine_dir, "user_b.key");
+    }
+
+    #[tokio::test]
+    async fn test_scope_user_not_found() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+        let username_b = String::from("fake_user");
+
+        // create accounts
+        _ = create_account_cmd(&username);
+
+        let output = get_scope_cmd(&username_b);
+        let expected_output = format!(
+            "Error: Proof by {} for scope {} not found\n",
+            username, username_b
+        );
+
+        assert_eq!(output, expected_output);
+
+        // restore grapevine.key
+        restore_key(&grapevine_dir);
+    }
+
+    #[tokio::test]
+    async fn test_scope_degree_not_found() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+        let username_b = String::from("user_b");
+
+        // create accounts
+        _ = create_account_cmd(&username);
+
+        // move User A key to allow creation of User B
+        rename_file(&grapevine_dir, "grapevine.key", "user_a.key");
+
+        _ = create_account_cmd(&username_b);
+
+        let output = get_scope_cmd(&username);
+        let expected_output = format!(
+            "Error: Proof by {} for scope {} not found\n",
+            username_b, username
+        );
+
+        assert_eq!(output, expected_output);
+
+        // restore grapevine.key
+        restore_key(&grapevine_dir);
+        remove_file(&grapevine_dir, "user_a.key")
+    }
+
+    #[tokio::test]
+    async fn test_scope() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+        let username_b = String::from("user_b");
+
+        // create accounts
+        _ = create_account_cmd(&username);
+
+        // move User A key to allow creation of User B
+        rename_file(&grapevine_dir, "grapevine.key", "user_a.key");
+
+        _ = create_account_cmd(&username_b);
+
+        // create relationship with User A
+        _ = add_relationship_cmd(&username);
+
+        // switch back to User A
+        rename_file(&grapevine_dir, "grapevine.key", "user_b.key");
+        rename_file(&grapevine_dir, "user_a.key", "grapevine.key");
+
+        // add relationship with User B and make relationships active
+        _ = add_relationship_cmd(&username_b);
+
+        // create degree proofs
+        _ = sync_available_degrees();
+
+        let output = get_scope_cmd(&username_b);
+        let expected_output =
+            "Degree   Scope          Preceding Relation\n\n1        user_b         user_b\n\n\n";
+
+        assert_eq!(expected_output, output);
+
+        // restore to prior testing state
+        restore_key(&grapevine_dir);
+        remove_file(&grapevine_dir, "user_b.key");
+    }
+
+    #[tokio::test]
+    async fn test_list_degrees_none() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+
+        // create accounts
+        _ = create_account_cmd(&username);
+
+        let output = list_degrees_cmd();
+        let expected_output = "No existing degree proofs.\n";
+
+        assert_eq!(output, expected_output);
 
         // restore grapevine.key
         restore_key(&grapevine_dir);
     }
 
     #[ignore]
-    #[test]
-    fn test_scope_degree_not_found() {
-        todo!("Unimplemented");
-    }
+    #[tokio::test]
+    async fn test_list_degrees() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
 
-    #[ignore]
-    #[test]
-    fn test_scope() {
-        todo!("Unimplemented");
-    }
+        let username = String::from("user_a");
+        let username_b = String::from("user_b");
+        let username_c = String::from("user_c");
 
-    #[ignore]
-    #[test]
-    fn test_sync_degrees_no_available_degrees() {
-        todo!("Unimplemented");
-    }
+        // create accounts
+        _ = create_account_cmd(&username);
 
-    #[ignore]
-    #[test]
-    fn test_sync_degrees() {
-        todo!("Unimplemented");
-    }
+        // move User A key to allow creation of User B
+        rename_file(&grapevine_dir, "grapevine.key", "user_a.key");
 
-    #[ignore]
-    #[test]
-    fn test_list_available_none() {
-        todo!("Unimplemented");
-    }
+        _ = create_account_cmd(&username_b);
 
-    #[ignore]
-    #[test]
-    fn test_list_available() {
-        todo!("Unimplemented");
+        // move User B key to allow creation of User C
+        rename_file(&grapevine_dir, "grapevine.key", "user_b.key");
+
+        _ = create_account_cmd(&username_c);
+
+        // create relationship with User B
+        _ = add_relationship_cmd(&username_b);
+
+        // switch back to User B
+        rename_file(&grapevine_dir, "grapevine.key", "user_c.key");
+        rename_file(&grapevine_dir, "user_b.key", "grapevine.key");
+
+        // add relationship with User C and make relationship active
+        _ = add_relationship_cmd(&username_c);
+
+        // create degree proof with User C
+        _ = sync_available_degrees();
+
+        // add relationship with User A
+        _ = add_relationship_cmd(&username);
+
+        // switch back to User A
+        rename_file(&grapevine_dir, "grapevine.key", "user_b.key");
+        rename_file(&grapevine_dir, "user_a.key", "grapevine.key");
+
+        // add relationship with User B and make relationship active
+        _ = add_relationship_cmd(&username_b);
+
+        // create degree proofs
+        _ = sync_available_degrees();
+
+        // list proofs
+        let output = list_degrees_cmd();
+        let expected_output = "Degree   Scope          Preceding Relation\n\n2        user_c         user_b\n1        user_b         user_b\n\n";
+
+        assert_eq!(expected_output, output);
+
+        // restore to prior testing state
+        restore_key(&grapevine_dir);
+        remove_file(&grapevine_dir, "user_b.key");
+        remove_file(&grapevine_dir, "user_c.key");
     }
 }
 
 #[cfg(test)]
 mod relationship_tests {
-
-    use crate::tests::helpers::{
-        add_relationship_cmd, list_active_relationships_cmd, list_pending_relationships_cmd,
-        reject_relationship_cmd, remove_file, remove_relationship_cmd, rename_file,
-    };
 
     use super::*;
 
@@ -597,15 +797,21 @@ mod relationship_tests {
         let _ = add_relationship_cmd(&username_b);
 
         // nullify relationship with User B
-        let output = reject_relationship_cmd(&username_b);
-        println!("Output: {:?}", output);
+        let output = remove_relationship_cmd(&username_b);
+        let expected_output = format!("Relationship with {} nullified\n", username_b);
+
+        assert_eq!(output, expected_output);
+
+        // list active relationships
+        let active_relationships = list_active_relationships_cmd();
+        // TODO: Need to correct output here
+        println!("Active relationships: {:?}", active_relationships);
 
         // restore grapevine.key
         restore_key(&grapevine_dir);
         remove_file(&grapevine_dir, "user_b.key");
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_remove_relationship_already_nullified() {
         // clear db
@@ -638,19 +844,15 @@ mod relationship_tests {
         let _ = add_relationship_cmd(&username_b);
 
         // nullify relationship with User B
-        let _ = reject_relationship_cmd(&username_b);
+        let _ = remove_relationship_cmd(&username_b);
         // attempt to nullify relationship again
         let output = remove_relationship_cmd(&username_b);
-        println!("Output: {:?}", output);
+        let expected_output = "Error: Nullified relationship is being used\n";
+
+        assert_eq!(expected_output, output);
 
         // restore grapevine.key
         restore_key(&grapevine_dir);
         remove_file(&grapevine_dir, "user_b.key");
-    }
-
-    #[ignore]
-    #[tokio::test]
-    async fn test_relationship_list_commands() {
-        todo!("Unimplemented");
     }
 }

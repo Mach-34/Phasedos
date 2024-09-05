@@ -382,7 +382,6 @@ pub async fn nullify_relationship(recipient: &String) -> Result<String, Grapevin
     let mut account = get_account()?;
     // sync nonce
     synchronize_nonce().await?;
-
     let encrypted_nullifier_secret = match get_nullifier_secret(&mut account, recipient).await {
         Ok(data) => data,
         Err(e) => return Err(e),

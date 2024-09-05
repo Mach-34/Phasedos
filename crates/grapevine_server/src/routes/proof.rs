@@ -373,7 +373,10 @@ pub async fn get_proof_by_scope(
     match db.find_proof_by_scope(&user.0, &scope).await {
         Some(doc) => Ok(Json(doc)),
         None => Err(GrapevineResponse::NotFound(ErrorMessage(Some(
-            GrapevineError::PlaceholderError(format!("Proof by {} for scope {}", &user.0, &scope)),
+            GrapevineError::PlaceholderError(format!(
+                "Proof by {} for scope {} not found",
+                &user.0, &scope
+            )),
         )))),
     }
 }
@@ -393,7 +396,10 @@ pub async fn get_proof_metadata_by_scope(
     match db.get_proof_metadata_by_scope(&user.0, &scope).await {
         Some(doc) => Ok(Json(doc)),
         None => Err(GrapevineResponse::NotFound(ErrorMessage(Some(
-            GrapevineError::PlaceholderError(format!("Proof by {} for scope {}", &user.0, &scope)),
+            GrapevineError::PlaceholderError(format!(
+                "Proof by {} for scope {} not found",
+                &user.0, &scope
+            )),
         )))),
     }
 }

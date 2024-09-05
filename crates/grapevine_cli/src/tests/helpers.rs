@@ -34,9 +34,28 @@ pub fn create_account_cmd(username: &str) -> String {
     String::from_utf8(bytes).unwrap()
 }
 
+pub fn health_check_cmd() -> String {
+    let bytes = Command::new("grapevine")
+        .arg("health")
+        .output()
+        .unwrap()
+        .stdout;
+    String::from_utf8(bytes).unwrap()
+}
+
 pub fn list_active_relationships_cmd() -> String {
     let bytes = Command::new("grapevine")
         .arg("relationship")
+        .arg("list")
+        .output()
+        .unwrap()
+        .stdout;
+    String::from_utf8(bytes).unwrap()
+}
+
+pub fn list_degrees_cmd() -> String {
+    let bytes = Command::new("grapevine")
+        .arg("proof")
         .arg("list")
         .output()
         .unwrap()
@@ -59,12 +78,10 @@ pub fn get_scope_cmd(username: &str) -> String {
         .arg("proof")
         .arg("scope")
         .arg(username)
-        .output();
-    println!("Output: {:?}", bytes);
-    // .unwrap()
-    // .stdout;
-    // String::from_utf8(bytes).unwrap()
-    String::from("")
+        .output()
+        .unwrap()
+        .stdout;
+    String::from_utf8(bytes).unwrap()
 }
 
 pub fn reject_relationship_cmd(username: &str) -> String {
@@ -83,6 +100,16 @@ pub fn remove_relationship_cmd(username: &str) -> String {
         .arg("relationship")
         .arg("remove")
         .arg(username)
+        .output()
+        .unwrap()
+        .stdout;
+    String::from_utf8(bytes).unwrap()
+}
+
+pub fn sync_available_degrees() -> String {
+    let bytes = Command::new("grapevine")
+        .arg("proof")
+        .arg("sync")
         .output()
         .unwrap()
         .stdout;

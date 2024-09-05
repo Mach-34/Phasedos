@@ -345,11 +345,7 @@ pub async fn emit_nullifier(
                 .unwrap();
             return Ok(());
         }
-        _ => {
-            let msg = res.text().await.unwrap();
-            println!("Msg: {:?}", msg);
-            Err(GrapevineError::InternalError)
-        }
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
     }
 }
 
