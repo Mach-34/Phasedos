@@ -15,6 +15,6 @@
       "skipLibCheck": true,                 // Skip type checking of all declaration files (improves compilation speed).
       "forceConsistentCasingInFileNames": true // Ensure file names are consistent across the project.
     },
-    "include": ["src/**/*.ts"],             // Include all TypeScript files in the src/ directory.
+    "include": ["src/**/*.ts", "grapevine_wasm/*"],
     "exclude": ["node_modules", "dist"],    // Exclude node_modules and dist directories.
   }
