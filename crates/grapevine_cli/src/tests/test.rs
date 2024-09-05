@@ -38,7 +38,6 @@ mod account_tests {
     }
 
     #[test]
-    #[ignore]
     fn test_nonexistent_account() {
         // load in grapevine dir
         let grapevine_dir = grapevine_dir().unwrap();
@@ -47,15 +46,13 @@ mod account_tests {
 
         // create new account locally
         let username = String::from("local_account");
-        _ = make_or_get_account(username);
+        _ = make_or_get_account(username.clone());
 
         // call account info command with no account created
-        let output = Command::new("grapevine")
-            .arg("account")
-            .arg("info")
-            .output();
+        let output = account_info_cmd();
+        let expected_output = format!("Error: Username {} does not exist\n", username);
 
-        println!("Output: {:?}", output);
+        assert_eq!(expected_output, output);
     }
 
     #[test]
@@ -225,7 +222,10 @@ mod health_tests {
 
 #[cfg(test)]
 mod proof_tests {
-    use crate::tests::helpers::{get_scope_cmd, list_degrees_cmd, sync_available_degrees};
+
+    use crate::tests::helpers::{
+        get_scope_cmd, list_degrees_cmd, normalize_and_compare, sync_available_degrees,
+    };
 
     use super::*;
 
@@ -420,7 +420,6 @@ mod proof_tests {
         restore_key(&grapevine_dir);
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_list_degrees() {
         // clear db
@@ -477,7 +476,7 @@ mod proof_tests {
         let output = list_degrees_cmd();
         let expected_output = "Degree   Scope          Preceding Relation\n\n2        user_c         user_b\n1        user_b         user_b\n\n";
 
-        assert_eq!(expected_output, output);
+        assert!(normalize_and_compare(expected_output, &output));
 
         // restore to prior testing state
         restore_key(&grapevine_dir);
@@ -488,6 +487,8 @@ mod proof_tests {
 
 #[cfg(test)]
 mod relationship_tests {
+
+    use crate::tests::helpers::reveal_nullified_cmd;
 
     use super::*;
 
@@ -804,12 +805,36 @@ mod relationship_tests {
 
         // list active relationships
         let active_relationships = list_active_relationships_cmd();
-        // TODO: Need to correct output here
         println!("Active relationships: {:?}", active_relationships);
+
+        // switch to User B
+        rename_file(&grapevine_dir, "grapevine.key", "user_a.key");
+        rename_file(&grapevine_dir, "user_b.key", "grapevine.key");
+
+        // list relationships to nullify
+        let revealed_output = reveal_nullified_cmd();
+        let expected_revealed_output =
+            "Showing 1 relationship requiring nullification for user_b:\n|=> \"user_a\"\n\n";
+
+        assert_eq!(revealed_output, expected_revealed_output);
+
+        // nullify relationship with User A
+        let output = remove_relationship_cmd(&username);
+        let expected_output = "Relationship with user_a nullified\n";
+        assert_eq!(expected_output, output);
+
+        // list nullified again
+        let revealed_output = reveal_nullified_cmd();
+        let expected_revealed_output = "You have no relationships requiring nullification.\n";
+        assert_eq!(expected_revealed_output, revealed_output);
+
+        // TODO
+        // let active_relationships = list_active_relationships_cmd();
+        // println!("Active: {:?}", active_relationships);
 
         // restore grapevine.key
         restore_key(&grapevine_dir);
-        remove_file(&grapevine_dir, "user_b.key");
+        remove_file(&grapevine_dir, "user_a.key");
     }
 
     #[tokio::test]
@@ -854,5 +879,50 @@ mod relationship_tests {
         // restore grapevine.key
         restore_key(&grapevine_dir);
         remove_file(&grapevine_dir, "user_b.key");
+    }
+
+    #[tokio::test]
+    async fn test_list_active_relationships_none() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+
+        // create account
+        _ = create_account_cmd(&username);
+
+        let output = list_active_relationships_cmd();
+        let expected_output = "No Active relationships found for this account\n\n";
+        assert_eq!(expected_output, output);
+
+        // restore to prior testing state
+        restore_key(&grapevine_dir);
+    }
+
+    #[tokio::test]
+    async fn test_list_pending_relationships_none() {
+        // clear db
+        reset_db().await;
+        // load in grapevine dir
+        let grapevine_dir = grapevine_dir().unwrap();
+        // move grapevine.key
+        move_key(&grapevine_dir);
+
+        let username = String::from("user_a");
+
+        // create account
+        _ = create_account_cmd(&username);
+
+        let output = list_pending_relationships_cmd();
+        let expected_output = "No Pending relationships found for this account\n\n";
+
+        assert_eq!(expected_output, output);
+
+        // restore to prior testing state
+        restore_key(&grapevine_dir);
     }
 }

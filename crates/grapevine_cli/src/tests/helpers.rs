@@ -43,6 +43,17 @@ pub fn health_check_cmd() -> String {
     String::from_utf8(bytes).unwrap()
 }
 
+pub fn get_scope_cmd(username: &str) -> String {
+    let bytes = Command::new("grapevine")
+        .arg("proof")
+        .arg("scope")
+        .arg(username)
+        .output()
+        .unwrap()
+        .stdout;
+    String::from_utf8(bytes).unwrap()
+}
+
 pub fn list_active_relationships_cmd() -> String {
     let bytes = Command::new("grapevine")
         .arg("relationship")
@@ -73,17 +84,6 @@ pub fn list_pending_relationships_cmd() -> String {
     String::from_utf8(bytes).unwrap()
 }
 
-pub fn get_scope_cmd(username: &str) -> String {
-    let bytes = Command::new("grapevine")
-        .arg("proof")
-        .arg("scope")
-        .arg(username)
-        .output()
-        .unwrap()
-        .stdout;
-    String::from_utf8(bytes).unwrap()
-}
-
 pub fn reject_relationship_cmd(username: &str) -> String {
     let bytes = Command::new("grapevine")
         .arg("relationship")
@@ -100,6 +100,16 @@ pub fn remove_relationship_cmd(username: &str) -> String {
         .arg("relationship")
         .arg("remove")
         .arg(username)
+        .output()
+        .unwrap()
+        .stdout;
+    String::from_utf8(bytes).unwrap()
+}
+
+pub fn reveal_nullified_cmd() -> String {
+    let bytes = Command::new("grapevine")
+        .arg("relationship")
+        .arg("reveal-nullified")
         .output()
         .unwrap()
         .stdout;
@@ -159,4 +169,27 @@ pub fn move_key(grapevine_dir: &PathBuf) {
         .args(&["grapevine.key", "real.key"])
         .assert()
         .success();
+}
+
+// ensures output from mongo db no matter what order contains the same data as the expected result
+pub fn normalize_and_compare(left: &str, right: &str) -> bool {
+    // Split both strings into lines
+    let mut left_lines: Vec<&str> = left.lines().collect();
+    let mut right_lines: Vec<&str> = right.lines().collect();
+
+    // Assuming the first line is a header and should not be sorted
+    // Separate the header from the rest
+    let left_header = left_lines.remove(0);
+    let right_header = right_lines.remove(0);
+
+    // Sort the remaining lines
+    left_lines.sort();
+    right_lines.sort();
+
+    // Join them back into a single string with the header at the top
+    let normalized_left = format!("{}\n{}", left_header, left_lines.join("\n"));
+    let normalized_right = format!("{}\n{}", right_header, right_lines.join("\n"));
+
+    // Compare the normalized strings
+    normalized_left == normalized_right
 }

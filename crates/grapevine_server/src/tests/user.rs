@@ -228,7 +228,6 @@ mod relationship_creation_tests {
         todo!("Unimplimented");
     }
 
-    #[ignore]
     #[rocket::async_test]
     pub async fn test_relationship_on_nonexistent_user() {
         let context = GrapevineTestContext::init().await;
@@ -242,8 +241,12 @@ mod relationship_creation_tests {
         _ = http_create_user(&context, &user_request_a).await;
 
         let request = user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
-        let res = http_add_relationship(&context, &mut user_a, &request).await;
-        println!("Res: {:?}", res);
+        let (code, msg) = http_add_relationship(&context, &mut user_a, &request).await;
+
+        assert_eq!(404, code);
+        let expected = GrapevineError::UserNotFound(user_b.username().to_string());
+
+        assert_eq!(msg.unwrap_err().to_string(), expected.to_string());
     }
 
     #[rocket::async_test]
@@ -364,6 +367,8 @@ mod relationship_creation_tests {
 #[cfg(test)]
 mod relationship_rejection_tests {
 
+    use grapevine_common::errors::GrapevineError;
+
     use crate::tests::http::http_reject_relationship;
 
     use super::*;
@@ -414,10 +419,13 @@ mod relationship_rejection_tests {
         _ = http_create_user(&context, &user_request_b).await;
 
         // attempt to reject a relationship with user_a as user_b
-        let expected = "No pending relationship exists from fakeusername to user_b";
+        let expected = GrapevineError::NoPendingRelationship(
+            "fakeusername".to_string(),
+            user_b.username().to_string(),
+        );
         let (code, msg) = http_reject_relationship(&context, &mut user_b, "fakeusername").await;
         assert_eq!(code, 404);
-        assert_eq!(expected, msg.unwrap_err());
+        assert_eq!(expected.to_string(), msg.unwrap_err().to_string());
     }
 
     #[rocket::async_test]
@@ -444,10 +452,13 @@ mod relationship_rejection_tests {
         _ = http_add_relationship(&context, &mut user_b, &request).await;
 
         // attempt to reject a relationship with user_a as user_b
-        let expected = "No pending relationship exists from fakeusername to user_b";
+        let expected = GrapevineError::NoPendingRelationship(
+            "fakeusername".to_string(),
+            user_b.username().to_string(),
+        );
         let (code, msg) = http_reject_relationship(&context, &mut user_b, "fakeusername").await;
         assert_eq!(code, 404);
-        assert_eq!(expected, msg.unwrap_err());
+        assert_eq!(expected.to_string(), msg.unwrap_err().to_string());
     }
 
     #[rocket::async_test]
@@ -489,15 +500,20 @@ mod relationship_rejection_tests {
         .await;
 
         // attempt to reject relatioship as User B
-        let expected = "No pending relationship exists from user_a to user_b";
+        let expected = GrapevineError::NoPendingRelationship(
+            user_a.username().to_string(),
+            user_b.username().to_string(),
+        );
         let (code, msg) = http_reject_relationship(&context, &mut user_b, user_a.username()).await;
         assert_eq!(code, 404);
-        assert_eq!(expected, msg.unwrap_err());
+        assert_eq!(expected.to_string(), msg.unwrap_err().to_string());
     }
 }
 
 #[cfg(test)]
 mod relationship_nullification_test {
+
+    use grapevine_common::errors::GrapevineError;
 
     use crate::tests::http::http_get_nullified_relationships;
 
@@ -548,15 +564,67 @@ mod relationship_nullification_test {
             expected_code, code,
             "Expected HTTP::Created on nullifier emission"
         );
+    }
 
-        // confirm relationship now has emitted nullifier
-        // TODO: FIX
-        // let relationship =
-        //     http_get_relationship(&context, user_b.username(), user_a.username()).await;
-        // assert!(
-        //     relationship.emitted_nullifier.is_some(),
-        //     "No nullifier emitted"
-        // );
+    #[rocket::async_test]
+    pub async fn test_lists_relationships_after_nullifier_emission() {
+        let context = GrapevineTestContext::init().await;
+        GrapevineDB::drop("grapevine_mocked").await;
+        // Create a request where proof creator is different from asserted pubkey
+        let mut user_a = GrapevineAccount::new("user_a".into());
+
+        let mut user_b = GrapevineAccount::new("user_b".into());
+
+        let user_request_a = build_create_user_request(&user_a);
+        let user_request_b = build_create_user_request(&user_b);
+        _ = http_create_user(&context, &user_request_a).await;
+        _ = http_create_user(&context, &user_request_b).await;
+
+        // add relationship as user_a to user_b
+        let user_a_relationship_request =
+            user_a.new_relationship_request(user_b.username(), &user_b.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_a, &user_a_relationship_request).await;
+
+        // accept relation from user_a as user_b
+        let user_b_relationship_request =
+            user_b.new_relationship_request(user_a.username(), &user_a.pubkey());
+
+        _ = http_add_relationship(&context, &mut user_b, &user_b_relationship_request).await;
+
+        let encrypted_nullifier_secret =
+            http_get_nullifier_secret(&context, &mut user_a, user_b.username()).await;
+
+        let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+        // emit nullifier as user_a
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_a,
+            user_b.username(),
+        )
+        .await;
+
+        // relationship list should show relationship with user_b pending nullification
+        // TODO
+
+        let encrypted_nullifier_secret =
+            http_get_nullifier_secret(&context, &mut user_b, user_a.username()).await;
+
+        let nullifier_secret = user_b.decrypt_nullifier_secret(encrypted_nullifier_secret);
+
+        // emit nullifier as user_b
+        _ = http_emit_nullifier(
+            &context,
+            ff_ce_to_le_bytes(&nullifier_secret),
+            &mut user_b,
+            user_a.username(),
+        )
+        .await;
+
+        // no relationships should be listed for user_A or user_b
+        // TODO
     }
 
     #[rocket::async_test]
@@ -586,7 +654,10 @@ mod relationship_nullification_test {
         let nullifier_secret = user_a.decrypt_nullifier_secret(encrypted_nullifier_secret);
 
         // attempt to nullify pending relationship from user_a to user_b
-        let expected = "No active relationship exists from user_a to user_b";
+        let expected = GrapevineError::NoRelationship(
+            user_a.username().to_string(),
+            user_b.username().to_string(),
+        );
         let (code, msg) = http_emit_nullifier(
             &context,
             ff_ce_to_le_bytes(&nullifier_secret),
@@ -595,7 +666,7 @@ mod relationship_nullification_test {
         )
         .await;
         assert_eq!(code, 404);
-        assert_eq!(msg.unwrap_err(), expected);
+        assert_eq!(msg.unwrap_err().to_string(), expected.to_string());
     }
 
     #[rocket::async_test]
@@ -640,7 +711,7 @@ mod relationship_nullification_test {
         .await;
 
         // attempt to nullify nullified relationship
-        let expected = "\"RelationshipNullified\"";
+        let expected = GrapevineError::RelationshipNullified;
         let (code, msg) = http_emit_nullifier(
             &context,
             ff_ce_to_le_bytes(&nullifier_secret),
@@ -649,7 +720,7 @@ mod relationship_nullification_test {
         )
         .await;
         assert_eq!(code, 409);
-        assert_eq!(expected, msg.unwrap_err());
+        assert_eq!(expected.to_string(), msg.unwrap_err().to_string());
     }
 
     #[rocket::async_test]
@@ -672,7 +743,10 @@ mod relationship_nullification_test {
         let nullifier_secret =
             user_a.decrypt_nullifier_secret(relationship_request.nullifier_secret_ciphertext);
 
-        let expected = "No active relationship exists from user_a to user_b";
+        let expected = GrapevineError::NoRelationship(
+            user_a.username().to_string(),
+            user_b.username().to_string(),
+        );
         let (code, msg) = http_emit_nullifier(
             &context,
             ff_ce_to_le_bytes(&nullifier_secret),
@@ -681,7 +755,7 @@ mod relationship_nullification_test {
         )
         .await;
         assert_eq!(code, 404);
-        assert_eq!(msg.unwrap_err(), expected);
+        assert_eq!(msg.unwrap_err().to_string(), expected.to_string());
     }
 
     #[rocket::async_test]

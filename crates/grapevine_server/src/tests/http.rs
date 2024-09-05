@@ -216,6 +216,7 @@ pub async fn http_get_pending_relationships(
     let _ = user.increment_nonce(None);
 
     if code >= 300 {
+        println!("Code: {:?}", code);
         let error_msg = res.into_json::<GrapevineError>().await.unwrap();
         Err(error_msg)
     } else {
@@ -236,7 +237,7 @@ pub async fn http_reject_relationship(
     context: &GrapevineTestContext,
     user: &mut GrapevineAccount,
     from: &str,
-) -> (u16, Result<(), String>) {
+) -> (u16, Result<(), GrapevineError>) {
     let username = user.username().clone();
     let signature = generate_nonce_signature(user);
 
@@ -253,7 +254,7 @@ pub async fn http_reject_relationship(
     let _ = user.increment_nonce(None);
 
     if code >= 300 {
-        let error_msg = res.into_string().await.unwrap();
+        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
         (code, Err(error_msg))
     } else {
         (code, Ok(()))
@@ -274,7 +275,7 @@ pub async fn http_emit_nullifier(
     nullifier_secret: [u8; 32],
     sender: &mut GrapevineAccount,
     recipient: &String,
-) -> (u16, Result<(), String>) {
+) -> (u16, Result<(), GrapevineError>) {
     let username = sender.username().clone();
     let signature = generate_nonce_signature(sender);
 
@@ -299,7 +300,7 @@ pub async fn http_emit_nullifier(
     let code = res.status().code;
 
     if code >= 300 {
-        let error_msg = res.into_string().await.unwrap();
+        let error_msg = res.into_json::<GrapevineError>().await.unwrap();
         (code, Err(error_msg))
     } else {
         (code, Ok(()))

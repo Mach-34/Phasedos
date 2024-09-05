@@ -412,6 +412,7 @@ impl GrapevineDB {
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
+                    println!("Document: {:?}", document);
                     let username = document.get("username").unwrap().as_str().unwrap();
                     relationships.push(username.to_string());
                 }

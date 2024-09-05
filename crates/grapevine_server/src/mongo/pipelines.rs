@@ -319,7 +319,23 @@ pub fn get_relationships_usernames(user: &String, active: bool) -> Vec<Document>
             }
         },
         doc! { "$unwind": "$relationships" },
-        // 3. Look up the usernames of found relationship senderss
+        // 3. Look up counterparty relationship to check if user has nullified (only active)
+        // doc! {
+        //     "$lookup": {
+        //         "from": "relationships",
+        //         "localField": "_id",
+        //         "foreignField": "sender",
+        //         "as": "sentRelationships",
+        //         "pipeline": [
+        //             doc! { "$match": { "$expr": {
+        //                 "$eq": ["$recipient", "$relationships.sender"]
+        //             } } },
+        //             doc! { "$project": { "emitted_nullifier": 1, "_id": 0 } },
+        //         ],
+        //     }
+        // },
+        // doc! { "$unwind": "$sentRelationships" },
+        // 4. Look up the usernames of found relationship senderss
         doc! {
             "$lookup": {
                 "from": "users",
@@ -330,7 +346,7 @@ pub fn get_relationships_usernames(user: &String, active: bool) -> Vec<Document>
             }
         },
         doc! { "$unwind": "$relationships" },
-        // 4. Project only the usernames of the relationships
+        // 5. Project only the usernames of the relationships
         doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
     ]
 }
