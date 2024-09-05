@@ -21,6 +21,12 @@ pub enum RelationshipStatus {
     Active,
 }
 
+#[derive(Debug, Clone)]
+pub struct GetRelationshipOptions {
+    pub counterparty: bool,
+    pub full: bool,
+}
+
 pub trait ToBson {
     fn to_bson(&self) -> Bson;
 }
