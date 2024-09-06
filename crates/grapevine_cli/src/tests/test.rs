@@ -765,7 +765,6 @@ mod relationship_tests {
         remove_file(&grapevine_dir, "user_a.key");
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_remove_relationship() {
         // clear db
@@ -803,13 +802,19 @@ mod relationship_tests {
 
         assert_eq!(output, expected_output);
 
-        // list active relationships
-        let active_relationships = list_active_relationships_cmd();
-        println!("Active relationships: {:?}", active_relationships);
+        // active relationship should show pending nullification from User B
+        let output = list_active_relationships_cmd();
+        let expected_output = "===============================\nShowing 1 Active relationship for user_a:\n|=> \"user_b (pending nullification)\"\n\n";
+        assert_eq!(expected_output, output);
 
         // switch to User B
         rename_file(&grapevine_dir, "grapevine.key", "user_a.key");
         rename_file(&grapevine_dir, "user_b.key", "grapevine.key");
+
+        // active relationship should show counterparty has nullified
+        let output = list_active_relationships_cmd();
+        let expected_output = "===============================\nShowing 1 Active relationship for user_b:\n|=> \"user_a (counterparty nullified)\"\n\n";
+        assert_eq!(expected_output, output);
 
         // list relationships to nullify
         let revealed_output = reveal_nullified_cmd();
@@ -828,13 +833,23 @@ mod relationship_tests {
         let expected_revealed_output = "You have no relationships requiring nullification.\n";
         assert_eq!(expected_revealed_output, revealed_output);
 
-        // TODO
-        // let active_relationships = list_active_relationships_cmd();
-        // println!("Active: {:?}", active_relationships);
+        // no active relationships should be present for User B
+        let output = list_active_relationships_cmd();
+        let expected_output = "No Active relationships found for this account\n\n";
+        assert_eq!(output, expected_output);
+
+        // switch to User A
+        rename_file(&grapevine_dir, "grapevine.key", "user_b.key");
+        rename_file(&grapevine_dir, "user_a.key", "grapevine.key");
+
+        // no active relationships should be present for User A
+        let output = list_active_relationships_cmd();
+        let expected_output = "No Active relationships found for this account\n\n";
+        assert_eq!(output, expected_output);
 
         // restore grapevine.key
         restore_key(&grapevine_dir);
-        remove_file(&grapevine_dir, "user_a.key");
+        remove_file(&grapevine_dir, "user_b.key");
     }
 
     #[tokio::test]
