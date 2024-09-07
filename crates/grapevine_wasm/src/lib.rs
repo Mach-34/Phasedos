@@ -22,7 +22,7 @@ use num_bigint::{BigInt, Sign};
 
 pub mod types;
 // pub mod utils;
-pub use wasm_bindgen_rayon::init_thread_pool;
+// pub use wasm_bindgen_rayon::init_thread_pool;
 
 #[wasm_bindgen]
 extern "C" {
