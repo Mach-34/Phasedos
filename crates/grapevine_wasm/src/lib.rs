@@ -1,4 +1,8 @@
-use grapevine_common::{compat::ff_ce_to_le_bytes, crypto::pubkey_to_address, Fr, Params, G1, G2};
+use grapevine_common::{
+    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes},
+    crypto::pubkey_to_address,
+    Fr, Params, G1, G2,
+};
 // // use ff::PrimeField;
 // // use grapevine_circuits::{start_input, utils::build_step_inputs, z0_secondary};
 // // use grapevine_common::{
@@ -11,18 +15,59 @@ use grapevine_common::{compat::ff_ce_to_le_bytes, crypto::pubkey_to_address, Fr,
 // use num::{BigInt, Num};
 // // use serde_json::Value;
 // // use std::collections::HashMap;
-use grapevine_circuits::{Z0_PRIMARY, Z0_SECONDARY, inputs::{GrapevineArtifacts, GrapevineInputs}, utils::{compress_proof, decompress_proof}};
-use js_sys::{JsString, BigInt as JsBigInt};
+use grapevine_circuits::{
+    inputs::{GrapevineArtifacts, GrapevineInputs},
+    utils::{compress_proof, decompress_proof},
+    Z0_PRIMARY, Z0_SECONDARY,
+};
+use js_sys::{BigInt as JsBigInt, JsString};
+use nova_scotia::{
+    circom::{circuit::R1CS, reader::load_r1cs},
+    continue_recursive_circuit, create_recursive_circuit, FileLocation,
+};
 use serde::{Deserialize, Serialize};
-// use nova_scotia::{circom::{circuit::R1CS, reader::load_r1cs}, continue_recursive_circuit, create_recursive_circuit, FileLocation};
 // use utils::{bigint_to_fr, destringify_proof_outputs, fr_to_bigint, stringify_proof_outputs};
-use wasm_bindgen::prelude::*;
-use babyjubjub_rs::PrivateKey;
+use babyjubjub_rs::{Point, PrivateKey, Signature};
 use num_bigint::{BigInt, Sign};
+use wasm_bindgen::prelude::*;
 
 pub mod types;
 // pub mod utils;
-// pub use wasm_bindgen_rayon::init_thread_pool;
+pub use wasm_bindgen_rayon::init_thread_pool;
+
+#[wasm_bindgen]
+pub struct WasmArtifacts {
+    params: String,
+    r1cs_url: String,
+    wasm_url: String,
+}
+
+#[wasm_bindgen]
+impl WasmArtifacts {
+    #[wasm_bindgen(constructor)]
+    pub fn new(params: String, r1cs_url: String, wasm_url: String) -> Self {
+        Self {
+            params,
+            r1cs_url,
+            wasm_url,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn params(&self) -> String {
+        self.params.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn r1cs_url(&self) -> String {
+        self.r1cs_url.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn wasm_url(&self) -> String {
+        self.wasm_url.clone()
+    }
+}
 
 #[wasm_bindgen]
 extern "C" {
@@ -52,8 +97,6 @@ extern "C" {
     pub type StringArray;
 }
 
-
-
 // #[wasm_bindgen]
 // pub struct WasmIdentityInputs {
 //     pub prover_key: JsString,
@@ -68,12 +111,11 @@ macro_rules! console_log {
 }
 
 // pub fn identity_step_helper(prover_key: String) -> GrapevineInputs {
-//     // convert prover key from string to 
+//     // convert prover key from string to
 //     console_log!("Converting prover key: {:?}", &prover_key);
 //     let prover_key_bytes = hex::decode(prover_key).unwrap();
 //     console_log!("Importing prover key: {:?}", &prover_key_bytes);
 //     let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
-
 
 //     // try sign
 //     console_log!("Attempting to sign");
@@ -102,12 +144,11 @@ macro_rules! console_log {
 // }
 
 // pub fn identity_step_helper(prover_key: String) {
-//     // convert prover key from string to 
+//     // convert prover key from string to
 //     console_log!("Converting prover key: {:?}", &prover_key);
 //     let prover_key_bytes = hex::decode(prover_key).unwrap();
 //     console_log!("Importing prover key: {:?}", &prover_key_bytes);
 //     let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
-
 
 //     // try sign
 //     console_log!("Attempting to sign");
@@ -135,24 +176,29 @@ macro_rules! console_log {
 //     };
 // }
 
-// /**
-//  * Returns the artifacts used by the Grapevine circuit
-//  * 
-//  * @param params_string - JSON string of the public parameters
-//  * @param r1cs_url - URL of the r1cs file
-//  * @param wasm_url - URL of the wasm file
-//  * @returns the downloaded and parsed GrapevineArtifacts
-//  */
-// async fn get_artifacts(params_string: String, r1cs_url: String, wasm_url: String) -> GrapevineArtifacts {
-//     // parse public parameters
-//     let params: Params = serde_json::from_str(&params_string).unwrap();
-//     // retrieve r1cs file from url
-//     let r1cs: R1CS<Fr> = load_r1cs::<G1, G2>(&FileLocation::URL(r1cs_url)).await;
-//     // load wasm file
-//     let wasm_location = FileLocation::URL(wasm_url);
-//     // return artifacts
-//     GrapevineArtifacts { params, r1cs, wasm_location }
-// }
+/**
+ * Returns the artifacts used by the Grapevine circuit
+ *
+ * @param params_string - JSON string of the public parameters
+ * @param r1cs_url - URL of the r1cs file
+ * @param wasm_url - URL of the wasm file
+ * @returns the downloaded and parsed GrapevineArtifacts
+ */
+async fn get_artifacts(artifact_locations: WasmArtifacts) -> GrapevineArtifacts {
+    // parse public parameters
+    let params: Params = serde_json::from_str(&artifact_locations.params()).unwrap();
+    // retrieve r1cs file from url
+    let r1cs: R1CS<Fr> =
+        load_r1cs::<G1, G2>(&FileLocation::URL(artifact_locations.r1cs_url())).await;
+    // load wasm file
+    let wasm_location = FileLocation::URL(artifact_locations.wasm_url());
+    // return artifacts
+    GrapevineArtifacts {
+        params,
+        r1cs,
+        wasm_location,
+    }
+}
 
 // test converting bigint to hex string in rust to determine if it can access it all
 #[wasm_bindgen]
@@ -172,13 +218,37 @@ pub async fn bigint_test(num: JsBigInt) -> String {
  */
 #[wasm_bindgen]
 pub async fn identity_proof(
-    // artifacts: WasmArtifacts,
-    // inputs: WasmIdentityInputs
+    artifact_locations: WasmArtifacts,
+    pubkey_x: String,
+    pubkey_y: String,
+    sig_r8_a: String,
+    sig_r8_b: String,
+    sig_s: String, // inputs: WasmIdentityInputs
 ) -> String {
-    // console_error_panic_hook::set_once();
-    // // create artifacts
-    // console_log!("Creating artifacts");
-    // let artifacts = get_artifacts(params_string, r1cs_url, wasm_url).await;
+    console_error_panic_hook::set_once();
+    // create artifacts
+    console_log!("Creating artifacts");
+    let artifacts = get_artifacts(artifact_locations).await;
+    // parse the circuit inputs
+    let pubkey = Point {
+        x: ff_ce_from_le_bytes(hex::decode(&pubkey_x).unwrap().try_into().unwrap()),
+        y: ff_ce_from_le_bytes(hex::decode(&pubkey_y).unwrap().try_into().unwrap()),
+    };
+    let signature = Signature {
+        r_b8: Point {
+            x: ff_ce_from_le_bytes(hex::decode(&sig_r8_a).unwrap().try_into().unwrap()),
+            y: ff_ce_from_le_bytes(hex::decode(&sig_r8_b).unwrap().try_into().unwrap()),
+        },
+        s: BigInt::from_bytes_le(Sign::Plus, &hex::decode(&sig_s).unwrap()[..]),
+    };
+    let inputs = GrapevineInputs {
+        nullifier: None,
+        prover_pubkey: pubkey,
+        relation_pubkey: None,
+        scope_signature: signature,
+        auth_signature: None,
+    };
+
     // // create inputs from prover key
     // console_log!("Generating inputs");
     // // let inputs = GrapevineInputs::identity_step(prover_key);
@@ -199,12 +269,12 @@ pub async fn identity_proof(
     // let compressed = compress_proof(&proof);
     // console_log!("Serializing proof");
     // serde_json::to_string(&compressed).unwrap()
-    "test".to_string()
+    "Got artifacts successfully".to_string()
 }
 
 // /**
 //  * Creates a degree proof from an existing proof
-//  * 
+//  *
 //  * @param params_string - JSON string of the public parameters
 //  * @param r1cs_url - URL of the r1cs file
 //  * @param wasm_url - URL of the wasm file

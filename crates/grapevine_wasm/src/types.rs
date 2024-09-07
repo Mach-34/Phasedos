@@ -78,32 +78,32 @@
 // //     }
 // // }
 
-// // #[wasm_bindgen]
-// // pub struct WasmArtifacts {
-// //     params: String,
-// //     r1cs_url: String,
-// //     wasm_url: String,
-// // }
+// #[wasm_bindgen]
+// pub struct WasmArtifacts {
+//     params: String,
+//     r1cs_url: String,
+//     wasm_url: String,
+// }
 
-// // #[wasm_bindgen]
-// // impl WasmArtifacts {
-// //     pub fn new(params: String, r1cs_url: String, wasm_url: String) -> Self {
-// //         Self {
-// //             params,
-// //             r1cs_url,
-// //             wasm_url,
-// //         }
-// //     }
+// #[wasm_bindgen]
+// impl WasmArtifacts {
+//     pub fn new(params: String, r1cs_url: String, wasm_url: String) -> Self {
+//         Self {
+//             params,
+//             r1cs_url,
+//             wasm_url,
+//         }
+//     }
 
-// //     pub fn params(&self) -> String {
-// //         self.params.clone()
-// //     }
+//     pub fn params(&self) -> String {
+//         self.params.clone()
+//     }
 
-// //     pub fn r1cs_url(&self) -> String {
-// //         self.r1cs_url.clone()
-// //     }
+//     pub fn r1cs_url(&self) -> String {
+//         self.r1cs_url.clone()
+//     }
 
-// //     pub fn wasm_url(&self) -> String {
-// //         self.wasm_url.clone()
-// //     }
-// // }
+//     pub fn wasm_url(&self) -> String {
+//         self.wasm_url.clone()
+//     }
+// }

@@ -1,7 +1,8 @@
-import { PARAMS_URI, NUM_PARAMS_CHUNKS, GrapevineWasm } from "./consts";
+import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts";
 import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm"
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { Point, Poseidon } from "circomlibjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -46,7 +47,7 @@ export const getParams = async (parallel = true): Promise<Blob> => {
  * @param blob - the gzipped blob of params
  * @returns - the stringified json of the params
  */
-export const decompressParamsBlob = async (blob: Blob): Promise<String> => {
+export const decompressParamsBlob = async (blob: Blob): Promise<string> => {
   let ds = new DecompressionStream("gzip");
   let reader = blob.stream().pipeThrough(ds).getReader();
   let done = false;
@@ -124,4 +125,12 @@ export const initGrapevineWasm = async (
   return GrapevineWasmModule;
 };
 
-export const downloadArtifacts = async () => {};
+export const defaultArtifacts = async (): Promise<GrapevineWasmModule.WasmArtifacts> => {
+    const params = await getParams();
+    const paramsString = await decompressParamsBlob(params);
+    return new GrapevineWasmModule.WasmArtifacts(paramsString, R1CS_URI, WASM_URI);
+}
+
+// export const pubkey_to_address = async (hasher: Poseidon, pubkey: Point): Promise<bigint> => {
+  
+// }
