@@ -2,14 +2,17 @@
   "compilerOptions": {
     "target": "ESNext",                     // Target ECMAScript 6 or higher
     "module": "ESNext",                // Use commonjs for Node.js compatibility
+    "moduleResolution": "node", 
     "strict": true,                      // Enable strict type-checking options
     "esModuleInterop": true,             // Enable interoperability between CommonJS and ES Modules
     "skipLibCheck": true,                // Skip type checking of all declaration files (for faster compilation)
-    "forceConsistentCasingInFileNames": true // Enforce consistent casing in imports
+    "forceConsistentCasingInFileNames": true, // Enforce consistent casing in imports
+    "typeRoots": ["./types", "./node_modules/@types"]
   },
   "include": [
     "src/**/*.ts",                       // Include all TypeScript files in the src directory
-    "test/**/*.ts"                       // Include all TypeScript test files
+    "test/**/*.ts",                       // Include all TypeScript test files
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules"                       // Exclude node_modules from compilation

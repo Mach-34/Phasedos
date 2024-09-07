@@ -1,4 +1,5 @@
-// import { buildEddsa, buildPoseidon } from "circomlibjs";
+import { buildEddsa } from "circomlibjs";
+import { Scalar } from "ffjavascript";
 // import * as crypto from "crypto";
 
 
@@ -34,3 +35,42 @@
 // }
 
 // main();
+
+function padBufferTo32Bytes(buffer: Buffer) {
+    if (buffer.length > 32) {
+        throw new Error("Buffer is already larger than 32 bytes");
+    }
+
+    // Create a new 32-byte buffer filled with zeros
+    const paddedBuffer = Buffer.alloc(32);
+
+    // Copy the original buffer to the end of the new buffer
+    buffer.copy(paddedBuffer, 32 - buffer.length);
+
+    return paddedBuffer;
+}
+
+(async () => {
+    const eddsa = await buildEddsa();
+    const username = 'testuser';
+    const privkey = "0xd6071fcce61f192d88959e26e15ed22495cefacc574e664dbcee2728ad7e410f";
+    const buff = padBufferTo32Bytes(Buffer.from(username, 'utf8'));
+    const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
+    const SERVER_URL = "http://localhost:8000";
+    const url = `${SERVER_URL}/user/nonce`;
+
+    const signature = eddsa.signPoseidon(privkey, msg);
+
+    const payload = {
+        signature: Array.from(eddsa.packSignature(signature)),
+        username: "testuser"
+    };
+
+    const res = await fetch(url, {
+        body: JSON.stringify(payload),
+        method: "POST",
+        headers: { "content-type": 'application/json' }
+    });
+    const data = await res.json();
+    console.log('Data: ', data);
+})();
