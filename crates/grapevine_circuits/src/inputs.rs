@@ -110,46 +110,44 @@ impl GrapevineInputs {
         }
     }
 
+    /**
+     * Formats a given input struct for circom, including a chaff step
+     *
+     * @returns input map for the given step + chaff step
+     */
     #[cfg(target_family = "wasm")]
-    // todo: handle unwrap errors
-    pub fn degree_step(
-        prover_key: String,
-        relation_pubkey: String,
-        relation_nullifier: String,
-        scope_address: String,
-        auth_signature: String,
-    ) -> Self {
-        // convert prover key from hexstring to private key
-        use babyjubjub_rs::{decompress_point, decompress_signature};
-        let prover_key_bytes = hex::decode(prover_key).unwrap();
-        let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
-        // convert the relation pubkey from hexstring and decompress
-        let relation_pubkey_bytes: [u8; 32] = hex::decode(relation_pubkey).unwrap().try_into().unwrap();
-        let relation_pubkey = decompress_point(relation_pubkey_bytes).unwrap();
-        // convert the relation nullifier from hexstring to field element
-        let relation_nullifier_bytes = hex::decode(relation_nullifier).unwrap();
-        let relation_nullifier = Fr::from_repr(relation_nullifier_bytes.try_into().unwrap()).unwrap();
-        // get scope address bytes
-        let scope_address_bytes: [u8; 32] = hex::decode(scope_address).unwrap().try_into().unwrap();
-        // convert the auth signature from hexstring and decompress
-        let auth_signature_bytes: [u8; 64] = hex::decode(auth_signature).unwrap().try_into().unwrap();
-        let auth_signature = decompress_signature(&auth_signature_bytes).unwrap();
-        
-        // repeat degree step logic
-        // todo: remove duplicate
-        // get the pubkey used by the prover
-        let prover_pubkey = prover_key.public();
-        // sign the scope address
-        let message = BigInt::from_bytes_le(Sign::Plus, &scope_address_bytes);
-        let scope_signature = prover_key.sign(message).unwrap();
-        // return the struct
-        Self {
-            nullifier: Some(relation_nullifier.clone()),
-            prover_pubkey,
-            relation_pubkey: Some(relation_pubkey.clone()),
-            scope_signature,
-            auth_signature: Some(auth_signature.clone()),
-        }
+    pub fn fmt_circom(&self) -> [HashMap<String, Value>; 1] {
+        // convert required inputs
+        let prover_pubkey_input = pubkey_to_input(&self.prover_pubkey);
+        let scope_signature_input = sig_to_input(&self.scope_signature);
+
+        // convert optional inputs or assign random values
+        let relation_pubkey_input = match &self.relation_pubkey {
+            Some(pubkey) => pubkey_to_input(&pubkey),
+            None => [String::from("0"), String::from("0")]
+        };
+        let auth_signature_input = match &self.auth_signature {
+            Some(signature) => sig_to_input(&signature),
+            None => [String::from("0"), String::from("0"), String::from("0")]
+        };
+        let relation_nullifier_input = match self.nullifier {
+            Some(nullifier) => convert_ff_to_ff_ce(&nullifier).into_repr().to_string(),
+            None => String::from("0")
+        };
+
+        // build the input hashmaps
+        let mut compute_step: HashMap<String, Value> = HashMap::new();
+        compute_step.insert("relation_pubkey".to_string(), json!(relation_pubkey_input));
+        compute_step.insert("prover_pubkey".to_string(), json!(prover_pubkey_input));
+        compute_step.insert(
+            "relation_nullifier".to_string(),
+            json!(relation_nullifier_input),
+        );
+        compute_step.insert("auth_signature".to_string(), json!(auth_signature_input));
+        compute_step.insert("scope_signature".to_string(), json!(scope_signature_input));
+
+        // return with obfuscation step
+        [compute_step]
     }
 
     /**
@@ -157,6 +155,7 @@ impl GrapevineInputs {
      *
      * @returns input map for the given step + chaff step
      */
+    #[cfg(not(target_family = "wasm"))]
     pub fn fmt_circom(&self) -> [HashMap<String, Value>; 2] {
         // convert required inputs
         let prover_pubkey_input = pubkey_to_input(&self.prover_pubkey);

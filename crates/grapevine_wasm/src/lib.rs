@@ -1,20 +1,10 @@
+use std::{collections::HashMap, str::FromStr};
+
 use grapevine_common::{
     compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes},
     crypto::pubkey_to_address,
     Fr, Params, G1, G2,
 };
-// // use ff::PrimeField;
-// // use grapevine_circuits::{start_input, utils::build_step_inputs, z0_secondary};
-// // use grapevine_common::{
-// //     console_log, utils::random_fr, wasm::init_panic_hook, Fq, Fr, NovaProof, Params, G1, G2,
-// // };
-// use js_sys::{Array, Number, Uint8Array};
-// // use nova_scotia::{
-// //     circom::wasm::load_r1cs, continue_recursive_circuit, create_recursive_circuit, FileLocation,
-// // };
-// use num::{BigInt, Num};
-// // use serde_json::Value;
-// // use std::collections::HashMap;
 use grapevine_circuits::{
     inputs::{GrapevineArtifacts, GrapevineInputs},
     utils::{compress_proof, decompress_proof},
@@ -26,9 +16,9 @@ use nova_scotia::{
     continue_recursive_circuit, create_recursive_circuit, FileLocation,
 };
 use serde::{Deserialize, Serialize};
-// use utils::{bigint_to_fr, destringify_proof_outputs, fr_to_bigint, stringify_proof_outputs};
 use babyjubjub_rs::{Point, PrivateKey, Signature};
 use num_bigint::{BigInt, Sign};
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 pub mod types;
@@ -227,9 +217,10 @@ pub async fn identity_proof(
 ) -> String {
     console_error_panic_hook::set_once();
     // create artifacts
-    console_log!("Creating artifacts");
+    console_log!("Retrieving and parsing artifacts");
     let artifacts = get_artifacts(artifact_locations).await;
     // parse the circuit inputs
+    console_log!("Parsing circuit inputs");
     let pubkey = Point {
         x: ff_ce_from_le_bytes(hex::decode(&pubkey_x).unwrap().try_into().unwrap()),
         y: ff_ce_from_le_bytes(hex::decode(&pubkey_y).unwrap().try_into().unwrap()),
@@ -239,7 +230,7 @@ pub async fn identity_proof(
             x: ff_ce_from_le_bytes(hex::decode(&sig_r8_a).unwrap().try_into().unwrap()),
             y: ff_ce_from_le_bytes(hex::decode(&sig_r8_b).unwrap().try_into().unwrap()),
         },
-        s: BigInt::from_bytes_le(Sign::Plus, &hex::decode(&sig_s).unwrap()[..]),
+        s: BigInt::from_str(&sig_s).unwrap(),
     };
     let inputs = GrapevineInputs {
         nullifier: None,
@@ -249,27 +240,26 @@ pub async fn identity_proof(
         auth_signature: None,
     };
 
-    // // create inputs from prover key
-    // console_log!("Generating inputs");
-    // // let inputs = GrapevineInputs::identity_step(prover_key);
-    // let inputs = identity_step_helper(prover_key);
-    // console_log!("Formatting inputs for circom");
-    // let private_inputs = inputs.fmt_circom();
-    // // create the degree proof
-    // console_log!("Creating proof");
-    // let proof = create_recursive_circuit(
-    //     artifacts.wasm_location.clone(),
-    //     artifacts.r1cs.clone(),
-    //     private_inputs.to_vec(),
-    //     Z0_PRIMARY.clone(),
-    //     &artifacts.params,
-    // ).await.unwrap();
-    // // compress proof and return
-    // console_log!("Compressing proof");
-    // let compressed = compress_proof(&proof);
-    // console_log!("Serializing proof");
-    // serde_json::to_string(&compressed).unwrap()
-    "Got artifacts successfully".to_string()
+    console_log!("Formatting inputs for circom");
+    // todo: can we skip all the work above and just pass a hashmap?
+    let private_inputs = inputs.fmt_circom();
+
+    // let mut private_inputs: HashMap<String, Value> = HashMap::new();
+    // private_inputs.insert("prover_pubkey_x".to_string(), Value::String(pubkey_x));
+    // create the degree proof
+    console_log!("Creating proof");
+    let proof = create_recursive_circuit(
+        artifacts.wasm_location.clone(),
+        artifacts.r1cs.clone(),
+        private_inputs.to_vec(),
+        Z0_PRIMARY.clone(),
+        &artifacts.params,
+    ).await.unwrap();
+    // compress proof and return
+    console_log!("Compressing proof");
+    let compressed = compress_proof(&proof);
+    console_log!("Serializing proof");
+    serde_json::to_string(&compressed).unwrap()
 }
 
 // /**

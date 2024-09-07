@@ -41,8 +41,8 @@ describe("Grapevine", () => {
     let pubkey_y = convertValue(pubkey[1], F).toString("hex")
     let sig_r8_a = convertValue(signature.R8[0], F).toString("hex")
     let sig_8_b = convertValue(signature.R8[1], F).toString("hex")
-    let sig_s = signature.S.toString(16);
+    let sig_s = signature.S.toString();
     let res = await wasm.identity_proof(params, pubkey_x, pubkey_y, sig_r8_a, sig_8_b, sig_s);
-    console.log("res: ", res);
+    console.log("Res return length: ", res.length);
   });
 });
