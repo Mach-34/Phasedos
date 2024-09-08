@@ -1,4 +1,5 @@
 use std::{collections::HashMap, str::FromStr};
+use ff::PrimeField;
 
 use babyjubjub_rs::{Point, PrivateKey, Signature};
 use grapevine_circuits::{
@@ -7,15 +8,14 @@ use grapevine_circuits::{
     Z0_PRIMARY, Z0_SECONDARY,
 };
 use grapevine_common::{
-    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes},
-    crypto::{gen_aes_key, pubkey_to_address},
-    Fr, Params, G1, G2,
+    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes}, crypto::{gen_aes_key, pubkey_to_address}, errors::GrapevineError, Fr, Params, G1, G2
 };
 use js_sys::{Array, BigInt as JsBigInt, JsString, Number, Uint8Array};
 use nova_scotia::{
     circom::{circuit::R1CS, reader::load_r1cs},
     continue_recursive_circuit, create_recursive_circuit, FileLocation,
 };
+use num::Num;
 use num_bigint::{BigInt, Sign};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -24,6 +24,7 @@ use wasm_bindgen::prelude::*;
 pub mod types;
 // pub mod utils;
 pub use wasm_bindgen_rayon::init_thread_pool;
+pub const PROOF_OUTPUT_SIZE: usize = 12;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputMapJson {
@@ -165,6 +166,49 @@ pub async fn bigint_test(num: JsBigInt) -> String {
 }
 
 /**
+ * Converts a stringified bigint to bn254 Fr
+ * @notice assumes little endian order
+ *
+ * @param val - the bigint to parse
+ * @return - the field element
+ */
+pub fn bigint_to_fr(val: String) -> Result<Fr, GrapevineError> {
+    // if the string contains 0x, remove it
+    let val = if val.starts_with("0x") {
+        val[2..].to_string()
+    } else {
+        val
+    };
+    // attempt to parse the string
+    let mut bytes = match BigInt::from_str_radix(&val, 16) {
+        Ok(bigint) => bigint.to_bytes_be().1,
+        Err(e) => return Err(GrapevineError::SerdeError(e.to_string())),
+    };
+    // pad bytes to end if necessary (LE)
+    if bytes.len() < 32 {
+        let mut padded = vec![0; 32 - bytes.len()];
+        bytes.append(&mut padded);
+    }
+    let bytes: [u8; 32] = match bytes.try_into() {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return Err(GrapevineError::SerdeError(String::from(
+                "Invalid bigint length",
+            )))
+        }
+    };
+
+    // convert to field element
+    let fr = Fr::from_repr(bytes);
+    match &fr.is_some().unwrap_u8() {
+        1 => Ok(fr.unwrap()),
+        _ => Err(GrapevineError::SerdeError(String::from(
+            "Could not parse into bn254 field element",
+        ))),
+    }
+}
+
+/**
  * Turns the output of a proof (Vec<Fr>) into an array of hex strings for js
  *
  * @param outputs - the proof outputs as given by novascotia
@@ -177,6 +221,24 @@ pub fn stringify_proof_outputs(outputs: Vec<Fr>) -> Array {
         serialized.set(i, JsValue::from_str(&format!("0x{}", hex::encode(output))));
     }
     serialized
+}
+
+/**
+ * Given an array of hex strings, returns the proof ouuy
+ */
+pub fn destringify_proof_outputs(outputs: Array) -> Result<Vec<Fr>, GrapevineError> {
+    if outputs.length() != PROOF_OUTPUT_SIZE as u32 {
+        return Err(GrapevineError::SerdeError(format!(
+            "Invalid proof output length: {}",
+            outputs.length()
+        )));
+    };
+    let mut proof_outputs = Vec::new();
+    for i in 0..outputs.length() {
+        let output = outputs.get(i).as_string().unwrap();
+        proof_outputs.push(bigint_to_fr(output)?);
+    }
+    Ok(proof_outputs)
 }
 
 /**
@@ -215,6 +277,51 @@ pub async fn identity_proof(
     )
     .await
     .unwrap();
+    // compress proof and return
+    console_log!(verbose, "Compressing proof with gzip");
+    let compressed = compress_proof(&proof);
+    // stringify proof and return
+    console_log!(verbose, "Stringifying proof");
+    serde_json::to_string(&compressed).unwrap()
+}
+
+#[wasm_bindgen]
+pub async fn degree_proof(
+    artifact_locations: &WasmArtifacts,
+    input_map: String,
+    chaff_map: String,
+    proof_string: String,
+    previous_output: Array,
+    verbose: bool,
+) -> String {
+    console_log!(true, "A");
+    console_error_panic_hook::set_once();
+    // create artifacts
+    console_log!(true, "B");
+    console_log!(verbose, "Retrieving and parsing artifacts");
+    let artifacts = get_artifacts(artifact_locations).await;
+    // parse the circuit inputs
+    console_log!(verbose, "Parsing inputs");
+    let inputs = serde_json::from_str::<InputMapJson>(&input_map).unwrap();
+    // let chaff = serde_json::from_str::<InputMapJson>(&chaff_map).unwrap();
+    let private_inputs = vec![inputs.to_map()];
+    // parse previous inputs
+    console_log!(verbose, "Parsing previous outputs");
+    let previous_output = destringify_proof_outputs(previous_output).unwrap();
+    // decompress proof
+    let proof_compressed = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
+    let mut proof = decompress_proof(&proof_compressed[..]);
+    // create the degree proof
+    console_log!(verbose, "Creating proof");
+    continue_recursive_circuit(
+        &mut proof,
+        previous_output.clone(),
+        artifacts.wasm_location.clone(),
+        artifacts.r1cs.clone(),
+        private_inputs,
+        Z0_PRIMARY.clone(),
+        &artifacts.params,
+    ).await;
     // compress proof and return
     console_log!(verbose, "Compressing proof with gzip");
     let compressed = compress_proof(&proof);

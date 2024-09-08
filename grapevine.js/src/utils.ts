@@ -3,7 +3,7 @@ import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm";
 import { WasmArtifacts } from "./types"; 
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { Eddsa, Point, Poseidon, Signature } from "circomlibjs";
+import { BabyJub, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
 import { InputMap } from "./types";
 import * as crypto from "crypto";
 
@@ -179,6 +179,33 @@ export const makeIdentityInput = (
   };
 };
 
+export const makeDegreeInput = (
+  poseidon: Poseidon,
+  eddsa: Eddsa,
+  key: Buffer,
+  authSignature: Signature,
+  relationNullifier: Buffer
+) => {
+  let proverPubkey = eddsa.prv2pub(key);
+  let address = poseidon(proverPubkey);
+  let scopeSignature = eddsa.signPoseidon(key, address);
+  return {
+    prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    relation_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
+    auth_signature: [
+      poseidon.F.toObject(authSignature.R8[0]).toString(),
+      poseidon.F.toObject(authSignature.R8[1]).toString(),
+      authSignature.S.toString(),
+    ],
+    scope_signature: [
+      poseidon.F.toObject(scopeSignature.R8[0]).toString(),
+      poseidon.F.toObject(scopeSignature.R8[1]).toString(),
+      scopeSignature.S.toString(),
+    ],
+  };
+}
+
 export const makeRandomInput = (
   poseidon: Poseidon,
   eddsa: Eddsa
@@ -207,4 +234,18 @@ export const makeRandomInput = (
       scopeSignature.S.toString(),
     ],
   };
+};
+
+export const deriveNullifier = async (poseidon: Poseidon, eddsa: Eddsa, sk: Buffer, pk: Point) => {
+
+}
+
+export const deriveAesKey = async (bjj: BabyJub, sk: Buffer, pk: Point): Promise<[Buffer, Buffer]> => {
+  let secret = bjj.mulPointEscalar(pk, sk);
+  let seed = Buffer.concat([Buffer.from(secret[0]), Buffer.from(secret[1])]);
+  let hasher = crypto.createHash("sha256");
+  let hash = hasher.update(seed).digest();
+  let key = hash.subarray(0, 16);
+  let iv = hash.subarray(16, 32);
+  return [key, iv];
 };
