@@ -19,6 +19,7 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "circomlibjs": "^0.1.7"
+    "circomlibjs": "^0.1.7",
+    "ffjavascript": "^0.3.0"
   }
 }

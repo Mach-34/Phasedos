@@ -831,6 +831,15 @@ ffjavascript@^0.2.45:
     wasmcurves "0.2.2"
     web-worker "1.2.0"
 
+ffjavascript@^0.3.0:
+  version "0.3.0"
+  resolved "https://registry.yarnpkg.com/ffjavascript/-/ffjavascript-0.3.0.tgz#442cd8fbb1ee4cbb1be9d26fd7b2951a1ea45d6a"
+  integrity sha512-l7sR5kmU3gRwDy8g0Z2tYBXy5ttmafRPFOqY7S6af5cq51JqJWt5eQ/lSR/rs2wQNbDYaYlQr5O+OSUf/oMLoQ==
+  dependencies:
+    wasmbuilder "0.0.16"
+    wasmcurves "0.2.2"
+    web-worker "1.2.0"
+
 filelist@^1.0.4:
   version "1.0.4"
   resolved "https://registry.yarnpkg.com/filelist/-/filelist-1.0.4.tgz#f78978a1e944775ff9e62e744424f215e58352b5"

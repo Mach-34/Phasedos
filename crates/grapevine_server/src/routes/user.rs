@@ -2,7 +2,7 @@ use crate::catchers::{ErrorMessage, GrapevineResponse};
 use crate::guards::AuthenticatedUser;
 use crate::mongo::GrapevineDB;
 use crate::utils::RelationshipStatus;
-use babyjubjub_rs::{decompress_point, decompress_signature, verify};
+use babyjubjub_rs::{decompress_point, decompress_signature, verify, Point};
 use grapevine_common::compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes};
 use grapevine_common::errors::GrapevineError;
 use grapevine_common::http::requests::CreateUserRequest;
@@ -368,12 +368,11 @@ pub async fn get_nonce(
         }
     };
     // check the validity of the signature over the username
-    let message = BigInt::from_bytes_le(
-        Sign::Plus,
-        &convert_username_to_fr(&request.username).unwrap()[..],
-    );
+    let message = BigInt::from_bytes_le(Sign::Plus, &request.username.as_bytes());
     let pubkey_decompressed = decompress_point(pubkey).unwrap();
+
     let signature_decompressed = decompress_signature(&request.signature).unwrap();
+
     match verify(pubkey_decompressed, signature_decompressed, message) {
         true => (),
         false => {
