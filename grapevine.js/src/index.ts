@@ -1,6 +1,6 @@
 import { buildEddsa } from "circomlibjs";
 import { Scalar } from "ffjavascript";
-// import * as crypto from "crypto";
+import * as crypto from "crypto";
 
 
 // // let key = "0001020304050607080900010203040506070809000102030405060708090001";
@@ -36,11 +36,15 @@ import { Scalar } from "ffjavascript";
 
 // main();
 
+type User = {
+    privkey: string;
+    username: string;
+}
+
 
 const SERVER_URL = "http://localhost:8000";
 
-const addRelationship = async (recipient: string, sender: string) => {
-
+const addRelationship = async (recipient: string, sender: User) => {
     const payload = {
         ephemeral_key: [], // TODO
         nullifier_ciphertext: [], // TODO
@@ -53,7 +57,11 @@ const addRelationship = async (recipient: string, sender: string) => {
     const res = await fetch(url, {
         body: JSON.stringify(payload),
         method: "POST",
-        headers: { "content-type": 'application/json' }
+        // @ts-ignore
+        headers: {
+            "content-type": 'application/json',
+            ...(await genAuthHeaders(sender))
+        }
     });
     return await res.json()
 }
@@ -80,11 +88,21 @@ const getNonce = async (privatekey: string, username: string) => {
     return await res.json()
 }
 
-const getNullifierSecret = async () => { }
+const getNullifierSecret = async (recipient: string, user: User) => {
+    const url = `${SERVER_URL}/user/${recipient}/nullifier-secret`;
+    const res = await fetch(url, {
+        method: "GET",
+        // @ts-ignore
+        headers: {
+            ...(await genAuthHeaders(user))
+        }
+    });
+    return await res.text()
+}
 
-const nullifyRelationship = async (recipient: string, sender: string) => {
+const nullifyRelationship = async (recipient: string, sender: User) => {
 
-
+    const nullifierSecret = await getNullifierSecret(recipient, sender);
     // TODO: Decrypt nullifier secret
 
     const payload = {
@@ -96,23 +114,70 @@ const nullifyRelationship = async (recipient: string, sender: string) => {
     const res = await fetch(url, {
         body: JSON.stringify(payload),
         method: "POST",
-        headers: { "content-type": 'application/json' }
+        // @ts-ignore
+        headers: {
+            "content-type": 'application/json',
+            ...(await genAuthHeaders(sender))
+        }
     });
     return await res.json()
 }
 
-const genAuthHeaders = async (privkey: string, username: string) => {
-    const nonce = await getNonce(privkey, username);
+const genAuthHeaders = async (user: User) => {
+    const eddsa = await buildEddsa();
+    const nonce = await getNonce(user.privkey, user.username);
+    const nonceBytes = nonceToBytes(nonce);
 
-    // 
+    const usernameBytes = usernametoFr(user.username);
 
-    return {}
+    const hasher = crypto.createHash("sha3-256");
+    const digest = hasher.update(usernameBytes).update(nonceBytes).digest();
+    const digestBytes = new Uint8Array(digest);
+    digestBytes[31] = 0;
+
+    const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(Buffer.from(digestBytes), 0))
+
+    // sign digest
+    const signature = eddsa.signPoseidon(Buffer.from(user.privkey, 'hex'), msg);
+    const signatureHex = Buffer.from(eddsa.packSignature(signature)).toString('hex');
+
+    return { "X-Authorization": signatureHex, "X-Username": user.username }
+}
+
+const nonceToBytes = (nonce: number) => {
+    const arr = new Uint8Array(8); // Create an 8-byte array
+    for (let i = 7; i >= 0; i--) {
+        arr[i] = nonce & 0xff; // Extract the lowest 8 bits of the number
+        nonce = nonce >> 8; // Shift right by 8 bits
+    }
+    return arr.reverse();
+}
+
+const usernametoFr = (username: string) => {
+    if (username.length >= 32) {
+        throw Error("Max character length exceeded.");
+    }
+    const padded = new Uint8Array(32)
+    const usernameBytes = new Uint8Array(Buffer.from(username, 'utf-8'));
+    for (let i = 0; i < usernameBytes.length; i++) {
+        padded[30 - i] = usernameBytes[i];
+    }
+    return padded;
 }
 
 (async () => {
-    const privatekey1 = 'd6071fcce61f192d88959e26e15ed22495cefacc574e664dbcee2728ad7e410f';
-    const privatekey2 = '0bec346cdb813b92956b5f74c3a5f590fe32078ebfdca4580f6c9bbab4020175';
-    const username = 'testuser1';
-    const nonce = await getNonce(privatekey1, username);
-    console.log('Nonce: ', nonce);
+
+
+    const user1 = {
+        privkey: "d6071fcce61f192d88959e26e15ed22495cefacc574e664dbcee2728ad7e410f",
+        username: 'testuser'
+    };
+
+    const user2 = {
+        privkey: "0bec346cdb813b92956b5f74c3a5f590fe32078ebfdca4580f6c9bbab4020175",
+        username: 'testuser2'
+    }
+
+
+    // const res = await addRelationship(user2.username, user1);
 })();
