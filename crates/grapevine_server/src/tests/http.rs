@@ -69,7 +69,7 @@ pub async fn http_get_proof_by_scope(
 ) -> Option<GrapevineProof> {
     let username = user.username().clone();
     let signature = generate_nonce_signature(user);
-    let uri = format!("/proof/{}", scope);
+    let uri = format!("/proof/scope/{}", scope);
 
     // mock transmit the request
     let res = context
