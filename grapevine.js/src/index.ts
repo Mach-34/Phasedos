@@ -36,41 +36,80 @@ import { Scalar } from "ffjavascript";
 
 // main();
 
-function padBufferTo32Bytes(buffer: Buffer) {
-    if (buffer.length > 32) {
-        throw new Error("Buffer is already larger than 32 bytes");
-    }
 
-    // Create a new 32-byte buffer filled with zeros
-    const paddedBuffer = Buffer.alloc(32);
+const SERVER_URL = "http://localhost:8000";
 
-    // Copy the original buffer to the end of the new buffer
-    buffer.copy(paddedBuffer, 32 - buffer.length);
-
-    return paddedBuffer;
-}
-
-(async () => {
-    const eddsa = await buildEddsa();
-    const username = 'testuser';
-    const privkey = "0xd6071fcce61f192d88959e26e15ed22495cefacc574e664dbcee2728ad7e410f";
-    const buff = padBufferTo32Bytes(Buffer.from(username, 'utf8'));
-    const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
-    const SERVER_URL = "http://localhost:8000";
-    const url = `${SERVER_URL}/user/nonce`;
-
-    const signature = eddsa.signPoseidon(privkey, msg);
+const addRelationship = async (recipient: string, sender: string) => {
 
     const payload = {
-        signature: Array.from(eddsa.packSignature(signature)),
-        username: "testuser"
+        ephemeral_key: [], // TODO
+        nullifier_ciphertext: [], // TODO
+        nullifier_secret_ciphertext: [], // TODO
+        signature_ciphertext: [], // TODO
+        to: recipient,
     };
 
+    const url = `${SERVER_URL}/user/relationship/add`
     const res = await fetch(url, {
         body: JSON.stringify(payload),
         method: "POST",
         headers: { "content-type": 'application/json' }
     });
-    const data = await res.json();
-    console.log('Data: ', data);
+    return await res.json()
+}
+
+const getNonce = async (privatekey: string, username: string) => {
+    const eddsa = await buildEddsa();
+    const privkey = Buffer.from(privatekey, 'hex');
+    const buff = Buffer.from(username, 'utf8');
+    const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
+
+    const signature = eddsa.signPoseidon(privkey, msg);
+
+    const payload = {
+        signature: Array.from(eddsa.packSignature(signature)),
+        username
+    };
+
+    const url = `${SERVER_URL}/user/nonce`;
+    const res = await fetch(url, {
+        body: JSON.stringify(payload),
+        method: "POST",
+        headers: { "content-type": 'application/json' }
+    });
+    return await res.json()
+}
+
+const getNullifierSecret = async () => { }
+
+const nullifyRelationship = async (recipient: string, sender: string) => {
+
+
+    // TODO: Decrypt nullifier secret
+
+    const payload = {
+        nullifier_secret: [], // TODO
+        recipient
+    };
+
+    const url = `${SERVER_URL}/user/relationship/nullify`;
+    const res = await fetch(url, {
+        body: JSON.stringify(payload),
+        method: "POST",
+        headers: { "content-type": 'application/json' }
+    });
+    return await res.json()
+}
+
+const genAuthHeaders = async (privkey: string, username: string) => {
+    const nonce = await getNonce(privkey, username);
+    return {}
+}
+
+(async () => {
+    const privatekey1 = 'd6071fcce61f192d88959e26e15ed22495cefacc574e664dbcee2728ad7e410f';
+    const privatekey2 = '0bec346cdb813b92956b5f74c3a5f590fe32078ebfdca4580f6c9bbab4020175';
+    const username = 'testuser1';
+    const nonce = await getNonce(privatekey1, username);
+    console.log('Nonce: ', nonce);
 })();
