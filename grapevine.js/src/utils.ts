@@ -1,8 +1,11 @@
 import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts";
-import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm"
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { Point, Poseidon } from "circomlibjs";
+import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm";
+import { WasmArtifacts } from "./types"; 
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+import { Eddsa, Point, Poseidon, Signature } from "circomlibjs";
+import { InputMap } from "./types";
+import * as crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -97,9 +100,7 @@ export const fetchWithRetry = async (
  * @param threads - the number of threads to use in the web worker pool (if available)
  * @returns - the wasm module
  */
-export const initGrapevineWasm = async (
-  threads = 1
-): Promise<any> => {
+export const initGrapevineWasm = async (threads = 1): Promise<any> => {
   let wasm;
 
   if (typeof window !== "undefined") {
@@ -116,21 +117,94 @@ export const initGrapevineWasm = async (
       await wasm.initThreadPool(concurrency);
     }
   } else {
-    const fs = await import('fs');
-    const path = await import('path');
-    const wasmPath = path.resolve(__dirname, '../wasm/grapevine_wasm_bg.wasm');
+    const fs = await import("fs");
+    const path = await import("path");
+    const wasmPath = path.resolve(__dirname, "../wasm/grapevine_wasm_bg.wasm");
     const wasmBytes = fs.readFileSync(wasmPath);
     await init(wasmBytes);
   }
   return GrapevineWasmModule;
 };
 
-export const defaultArtifacts = async (): Promise<GrapevineWasmModule.WasmArtifacts> => {
+export const defaultArtifacts =
+  async (): Promise<WasmArtifacts> => {
     const params = await getParams();
     const paramsString = await decompressParamsBlob(params);
-    return new GrapevineWasmModule.WasmArtifacts(paramsString, R1CS_URI, WASM_URI);
-}
+    return new WasmArtifacts(
+      paramsString,
+      R1CS_URI,
+      WASM_URI
+    );
+  };
 
-// export const pubkey_to_address = async (hasher: Poseidon, pubkey: Point): Promise<bigint> => {
-  
-// }
+export const randomSignature = (eddsa: Eddsa): Signature => {
+  let key = crypto.randomBytes(32);
+  let randomMessage = eddsa.F.e(crypto.randomBytes(32));
+  let signature = eddsa.signPoseidon(key, randomMessage);
+  return signature;
+};
+
+export const makeIdentityInput = (
+  poseidon: Poseidon,
+  eddsa: Eddsa,
+  key: Buffer
+): InputMap => {
+  // make real inputs
+  let proverPubkey = eddsa.prv2pub(key);
+  let address = poseidon(proverPubkey);
+  let scopeSignature = eddsa.signPoseidon(key, address);
+
+  // make dummy inputs
+  let relationKey = crypto.randomBytes(32);
+  let relationPubkey = eddsa.prv2pub(relationKey);
+  let authSignature = randomSignature(eddsa);
+  let relationNullifier = poseidon.F.e(crypto.randomBytes(32));
+
+  return {
+    prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    relation_pubkey: relationPubkey.map((x) =>
+      poseidon.F.toObject(x).toString()
+    ),
+    relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
+    auth_signature: [
+      poseidon.F.toObject(authSignature.R8[0]).toString(),
+      poseidon.F.toObject(authSignature.R8[1]).toString(),
+      authSignature.S.toString(),
+    ],
+    scope_signature: [
+      poseidon.F.toObject(scopeSignature.R8[0]).toString(),
+      poseidon.F.toObject(scopeSignature.R8[1]).toString(),
+      scopeSignature.S.toString(),
+    ],
+  };
+};
+
+export const makeRandomInput = (
+  poseidon: Poseidon,
+  eddsa: Eddsa
+): InputMap => {
+  let proverKey = crypto.randomBytes(32);
+  let proverPubkey = eddsa.prv2pub(proverKey);
+  let relationKey = crypto.randomBytes(32);
+  let relationPubkey = eddsa.prv2pub(relationKey);
+  let scopeSignature = randomSignature(eddsa);
+  let authSignature = randomSignature(eddsa);
+  let relationNullifier = poseidon.F.e(crypto.randomBytes(32));
+  return {
+    prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    relation_pubkey: relationPubkey.map((x) =>
+      poseidon.F.toObject(x).toString()
+    ),
+    relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
+    auth_signature: [
+      poseidon.F.toObject(authSignature.R8[0]).toString(),
+      poseidon.F.toObject(authSignature.R8[1]).toString(),
+      authSignature.S.toString(),
+    ],
+    scope_signature: [
+      poseidon.F.toObject(scopeSignature.R8[0]).toString(),
+      poseidon.F.toObject(scopeSignature.R8[1]).toString(),
+      scopeSignature.S.toString(),
+    ],
+  };
+};
