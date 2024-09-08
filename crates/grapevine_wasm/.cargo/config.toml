@@ -1,5 +1,8 @@
-[env]
-RUST_TEST_THREADS = "1"
+[unstable]
+build-std = ["panic_abort", "std"]
+
+[build]
+target = "wasm32-unknown-unknown"
 
 [target.wasm32-unknown-unknown]
 rustflags = [

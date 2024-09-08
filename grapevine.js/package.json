@@ -1,0 +1,24 @@
+{
+  "name": "grapevine.js",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "mocha -r ts-node/register 'test/**/*.ts'"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.19",
+    "@types/circomlibjs": "^0.1.6",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^22.5.4",
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "circomlibjs": "^0.1.7"
+  }
+}

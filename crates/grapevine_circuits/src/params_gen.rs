@@ -4,6 +4,7 @@ use nova_scotia::{circom::reader::load_r1cs, create_public_params, FileLocation,
 use std::{env, path::Path, io::Write};
 
 // Utility for building circuit artifacts, assumes grapevine/scripts/compile.sh has already run
+#[cfg(not(target_family = "wasm"))]
 pub fn main() {
     // check for the existence of the artifacts directory in the current dir
     let current_dir = env::current_dir().expect("Failed to get current directory");
