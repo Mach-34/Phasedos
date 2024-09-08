@@ -1,4 +1,4 @@
-use crate::utils::ToBson;
+use crate::utils::{GetRelationshipOptions, ToBson};
 use mongodb::bson::{doc, oid::ObjectId, Bson, Document};
 
 /**
@@ -193,17 +193,21 @@ pub fn get_proven_degrees(user: &String) -> Vec<Document> {
  * @param full: Whether to return the full relationship document or just the ObjectId
  * @returns the aggregation pipeline needed to retrieve the data from mongo
  */
-pub fn get_relationship(sender: &String, recipient: &String, full: bool) -> Vec<Document> {
+pub fn get_relationship(
+    sender: &String,
+    recipient: &String,
+    options: GetRelationshipOptions,
+) -> Vec<Document> {
     // optional doc for projecting only the ObjectId of the document
     let mut lookup_pipeline = vec![doc! { "$match": { "$expr": { "$and": [
         { "$eq": ["$sender", "$$senderId"] },
         { "$eq": ["$recipient", "$$recipientId"] }
     ]}}}];
-    if !full {
+    if !options.full {
         lookup_pipeline.push(doc! { "$project": { "_id": 1 } });
     }
     // pipeline definition
-    vec![
+    let mut pipeline = vec![
         // 1. Look up the ObjectIDs of the sender and recipient
         doc! {
             "$facet": {
@@ -228,14 +232,30 @@ pub fn get_relationship(sender: &String, recipient: &String, full: bool) -> Vec<
             "$lookup": {
                 "from": "relationships",
                 "let": { "senderId": "$sender", "recipientId": "$recipient" },
-                "pipeline": lookup_pipeline,
+                "pipeline": lookup_pipeline.clone(),
                 "as": "relationship"
             }
         },
         doc! { "$unwind": "$relationship" },
         // 3. Return only the retrieved relationship document (or only the OID)
         doc! { "$replaceRoot": { "newRoot": "$relationship" }},
-    ]
+    ];
+
+    if options.counterparty {
+        let append = vec![
+            doc! {
+                "$lookup": {
+                    "from": "relationships",
+                    "let": { "senderId": "$recipient", "recipientId": "$sender" },
+                    "pipeline": lookup_pipeline,
+                    "as": "counterpartyRelationship"
+                },
+            },
+            doc! { "$unwind": { "path": "$counterpartyRelationship", "preserveNullAndEmptyArrays": true } },
+        ];
+        pipeline.extend(append);
+    }
+    pipeline
 }
 
 /**
@@ -313,25 +333,50 @@ pub fn get_relationships_usernames(user: &String, active: bool) -> Vec<Document>
                 "foreignField": "recipient",
                 "as": "relationships",
                 "pipeline": [
-                    doc! { "$match": { "$expr": { "$eq": ["$active", active] } } },
-                    doc! { "$project": { "sender": 1, "_id": 0 } },
+                    { "$match": { "$expr": { "$eq": ["$active", active] } } },
+                    { "$project": { "emitted_nullifier": 1, "sender": 1, "_id": 0 } },
                 ],
             }
         },
         doc! { "$unwind": "$relationships" },
-        // 3. Look up the usernames of found relationship senderss
+        // 3. Look up counterparty relationship to check if user has nullified (only active)
+        doc! {
+          "$lookup": {
+            "from": "relationships",
+            "let": { "senderId": "$_id" },
+            "localField": "relationships.sender",
+            "foreignField": "recipient",
+            "as": "counterpartyRelationship",
+            "pipeline": [
+              { "$match": { "$expr":
+              { "$and": [
+                {"$eq": ["$sender", "$$senderId"] },
+                { "$ne": ["$emitted_nullifier", null] }
+                ]
+            } } },
+              { "$project": {"_id": 1 } },
+            ],
+          }
+        },
+        doc! { "$unwind": { "path": "$counterpartyRelationship", "preserveNullAndEmptyArrays": true } },
+        // 4. Look up the usernames of found relationship senders
         doc! {
             "$lookup": {
                 "from": "users",
                 "localField": "relationships.sender",
                 "foreignField": "_id",
-                "as": "relationships",
-                "pipeline": [ doc! { "$project": { "username": 1, "_id": 0 } }],
+                "as": "relationshipCounterparty",
+                "pipeline": [ { "$project": { "username": 1, "_id": 0 } }],
             }
         },
-        doc! { "$unwind": "$relationships" },
-        // 4. Project only the usernames of the relationships
-        doc! { "$project": { "username": "$relationships.username", "_id": 0 } },
+        doc! { "$unwind": "$relationshipCounterparty" },
+        // 5. Project only the usernames of the relationships
+        doc! { "$project": {
+            "emitted_nullifier": "$relationships.emitted_nullifier",
+            "username": "$relationshipCounterparty.username",
+            "counterpartyRelationship": 1,
+            "_id": 0
+        } },
     ]
 }
 

@@ -134,10 +134,10 @@ mod auth_guard_tests {
             .await;
         assert_eq!(res.status().code, 404);
 
-        let expected_msg = format!("Username {} does not exist", username);
+        let expected_msg = GrapevineError::UserNotFound(username);
 
-        let msg = res.into_string().await.unwrap();
-        assert_eq!(expected_msg, msg);
+        let msg = res.into_json::<GrapevineError>().await.unwrap();
+        assert_eq!(expected_msg.to_string(), msg.to_string());
     }
 
     #[rocket::async_test]

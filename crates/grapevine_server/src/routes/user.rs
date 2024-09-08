@@ -78,9 +78,9 @@ pub async fn add_relationship(
     let recipient = match db.get_user(&request.to).await {
         Some(user) => user,
         None => {
-            return Err(GrapevineResponse::NotFound(String::from(
-                "Recipient does not exist.".to_string(),
-            )));
+            return Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+                GrapevineError::UserNotFound(String::from(request.to)),
+            ))));
         }
     };
 
@@ -243,10 +243,9 @@ pub async fn emit_nullifier(
         .await
     {
         return match e {
-            GrapevineError::NoRelationship(from, to) => Err(GrapevineResponse::NotFound(format!(
-                "No active relationship exists from {} to {}",
-                from, to
-            ))),
+            GrapevineError::NoRelationship(from, to) => Err(GrapevineResponse::NotFound(
+                ErrorMessage(Some(GrapevineError::NoRelationship(from, to))),
+            )),
             GrapevineError::RelationshipNullified => {
                 Err(GrapevineResponse::Conflict(ErrorMessage(Some(e))))
             }
@@ -299,7 +298,7 @@ pub async fn reject_pending_relationship(
         Ok(_) => Ok(Status::Ok),
         Err(e) => match e {
             GrapevineError::NoPendingRelationship(from, to) => Err(GrapevineResponse::NotFound(
-                format!("No pending relationship exists from {} to {}", from, to),
+                ErrorMessage(Some(GrapevineError::NoPendingRelationship(from, to))),
             )),
             _ => Err(GrapevineResponse::InternalError(ErrorMessage(Some(e)))),
         },
@@ -363,9 +362,9 @@ pub async fn get_nonce(
     let (nonce, pubkey) = match db.get_nonce(&request.username).await {
         Some((nonce, pubkey)) => (nonce, pubkey),
         None => {
-            return Err(GrapevineResponse::NotFound(String::from(
-                "User not does not exist.",
-            )))
+            return Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+                GrapevineError::UserNotFound(request.username.clone()),
+            ))))
         }
     };
     // check the validity of the signature over the username
@@ -406,9 +405,9 @@ pub async fn get_pubkey(
 ) -> Result<String, GrapevineResponse> {
     match db.get_pubkey(&username).await {
         Some(pubkey) => Ok(hex::encode(pubkey.0)),
-        None => Err(GrapevineResponse::NotFound(String::from(
-            "User not does not exist.",
-        ))),
+        None => Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+            GrapevineError::UserNotFound(String::from(username)),
+        )))),
     }
 }
 

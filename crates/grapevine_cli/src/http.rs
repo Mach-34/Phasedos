@@ -472,3 +472,9 @@ pub async fn reject_relationship_req(
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
     }
 }
+
+pub async fn reset_db() {
+    let url = format!("{}/dev/reset-db", &**SERVER_URL);
+    let client = Client::new();
+    let _ = client.delete(&url).send().await;
+}

@@ -27,7 +27,9 @@ pub enum GrapevineError {
     SerdeError(String),
     DegreeProofExists,
     ProofFailed(String),
-    FsError(String)
+    FsError(String),
+    // here to get tests to pass but eventually will be removed with GrapevineError refactor
+    PlaceholderError(String),
 }
 
 impl std::fmt::Display for GrapevineError {
@@ -49,7 +51,7 @@ impl std::fmt::Display for GrapevineError {
             }
             GrapevineError::UserExists(msg) => {
                 write!(f, "User {} already exists with the supplied pubkey", msg)
-            },
+            }
             GrapevineError::PhraseTooLong => write!(f, "Phrase is too long"),
             GrapevineError::PendingRelationshipExists(sender, recipient) => {
                 write!(
@@ -71,20 +73,16 @@ impl std::fmt::Display for GrapevineError {
                     "No pending relationship exists from {} to {}",
                     sender, recipient
                 )
-            },
+            }
             GrapevineError::NoRelationship(sender, recipient) => {
-                write!(
-                    f,
-                    "No relationship exists from {} to {}",
-                    sender, recipient
-                )
+                write!(f, "No relationship exists from {} to {}", sender, recipient)
             }
             GrapevineError::RelationshipSenderIsTarget => {
                 write!(f, "Relationship sender and target are the same")
-            },
+            }
             GrapevineError::RelationshipNullified => {
                 write!(f, "Nullified relationship is being used")
-            },
+            }
             &GrapevineError::NonceMismatch(expected, actual) => write!(
                 f,
                 "Nonce mismatch: expected {}, got {}. Retry this call",
@@ -108,8 +106,9 @@ impl std::fmt::Display for GrapevineError {
             }
             GrapevineError::ProofFailed(msg) => {
                 write!(f, "Failed to verify proof: {}", msg)
-            },
+            }
             GrapevineError::FsError(msg) => write!(f, "Filesystem error: {}", msg),
+            GrapevineError::PlaceholderError(msg) => write!(f, "{}", msg),
         }
     }
 }
