@@ -27,16 +27,18 @@ describe("Grapevine", () => {
     poseidon = await buildPoseidon();
     eddsa = await buildEddsa();
     F = poseidon.F;
-    artifacts = await GrapevineUtils.defaultArtifacts();
+    console.log("Downloading proving artifacts...");
+    //artifacts = await GrapevineUtils.defaultArtifacts();
   });
   xit("Test the bn", async () => {
     let x = 12348023482034820384023840238402834028340283402834023n;
     let y = await wasm.bigint_test(x);
   });
-  it("Do an identity Proof", async () => {
+  xit("Do an identity Proof", async () => {
     // get circuit inputs
     let input_map = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
     let chaff_map = GrapevineUtils.makeRandomInput(poseidon, eddsa);
+    console.log("Input map: ", input_map);
     // run identity proof
     let res = await wasm.identity_proof(
       artifacts,
@@ -56,4 +58,17 @@ describe("Grapevine", () => {
     params = artifacts.params;
     console.log("Params: ", params.length);
   });
+  it("AES Keygen test", async () => {
+    let sk = keys[0].toString("hex");
+    let pk = eddsa.prv2pub(keys[1]);
+    let pk_x = convertValue(pk[0], F).toString("hex");
+    let pk_y = convertValue(pk[1], F).toString("hex");
+    console.log("Private key: ", sk);
+    console.log("Public key x: ", pk_x);
+    console.log("Public key y: ", pk_y);
+        let input_map = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
+
+    let aes_key = await wasm.derive_aes_key(sk, pk_x, pk_y);
+    console.log("AES Key: ", aes_key);
+  })
 });

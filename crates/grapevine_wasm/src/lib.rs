@@ -8,10 +8,10 @@ use grapevine_circuits::{
 };
 use grapevine_common::{
     compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes},
-    crypto::pubkey_to_address,
+    crypto::{gen_aes_key, pubkey_to_address},
     Fr, Params, G1, G2,
 };
-use js_sys::{BigInt as JsBigInt, JsString, Uint8Array, Array, Number};
+use js_sys::{Array, BigInt as JsBigInt, JsString, Number, Uint8Array};
 use nova_scotia::{
     circom::{circuit::R1CS, reader::load_r1cs},
     continue_recursive_circuit, create_recursive_circuit, FileLocation,
@@ -290,6 +290,7 @@ pub async fn identity_proof(
  */
 #[wasm_bindgen]
 pub async fn verify_grapevine_proof(proof: String, params_string: String, degree: Number) -> Array {
+    console_error_panic_hook::set_once();
     // parse public parameters
     let params: Params = serde_json::from_str(&params_string).unwrap();
     // decompress proof
@@ -303,6 +304,25 @@ pub async fn verify_grapevine_proof(proof: String, params_string: String, degree
         .unwrap();
     // return stringified outputs
     stringify_proof_outputs(outputs.0)
+}
+
+#[wasm_bindgen]
+pub async fn derive_aes_key(pubkey_x: String, pubkey_y: String, privkey: String) -> String {
+    console_error_panic_hook::set_once();
+    console_log!(true, "{}", &pubkey_x);
+    console_log!(true, "{}", &pubkey_y);
+    console_log!(true, "{}", &privkey);
+    let pk = Point {
+        x: ff_ce_from_le_bytes(hex::decode(pubkey_x).unwrap().try_into().unwrap()),
+        y: ff_ce_from_le_bytes(hex::decode(pubkey_y).unwrap().try_into().unwrap()),
+    };
+    let sk = PrivateKey::import(hex::decode(privkey).unwrap()).unwrap();
+    let aes_key = gen_aes_key(sk, pk);
+    // concat aes key
+    let mut serialized = [0u8; 32]; // Initialize an empty [u8; 32] array
+    serialized[..16].copy_from_slice(&aes_key.0);
+    serialized[16..].copy_from_slice(&aes_key.1);
+    hex::encode(serialized)
 }
 
 #[wasm_bindgen]
