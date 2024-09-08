@@ -225,7 +225,7 @@ pub async fn get_users(context: &GrapevineTestContext, num_users: usize) -> Vec<
         let username = format!("user_{}", i);
         let user = GrapevineAccount::new(username.into());
         let request = build_create_user_request(&user);
-        http_create_user(&context, &request).await;
+        _ = http_create_user(&context, &request).await;
         users.push(user);
     }
     users

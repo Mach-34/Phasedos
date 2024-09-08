@@ -2,7 +2,7 @@ use crate::http::{
     add_relationship_req, create_user_req, degree_proof_req, emit_nullifier,
     get_account_details_req, get_available_proofs_req, get_degree_by_scope_req, get_nonce_req,
     get_nullifier_secret, get_proof_with_params_req, get_proven_degrees_req, get_pubkey_req,
-    get_relationships_req, reject_relationship_req,
+    get_relationships_req, get_relationships_to_nullify, reject_relationship_req,
 };
 use crate::utils::artifacts_guard;
 use crate::utils::fs::{use_public_params, use_r1cs, use_wasm, ACCOUNT_PATH};
@@ -254,7 +254,11 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
             Err(e) => return Err(e),
         };
 
-        println!("==============[{} (Degree {})==============", available_proof.scope, available_proof.degree + 1);
+        println!(
+            "==============[{} (Degree {})==============",
+            available_proof.scope,
+            available_proof.degree + 1
+        );
         println!("Relation: {}", available_proof.relation);
         println!("Proving...");
 
@@ -267,11 +271,8 @@ pub async fn prove_all_available() -> Result<String, GrapevineError> {
 
         let auth_secret = account.decrypt_auth_signature(auth_secret_encrypted);
         let mut proof = decompress_proof(&proving_data.proof);
-        let verified = verify_grapevine_proof(
-            &proof,
-            &artifacts.params,
-            (available_proof.degree) as usize,
-        );
+        let verified =
+            verify_grapevine_proof(&proof, &artifacts.params, (available_proof.degree) as usize);
         let previous_output = match verified {
             Ok(data) => data.0,
             Err(e) => {
@@ -381,8 +382,10 @@ pub async fn nullify_relationship(recipient: &String) -> Result<String, Grapevin
     let mut account = get_account()?;
     // sync nonce
     synchronize_nonce().await?;
-
-    let encrypted_nullifier_secret = get_nullifier_secret(&mut account, recipient).await.unwrap();
+    let encrypted_nullifier_secret = match get_nullifier_secret(&mut account, recipient).await {
+        Ok(data) => data,
+        Err(e) => return Err(e),
+    };
     let bytes: [u8; 48] = encrypted_nullifier_secret.try_into().unwrap();
     let nullifier_secret = account.decrypt_nullifier_secret(bytes);
 
@@ -500,6 +503,42 @@ pub async fn get_proof_metadata_by_scope(username: &String) -> Result<String, Gr
     output.push_str(&col_labels);
     output.push_str(&col_values);
     Ok(output)
+}
+
+pub async fn list_relationships_to_nullify() -> Result<String, GrapevineError> {
+    // get account
+    let mut account = get_account()?;
+    // sync nonce
+    synchronize_nonce().await?;
+
+    let relationships = match get_relationships_to_nullify(&mut account).await {
+        Ok(data) => data,
+        Err(e) => return Err(e),
+    };
+
+    let count = relationships.len();
+
+    if count == 0 {
+        Ok(String::from(
+            "You have no relationships requiring nullification.",
+        ))
+    } else {
+        println!(
+            "Showing {} {} requiring nullification for {}:",
+            count,
+            if count == 1 {
+                "relationship"
+            } else {
+                "relationships"
+            },
+            account.username()
+        );
+        for relationship in relationships {
+            println!("|=> \"{}\"", relationship);
+        }
+
+        Ok(String::from(""))
+    }
 }
 
 pub fn make_or_get_account(username: String) -> Result<GrapevineAccount, GrapevineError> {

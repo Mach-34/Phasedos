@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Responder)]
 pub enum GrapevineResponse {
+    #[response(status = 200)]
+    Ok(String),
     #[response(status = 201)]
     Created(String),
     #[response(status = 400)]
@@ -18,7 +20,7 @@ pub enum GrapevineResponse {
     #[response(status = 401)]
     Unauthorized(ErrorMessage),
     #[response(status = 404)]
-    NotFound(String),
+    NotFound(ErrorMessage),
     #[response(status = 409)]
     Conflict(ErrorMessage),
     #[response(status = 413)]
@@ -46,7 +48,7 @@ pub fn not_found(req: &Request) -> GrapevineResponse {
     let res = req.local_cache(|| ErrorMessage(None));
     // TODO:  Figure out whether to get rid of error message enum or put not
     //        found response inside
-    GrapevineResponse::NotFound(res.0.clone().unwrap().to_string())
+    GrapevineResponse::NotFound(ErrorMessage(res.0.clone()))
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
