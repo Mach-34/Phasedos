@@ -105,6 +105,32 @@ pub async fn get_proof_with_params_req(
     }
 }
 
+pub async fn get_relationships_to_nullify(
+    account: &mut GrapevineAccount,
+) -> Result<Vec<String>, GrapevineError> {
+    let url = format!("{}/user/relationship/nullified", &**SERVER_URL);
+    // produce signature over current nonce
+    let signature = hex::encode(account.sign_nonce().compress());
+    let client = Client::new();
+    let res = client
+        .get(url)
+        .header("X-Username", account.username())
+        .header("X-Authorization", signature)
+        .send()
+        .await
+        .unwrap();
+
+    // increment nonce
+    account
+        .increment_nonce(Some((&**ACCOUNT_PATH).to_path_buf()))
+        .unwrap();
+
+    match res.status() {
+        StatusCode::OK => return Ok(res.json::<Vec<String>>().await.unwrap()),
+        _ => Err(res.json::<GrapevineError>().await.unwrap()),
+    }
+}
+
 /// POST REQUESTS ///
 /**
  * Makes an HTTP Request to create a new user
@@ -445,4 +471,10 @@ pub async fn reject_relationship_req(
         }
         _ => Err(res.json::<GrapevineError>().await.unwrap()),
     }
+}
+
+pub async fn reset_db() {
+    let url = format!("{}/dev/reset-db", &**SERVER_URL);
+    let client = Client::new();
+    let _ = client.delete(&url).send().await;
 }

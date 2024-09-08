@@ -246,10 +246,12 @@ pub async fn degree_proof(
     let validation_data = match db.get_degree_data(&user.0, &previous_proof_oid).await {
         Some(data) => data,
         None => {
-            return Err(GrapevineResponse::NotFound(format!(
-                "No proof found with oid {}",
-                request.previous.clone()
-            )));
+            return Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+                GrapevineError::PlaceholderError(format!(
+                    "No proof found with oid {}",
+                    request.previous.clone()
+                )),
+            ))));
         }
     };
 
@@ -370,10 +372,12 @@ pub async fn get_proof_by_scope(
 ) -> Result<Json<GrapevineProof>, GrapevineResponse> {
     match db.find_proof_by_scope(&user.0, &scope).await {
         Some(doc) => Ok(Json(doc)),
-        None => Err(GrapevineResponse::NotFound(format!(
-            "Proof by {} for scope {}",
-            &user.0, &scope
-        ))),
+        None => Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+            GrapevineError::PlaceholderError(format!(
+                "Proof by {} for scope {} not found",
+                &user.0, &scope
+            )),
+        )))),
     }
 }
 
@@ -391,10 +395,12 @@ pub async fn get_proof_metadata_by_scope(
 ) -> Result<Json<ProofMetadata>, GrapevineResponse> {
     match db.get_proof_metadata_by_scope(&user.0, &scope).await {
         Some(doc) => Ok(Json(doc)),
-        None => Err(GrapevineResponse::NotFound(format!(
-            "Proof by {} for scope {}",
-            &user.0, &scope
-        ))),
+        None => Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+            GrapevineError::PlaceholderError(format!(
+                "Proof by {} for scope {} not found",
+                &user.0, &scope
+            )),
+        )))),
     }
 }
 
@@ -425,9 +431,8 @@ pub async fn get_proof_with_params(
     let oid = ObjectId::from_str(&oid).unwrap();
     match db.get_proof_and_data(user.0, oid).await {
         Some(data) => Ok(Json(data)),
-        None => Err(GrapevineResponse::NotFound(format!(
-            "No proof found with oid {}",
-            oid
-        ))),
+        None => Err(GrapevineResponse::NotFound(ErrorMessage(Some(
+            GrapevineError::PlaceholderError(format!("No proof found with oid {}", oid)),
+        )))),
     }
 }

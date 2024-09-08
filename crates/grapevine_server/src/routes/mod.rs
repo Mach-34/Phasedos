@@ -13,6 +13,7 @@ lazy_static! {
         user::get_pending_relationships,
         user::get_active_relationships,
         user::get_account_details,
+        user::get_nullified_relationships,
         // user::get_user,
         user::get_nonce,
         user::get_pubkey,

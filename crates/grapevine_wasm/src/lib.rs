@@ -1,29 +1,65 @@
 use std::{collections::HashMap, str::FromStr};
 
-use grapevine_common::{
-    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes},
-    crypto::pubkey_to_address,
-    Fr, Params, G1, G2,
-};
+use babyjubjub_rs::{Point, PrivateKey, Signature};
 use grapevine_circuits::{
     inputs::{GrapevineArtifacts, GrapevineInputs},
     utils::{compress_proof, decompress_proof},
     Z0_PRIMARY, Z0_SECONDARY,
 };
-use js_sys::{BigInt as JsBigInt, JsString};
+use grapevine_common::{
+    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes},
+    crypto::{gen_aes_key, pubkey_to_address},
+    Fr, Params, G1, G2,
+};
+use js_sys::{Array, BigInt as JsBigInt, JsString, Number, Uint8Array};
 use nova_scotia::{
     circom::{circuit::R1CS, reader::load_r1cs},
     continue_recursive_circuit, create_recursive_circuit, FileLocation,
 };
-use serde::{Deserialize, Serialize};
-use babyjubjub_rs::{Point, PrivateKey, Signature};
 use num_bigint::{BigInt, Sign};
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
 pub mod types;
 // pub mod utils;
 pub use wasm_bindgen_rayon::init_thread_pool;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputMapJson {
+    pub prover_pubkey: Vec<String>,
+    pub relation_pubkey: Vec<String>,
+    pub relation_nullifier: String,
+    pub auth_signature: Vec<String>,
+    pub scope_signature: Vec<String>,
+}
+
+impl InputMapJson {
+    pub fn to_map(&self) -> HashMap<String, Value> {
+        let mut map = HashMap::new();
+        map.insert(
+            "prover_pubkey".to_string(),
+            json!(self.prover_pubkey.clone()),
+        );
+        map.insert(
+            "relation_pubkey".to_string(),
+            json!(self.relation_pubkey.clone()),
+        );
+        map.insert(
+            "relation_nullifier".to_string(),
+            json!(self.relation_nullifier.clone()),
+        );
+        map.insert(
+            "auth_signature".to_string(),
+            json!(self.auth_signature.clone()),
+        );
+        map.insert(
+            "scope_signature".to_string(),
+            json!(self.scope_signature.clone()),
+        );
+        map
+    }
+}
 
 #[wasm_bindgen]
 pub struct WasmArtifacts {
@@ -87,84 +123,15 @@ extern "C" {
     pub type StringArray;
 }
 
-// #[wasm_bindgen]
-// pub struct WasmIdentityInputs {
-//     pub prover_key: JsString,
-//     pub scope_signature: JsString
-// }
-
 #[macro_export]
 macro_rules! console_log {
-    // Note that this is using the `log` function imported above during
-    // `bare_bones`
-    ($($t:tt)*) => ($crate::log(&format_args!($($t)*).to_string()))
+    // Version with verbosity check (verbose flag passed)
+    ($verbose:expr, $($t:tt)*) => {
+        if $verbose {
+            $crate::log(&format_args!($($t)*).to_string())
+        }
+    };
 }
-
-// pub fn identity_step_helper(prover_key: String) -> GrapevineInputs {
-//     // convert prover key from string to
-//     console_log!("Converting prover key: {:?}", &prover_key);
-//     let prover_key_bytes = hex::decode(prover_key).unwrap();
-//     console_log!("Importing prover key: {:?}", &prover_key_bytes);
-//     let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
-
-//     // try sign
-//     console_log!("Attempting to sign");
-//     let message = BigInt::from_bytes_le(Sign::Plus, &[0x00]);
-//     let scope_signature = prover_key.sign(message).unwrap();
-//     console_log!("Signed!");
-
-//     // get the pubkey used by the prover
-//     console_log!("Getting prover pubkey:");
-//     let prover_pubkey = prover_key.public();
-//     // get the account address
-//     console_log!("Getting prover address");
-//     let address = pubkey_to_address(&prover_pubkey);
-//     // sign the address
-//     console_log!("Creating message to sign");
-//     let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&address));
-//     console_log!("Signing message");
-//     let scope_signature = prover_key.sign(message).unwrap();
-//     GrapevineInputs {
-//         nullifier: None,
-//         prover_pubkey,
-//         relation_pubkey: None,
-//         scope_signature,
-//         auth_signature: None,
-//     }
-// }
-
-// pub fn identity_step_helper(prover_key: String) {
-//     // convert prover key from string to
-//     console_log!("Converting prover key: {:?}", &prover_key);
-//     let prover_key_bytes = hex::decode(prover_key).unwrap();
-//     console_log!("Importing prover key: {:?}", &prover_key_bytes);
-//     let prover_key = PrivateKey::import(prover_key_bytes).unwrap();
-
-//     // try sign
-//     console_log!("Attempting to sign");
-//     let message = BigInt::from_bytes_le(Sign::Plus, &[0x00]);
-//     let scope_signature = prover_key.sign(message).unwrap();
-//     console_log!("Signed!");
-
-//     // get the pubkey used by the prover
-//     console_log!("Getting prover pubkey:");
-//     let prover_pubkey = prover_key.public();
-//     // get the account address
-//     console_log!("Getting prover address");
-//     let address = pubkey_to_address(&prover_pubkey);
-//     // sign the address
-//     console_log!("Creating message to sign");
-//     let message = BigInt::from_bytes_le(Sign::Plus, &ff_ce_to_le_bytes(&address));
-//     console_log!("Signing message");
-//     let scope_signature = prover_key.sign(message).unwrap();
-//     let x = GrapevineInputs {
-//         nullifier: None,
-//         prover_pubkey,
-//         relation_pubkey: None,
-//         scope_signature,
-//         auth_signature: None,
-//     };
-// }
 
 /**
  * Returns the artifacts used by the Grapevine circuit
@@ -174,7 +141,7 @@ macro_rules! console_log {
  * @param wasm_url - URL of the wasm file
  * @returns the downloaded and parsed GrapevineArtifacts
  */
-async fn get_artifacts(artifact_locations: WasmArtifacts) -> GrapevineArtifacts {
+async fn get_artifacts(artifact_locations: &WasmArtifacts) -> GrapevineArtifacts {
     // parse public parameters
     let params: Params = serde_json::from_str(&artifact_locations.params()).unwrap();
     // retrieve r1cs file from url
@@ -193,8 +160,23 @@ async fn get_artifacts(artifact_locations: WasmArtifacts) -> GrapevineArtifacts 
 // test converting bigint to hex string in rust to determine if it can access it all
 #[wasm_bindgen]
 pub async fn bigint_test(num: JsBigInt) -> String {
-    console_log!("XXXXX: {:?}", num);
+    // console_log!("XXXXX: {:?}", num);
     "x".to_string()
+}
+
+/**
+ * Turns the output of a proof (Vec<Fr>) into an array of hex strings for js
+ *
+ * @param outputs - the proof outputs as given by novascotia
+ * @returns - the array of hex strings
+ */
+pub fn stringify_proof_outputs(outputs: Vec<Fr>) -> Array {
+    let serialized = Array::new_with_length(outputs.len() as u32);
+    for i in 0..outputs.len() as u32 {
+        let output = outputs[i as usize].to_bytes();
+        serialized.set(i, JsValue::from_str(&format!("0x{}", hex::encode(output))));
+    }
+    serialized
 }
 
 /**
@@ -208,57 +190,36 @@ pub async fn bigint_test(num: JsBigInt) -> String {
  */
 #[wasm_bindgen]
 pub async fn identity_proof(
-    artifact_locations: WasmArtifacts,
-    pubkey_x: String,
-    pubkey_y: String,
-    sig_r8_a: String,
-    sig_r8_b: String,
-    sig_s: String, // inputs: WasmIdentityInputs
+    artifact_locations: &WasmArtifacts,
+    input_map: String,
+    chaff_map: String,
+    verbose: bool,
 ) -> String {
     console_error_panic_hook::set_once();
     // create artifacts
-    console_log!("Retrieving and parsing artifacts");
+    console_log!(verbose, "Retrieving and parsing artifacts");
     let artifacts = get_artifacts(artifact_locations).await;
     // parse the circuit inputs
-    console_log!("Parsing circuit inputs");
-    let pubkey = Point {
-        x: ff_ce_from_le_bytes(hex::decode(&pubkey_x).unwrap().try_into().unwrap()),
-        y: ff_ce_from_le_bytes(hex::decode(&pubkey_y).unwrap().try_into().unwrap()),
-    };
-    let signature = Signature {
-        r_b8: Point {
-            x: ff_ce_from_le_bytes(hex::decode(&sig_r8_a).unwrap().try_into().unwrap()),
-            y: ff_ce_from_le_bytes(hex::decode(&sig_r8_b).unwrap().try_into().unwrap()),
-        },
-        s: BigInt::from_str(&sig_s).unwrap(),
-    };
-    let inputs = GrapevineInputs {
-        nullifier: None,
-        prover_pubkey: pubkey,
-        relation_pubkey: None,
-        scope_signature: signature,
-        auth_signature: None,
-    };
-
-    console_log!("Formatting inputs for circom");
-    // todo: can we skip all the work above and just pass a hashmap?
-    let private_inputs = inputs.fmt_circom();
-
-    // let mut private_inputs: HashMap<String, Value> = HashMap::new();
-    // private_inputs.insert("prover_pubkey_x".to_string(), Value::String(pubkey_x));
-    // create the degree proof
-    console_log!("Creating proof");
+    console_log!(verbose, "Parsing inputs");
+    let inputs = serde_json::from_str::<InputMapJson>(&input_map).unwrap();
+    let chaff = serde_json::from_str::<InputMapJson>(&chaff_map).unwrap();
+    let private_inputs = vec![inputs.to_map(), chaff.to_map()];
+    // create the proof
+    console_log!(verbose, "Creating proof");
     let proof = create_recursive_circuit(
         artifacts.wasm_location.clone(),
         artifacts.r1cs.clone(),
-        private_inputs.to_vec(),
+        private_inputs,
         Z0_PRIMARY.clone(),
         &artifacts.params,
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
     // compress proof and return
-    console_log!("Compressing proof");
+    console_log!(verbose, "Compressing proof with gzip");
     let compressed = compress_proof(&proof);
-    console_log!("Serializing proof");
+    // stringify proof and return
+    console_log!(verbose, "Stringifying proof");
     serde_json::to_string(&compressed).unwrap()
 }
 
@@ -319,32 +280,50 @@ pub async fn identity_proof(
 //     serde_json::to_string(&compressed).unwrap()
 // }
 
-// /**
-//  * Verify the correct execution of an IVC proof of the grapevine circuit
-//  *
-//  * @param proof - the proof to verify
-//  * @param public_params - the public params to use to verify the proof
-//  * @param iterations - the degree of separation proven (iterations should equal 2*degree + 2)
-//  * @return - the output of the proof if verified
-//  */
-// #[wasm_bindgen]
-// pub async fn verify_grapevine_proof(
-//     proof: String,
-//     params_string: String,
-//     degree: Number
-// ) -> Array {
-//     // parse public parameters
-//     let params: Params = serde_json::from_str(&params_string).unwrap();
-//     // decompress proof
-//     let proof_compressed = serde_json::from_str::<Vec<u8>>(&proof).unwrap();
-//     let proof = decompress_proof(&proof_compressed[..]);
-//     // convert degree to num steps in the circuit
-//     let iterations = degree.as_f64().unwrap() as usize * 2 + 2;
-//     // verify the proof
-//     let outputs = proof.verify(&params, iterations, &Z0_PRIMARY, &Z0_SECONDARY).unwrap();
-//     // return stringified outputs
-//     stringify_proof_outputs(outputs.0)
-// }
+/**
+ * Verify the correct execution of an IVC proof of the grapevine circuit
+ *
+ * @param proof - the proof to verify
+ * @param public_params - the public params to use to verify the proof
+ * @param iterations - the degree of separation proven (iterations should equal 2*degree + 2)
+ * @return - the output of the proof if verified
+ */
+#[wasm_bindgen]
+pub async fn verify_grapevine_proof(proof: String, params_string: String, degree: Number) -> Array {
+    console_error_panic_hook::set_once();
+    // parse public parameters
+    let params: Params = serde_json::from_str(&params_string).unwrap();
+    // decompress proof
+    let proof_compressed = serde_json::from_str::<Vec<u8>>(&proof).unwrap();
+    let proof = decompress_proof(&proof_compressed[..]);
+    // convert degree to num steps in the circuit
+    let iterations = degree.as_f64().unwrap() as usize * 2 + 2;
+    // verify the proof
+    let outputs = proof
+        .verify(&params, iterations, &Z0_PRIMARY, &Z0_SECONDARY)
+        .unwrap();
+    // return stringified outputs
+    stringify_proof_outputs(outputs.0)
+}
+
+#[wasm_bindgen]
+pub async fn derive_aes_key(pubkey_x: String, pubkey_y: String, privkey: String) -> String {
+    console_error_panic_hook::set_once();
+    console_log!(true, "{}", &pubkey_x);
+    console_log!(true, "{}", &pubkey_y);
+    console_log!(true, "{}", &privkey);
+    let pk = Point {
+        x: ff_ce_from_le_bytes(hex::decode(pubkey_x).unwrap().try_into().unwrap()),
+        y: ff_ce_from_le_bytes(hex::decode(pubkey_y).unwrap().try_into().unwrap()),
+    };
+    let sk = PrivateKey::import(hex::decode(privkey).unwrap()).unwrap();
+    let aes_key = gen_aes_key(sk, pk);
+    // concat aes key
+    let mut serialized = [0u8; 32]; // Initialize an empty [u8; 32] array
+    serialized[..16].copy_from_slice(&aes_key.0);
+    serialized[16..].copy_from_slice(&aes_key.1);
+    hex::encode(serialized)
+}
 
 #[wasm_bindgen]
 pub fn test() {

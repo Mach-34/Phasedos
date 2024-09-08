@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import * as GrapevineUtils from "../src/utils";
 import { GrapevineWasm } from "../src/consts";
+import { WasmArtifacts } from "../src/types";
 import * as crypto from "crypto";
 import { Eddsa, Poseidon, buildEddsa, buildPoseidon } from "circomlibjs";
 
@@ -16,6 +17,7 @@ describe("Grapevine", () => {
   let poseidon: Poseidon;
   let eddsa: Eddsa;
   let F: any;
+  let artifacts: WasmArtifacts;
 
   before(async () => {
     wasm = await GrapevineUtils.initGrapevineWasm();
@@ -25,24 +27,48 @@ describe("Grapevine", () => {
     poseidon = await buildPoseidon();
     eddsa = await buildEddsa();
     F = poseidon.F;
+    console.log("Downloading proving artifacts...");
+    //artifacts = await GrapevineUtils.defaultArtifacts();
   });
   xit("Test the bn", async () => {
     let x = 12348023482034820384023840238402834028340283402834023n;
     let y = await wasm.bigint_test(x);
   });
-  it("Do an identity Proof", async () => {
-    // get the params
-    let params = await GrapevineUtils.defaultArtifacts();
+  xit("Do an identity Proof", async () => {
     // get circuit inputs
-    let pubkey = eddsa.prv2pub(keys[0]);
-    let address = poseidon(pubkey);
-    let signature = eddsa.signPoseidon(keys[0], address);
-    let pubkey_x = convertValue(pubkey[0], F).toString("hex")
-    let pubkey_y = convertValue(pubkey[1], F).toString("hex")
-    let sig_r8_a = convertValue(signature.R8[0], F).toString("hex")
-    let sig_8_b = convertValue(signature.R8[1], F).toString("hex")
-    let sig_s = signature.S.toString();
-    let res = await wasm.identity_proof(params, pubkey_x, pubkey_y, sig_r8_a, sig_8_b, sig_s);
+    let input_map = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
+    let chaff_map = GrapevineUtils.makeRandomInput(poseidon, eddsa);
+    console.log("Input map: ", input_map);
+    // run identity proof
+    let res = await wasm.identity_proof(
+      artifacts,
+      JSON.stringify(input_map),
+      JSON.stringify(chaff_map),
+      true
+    );
     console.log("Res return length: ", res.length);
+    console.log("Params length: ", artifacts.params.length);
+    // verify the identity proof
+    let verified = await wasm.verify_grapevine_proof(res, artifacts.params, 0);
+    console.log("Verified: ", verified);
   });
+  xit("Params test", async () => {
+    let params = artifacts.params;
+    console.log("Params: ", params.length);
+    params = artifacts.params;
+    console.log("Params: ", params.length);
+  });
+  it("AES Keygen test", async () => {
+    let sk = keys[0].toString("hex");
+    let pk = eddsa.prv2pub(keys[1]);
+    let pk_x = convertValue(pk[0], F).toString("hex");
+    let pk_y = convertValue(pk[1], F).toString("hex");
+    console.log("Private key: ", sk);
+    console.log("Public key x: ", pk_x);
+    console.log("Public key y: ", pk_y);
+        let input_map = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
+
+    let aes_key = await wasm.derive_aes_key(sk, pk_x, pk_y);
+    console.log("AES Key: ", aes_key);
+  })
 });

@@ -103,6 +103,9 @@ const nullifyRelationship = async (recipient: string, sender: string) => {
 
 const genAuthHeaders = async (privkey: string, username: string) => {
     const nonce = await getNonce(privkey, username);
+
+    // 
+
     return {}
 }
 

@@ -11,7 +11,7 @@ use mongodb::options::{
 };
 use mongodb::{Client, Collection};
 
-use crate::utils::{RelationshipStatus, ToBson};
+use crate::utils::{GetRelationshipOptions, RelationshipStatus, ToBson};
 use crate::MONGODB_URI;
 
 pub struct GrapevineDB {
@@ -316,7 +316,11 @@ impl GrapevineDB {
         recipient: &String,
     ) -> Result<Relationship, GrapevineError> {
         // find a relationship document given a sender and recipient username
-        let pipeline = pipelines::get_relationship(&sender, &recipient, true);
+        let options = GetRelationshipOptions {
+            counterparty: false,
+            full: true,
+        };
+        let pipeline = pipelines::get_relationship(&sender, &recipient, options);
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         // try to parse the returned relationship document
         if let Some(result) = cursor.next().await {
@@ -346,27 +350,78 @@ impl GrapevineDB {
         recipient: &String,
     ) -> Result<(), GrapevineError> {
         // setup aggregation pipeline for finding the
-        let pipeline = pipelines::get_relationship(&sender, &recipient, false);
+        let options = GetRelationshipOptions {
+            counterparty: true,
+            full: true,
+        };
+        let pipeline = pipelines::get_relationship(&sender, &recipient, options);
         // get oid for relationship
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
-                    // update relationship document by adding emitted nullifier
-                    let query = doc! {"_id": document.get("_id").unwrap() };
-                    let update =
-                        doc! { "$set": { "emitted_nullifier": nullifier.to_vec().to_bson() }};
-                    match self.relationships.update_one(query, update, None).await {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+                    // ensure relationship isn't pending
+                    let is_pending = !document.get("active").unwrap().as_bool().unwrap();
+                    if is_pending {
+                        // TODO: make custom error type
+                        return Err(GrapevineError::NoRelationship(
+                            sender.to_string(),
+                            recipient.to_string(),
+                        ));
+                    }
+
+                    // ensure relation isn't already nullified
+                    let is_nullified = !document
+                        .get("emitted_nullifier")
+                        .unwrap()
+                        .as_null()
+                        .is_some();
+
+                    if is_nullified {
+                        return Err(GrapevineError::RelationshipNullified);
+                    }
+
+                    // check if counter party relationship hash already been nullified
+                    let counterparty_relationship = document
+                        .get("counterpartyRelationship")
+                        .unwrap()
+                        .as_document()
+                        .unwrap();
+
+                    let counterparty_nullified = counterparty_relationship
+                        .get("emitted_nullifier")
+                        .unwrap()
+                        .as_null()
+                        .is_none();
+
+                    // if counterparty has already nullified then delete both relationship documents
+                    if counterparty_nullified {
+                        let relationship_ids =
+                            vec![document.get("_id"), counterparty_relationship.get("_id")];
+                        let filter = doc! {
+                            "_id": { "$in": relationship_ids }
+                        };
+                        match self.relationships.delete_many(filter, None).await {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+                        }
+                    } else {
+                        // update relationship document by adding emitted nullifier
+                        let query = doc! {"_id": document.get("_id").unwrap() };
+                        let update =
+                            doc! { "$set": { "emitted_nullifier": nullifier.to_vec().to_bson() }};
+                        match self.relationships.update_one(query, update, None).await {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(GrapevineError::MongoError(e.to_string())),
+                        }
                     }
                 }
                 Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
             }
         } else {
-            // TODO: Create relationship not found type
-            Err(GrapevineError::MongoError(
-                "Relationship not found".to_string(),
+            Err(GrapevineError::NoRelationship(
+                sender.to_string(),
+                recipient.to_string(),
             ))
         }
     }
@@ -391,8 +446,22 @@ impl GrapevineDB {
         while let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
+                    let counterparty_nullified = document
+                        .get("emitted_nullifier")
+                        .unwrap()
+                        .as_null()
+                        .is_none();
+                    let pending_nullification = document.get("counterpartyRelationship").is_some();
                     let username = document.get("username").unwrap().as_str().unwrap();
-                    relationships.push(username.to_string());
+                    if counterparty_nullified {
+                        let entry = format!("{} (counterparty nullified)", username.to_string());
+                        relationships.push(entry);
+                    } else if pending_nullification {
+                        let entry = format!("{} (pending nullification)", username.to_string());
+                        relationships.push(entry);
+                    } else {
+                        relationships.push(username.to_string());
+                    }
                 }
                 Err(e) => println!("Error: {}", e),
             }
@@ -659,10 +728,7 @@ impl GrapevineDB {
             Ok(stats) => {
                 let first_degree_count = stats.get_i32("first_degrees").unwrap();
                 let second_degree_count = stats.get_i32("second_degrees").unwrap();
-                return Some((
-                    first_degree_count as u32,
-                    second_degree_count as u32,
-                ));
+                return Some((first_degree_count as u32, second_degree_count as u32));
             }
             Err(e) => {
                 println!("Error: {:?}", e);
@@ -720,5 +786,31 @@ impl GrapevineDB {
         } else {
             Ok(false)
         }
+    }
+
+    /**
+     * Determines whether any nullifiers for a given proof are emitted in relationships
+     *
+     * @param user - username of the account checking for nullified relationships
+     * @returns - vec of usernames of counterparties that have nullified a relationship with the querying user
+     */
+    pub async fn get_nullified_relationships(
+        &self,
+        user: &String,
+    ) -> Result<Vec<String>, GrapevineError> {
+        let pipeline = pipelines::nullified_relationships(&user);
+        // get the usernames of counterparties that have nullified their relationship with you
+        let mut nullified_relationships: Vec<String> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let username = document.get("username").unwrap().as_str().unwrap();
+                    nullified_relationships.push(String::from(username));
+                }
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+            }
+        }
+        Ok(nullified_relationships)
     }
 }
