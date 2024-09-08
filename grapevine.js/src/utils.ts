@@ -182,16 +182,17 @@ export const makeIdentityInput = (
 export const makeDegreeInput = (
   poseidon: Poseidon,
   eddsa: Eddsa,
-  key: Buffer,
+  proverKey: Buffer,
+  relationPubkey: Point,
   authSignature: Signature,
   relationNullifier: Buffer
 ) => {
-  let proverPubkey = eddsa.prv2pub(key);
+  let proverPubkey = eddsa.prv2pub(proverKey);
   let address = poseidon(proverPubkey);
-  let scopeSignature = eddsa.signPoseidon(key, address);
+  let scopeSignature = eddsa.signPoseidon(proverKey, address);
   return {
     prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
-    relation_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    relation_pubkey: relationPubkey.map((x) => poseidon.F.toObject(x).toString()),
     relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
     auth_signature: [
       poseidon.F.toObject(authSignature.R8[0]).toString(),

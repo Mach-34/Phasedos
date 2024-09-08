@@ -17,10 +17,15 @@ let convertValue = (value: Uint8Array, F: any): Buffer => {
   return buf.reverse();
 };
 
-let mockAuthSignature = (eddsa: Eddsa, sk: Buffer): { nullifier: Buffer, authSignature: Signature } => {
-  let nullifier = eddsa.F.e(crypto.randomBytes(32)) as Buffer;
-  let authSignature = eddsa.signPoseidon(sk, nullifier);
-  return { nullifier, authSignature };
+let mockAuthSignature = (
+  eddsa: Eddsa,
+  poseidon: Poseidon,
+  sk: Buffer
+): { nullifier: Buffer; authSignature: Signature } => {
+  let pubkey = eddsa.prv2pub(sk);
+  let address = Buffer.from(poseidon(pubkey));
+  let authSignature = eddsa.signPoseidon(sk, address);
+  return { nullifier: address, authSignature };
 };
 
 describe("Grapevine", () => {
@@ -73,14 +78,20 @@ describe("Grapevine", () => {
       true
     );
     // verify the identity proof to get the outputs
-    let identityProofOutput = await wasm.verify_grapevine_proof(identityProof, artifacts.params, 0);
+    let identityProofOutput = await wasm.verify_grapevine_proof(
+      identityProof,
+      artifacts.params,
+      0
+    );
+    console.log("Identity proof output: ", identityProofOutput);
     // create inputs for degree proof
-    let { nullifier, authSignature } = mockAuthSignature(eddsa, keys[0]);
+    let { nullifier, authSignature } = mockAuthSignature(eddsa, poseidon, keys[0]);
     // get input maps
     input_map = GrapevineUtils.makeDegreeInput(
       poseidon,
       eddsa,
       keys[1],
+      eddsa.prv2pub(keys[0]),
       authSignature,
       nullifier
     );
@@ -88,12 +99,12 @@ describe("Grapevine", () => {
     console.log("Input map: ", input_map);
     // run degree proof
     let degreeProof = await wasm.degree_proof(
-        artifacts,
-        JSON.stringify(input_map),
-        JSON.stringify(chaff_map),
-        identityProof,
-        identityProofOutput,
-        true
+      artifacts,
+      JSON.stringify(input_map),
+      JSON.stringify(chaff_map),
+      identityProof,
+      identityProofOutput,
+      true
     );
   });
   xit("Params test", async () => {
@@ -103,8 +114,9 @@ describe("Grapevine", () => {
     console.log("Params: ", params.length);
   });
   xit("Test mock signature", async () => {
-    // let [nullifier, signature] = mockAuthSignature(eddsa, keys[0]);
-    // console.log("Nullifier: ", nullifier);
-    // console.log("Signature: ", signature);
+    let { nullifier, authSignature } = mockAuthSignature(eddsa, poseidon, keys[0]);
+    console.log("Nullifier: ", nullifier);
+    console.log("Signature: ", authSignature);
+
   });
 });
