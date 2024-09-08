@@ -133,46 +133,6 @@ pub async fn health() -> &'static str {
 //     }
 
 //     #[rocket::async_test]
-//     #[ignore]
-//     async fn test_relationship_creation_with_empty_request_body() {
-//         // Reset db with clean state
-//         GrapevineDB::drop("grapevine_mocked").await;
-
-//         let context = GrapevineTestContext::init().await;
-
-//         let user_a = GrapevineAccount::new(String::from("user_relationship_1_a"));
-//         let user_b = GrapevineAccount::new(String::from("user_relationship_1_b"));
-
-//         // Create users
-//         let user_a_request = user_a.create_user_request();
-//         let user_b_request = user_b.create_user_request();
-//         create_user_request(&context, &user_a_request).await;
-//         create_user_request(&context, &user_b_request).await;
-
-//         let signature = user_a.sign_nonce();
-//         let encoded = hex::encode(signature.compress());
-
-//         let res = context
-//             .client
-//             .post("/user/relationship")
-//             .header(Header::new("X-Authorization", encoded))
-//             .header(Header::new("X-Username", user_a.username().clone()))
-//             .json::<Vec<u8>>(&vec![])
-//             .dispatch()
-//             .await
-//             .into_string()
-//             .await
-//             .unwrap();
-
-//         println!("Message: {}", res);
-
-//         assert_eq!(
-//             "User cannot have a relationship with themself", res,
-//             "User should not be able to have a relationsip with themselves."
-//         );
-//     }
-
-//     #[rocket::async_test]
 //     async fn test_relationship_creation_with_nonexistent_recipient() {
 //         // Reset db with clean state
 //         GrapevineDB::drop("grapevine_mocked").await;

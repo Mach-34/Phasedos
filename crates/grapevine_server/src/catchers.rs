@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Responder)]
 pub enum GrapevineResponse {
+    #[response(status = 200)]
+    Ok(String),
     #[response(status = 201)]
     Created(String),
     #[response(status = 400)]

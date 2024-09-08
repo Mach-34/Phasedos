@@ -346,12 +346,33 @@ impl GrapevineDB {
         recipient: &String,
     ) -> Result<(), GrapevineError> {
         // setup aggregation pipeline for finding the
-        let pipeline = pipelines::get_relationship(&sender, &recipient, false);
+        let pipeline = pipelines::get_relationship(&sender, &recipient, true);
         // get oid for relationship
         let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
         if let Some(result) = cursor.next().await {
             match result {
                 Ok(document) => {
+                    // ensure relationship isn't pending
+                    let is_pending = !document.get("active").unwrap().as_bool().unwrap();
+                    if is_pending {
+                        // TODO: make custom error type
+                        return Err(GrapevineError::NoRelationship(
+                            sender.to_string(),
+                            recipient.to_string(),
+                        ));
+                    }
+
+                    // ensure relation isn't already nullified
+                    let is_nullified = !document
+                        .get("emitted_nullifier")
+                        .unwrap()
+                        .as_null()
+                        .is_some();
+
+                    if is_nullified {
+                        return Err(GrapevineError::RelationshipNullified);
+                    }
+
                     // update relationship document by adding emitted nullifier
                     let query = doc! {"_id": document.get("_id").unwrap() };
                     let update =
@@ -364,9 +385,9 @@ impl GrapevineDB {
                 Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
             }
         } else {
-            // TODO: Create relationship not found type
-            Err(GrapevineError::MongoError(
-                "Relationship not found".to_string(),
+            Err(GrapevineError::NoRelationship(
+                sender.to_string(),
+                recipient.to_string(),
             ))
         }
     }
@@ -659,10 +680,7 @@ impl GrapevineDB {
             Ok(stats) => {
                 let first_degree_count = stats.get_i32("first_degrees").unwrap();
                 let second_degree_count = stats.get_i32("second_degrees").unwrap();
-                return Some((
-                    first_degree_count as u32,
-                    second_degree_count as u32,
-                ));
+                return Some((first_degree_count as u32, second_degree_count as u32));
             }
             Err(e) => {
                 println!("Error: {:?}", e);
@@ -720,5 +738,31 @@ impl GrapevineDB {
         } else {
             Ok(false)
         }
+    }
+
+    /**
+     * Determines whether any nullifiers for a given proof are emitted in relationships
+     *
+     * @param user - username of the account checking for nullified relationships
+     * @returns - vec of usernames of counterparties that have nullified a relationship with the querying user
+     */
+    pub async fn get_nullified_relationships(
+        &self,
+        user: &String,
+    ) -> Result<Vec<String>, GrapevineError> {
+        let pipeline = pipelines::nullified_relationships(&user);
+        // get the usernames of counterparties that have nullified their relationship with you
+        let mut nullified_relationships: Vec<String> = vec![];
+        let mut cursor = self.users.aggregate(pipeline, None).await.unwrap();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let username = document.get("username").unwrap().as_str().unwrap();
+                    nullified_relationships.push(String::from(username));
+                }
+                Err(e) => return Err(GrapevineError::MongoError(e.to_string())),
+            }
+        }
+        Ok(nullified_relationships)
     }
 }

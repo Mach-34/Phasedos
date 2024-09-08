@@ -58,10 +58,15 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Remove { username: String },
-    /// List the username of all of your active relationships
+    /// List the usernames of all of your active relationships
     /// usage: `grapevine relationship list`
     #[command(verbatim_doc_comment)]
     List,
+
+    /// List the usernames of counterparties that have nullified their relationship with you
+    /// usage: `grapevine relationship reveal-nullified`
+    #[command(verbatim_doc_comment)]
+    RevealNullified,
 }
 
 #[derive(Subcommand)]
@@ -134,6 +139,9 @@ pub async fn main() {
                 controllers::nullify_relationship(username).await
             }
             RelationshipCommands::List => controllers::get_relationships(true).await,
+            RelationshipCommands::RevealNullified => {
+                controllers::list_relationships_to_nullify().await
+            }
         },
     };
 
