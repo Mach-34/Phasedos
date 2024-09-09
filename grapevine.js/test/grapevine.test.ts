@@ -1,16 +1,13 @@
 import { expect } from "chai";
 import * as GrapevineUtils from "../src/utils";
 import { GrapevineWasm } from "../src/consts";
-import { GrapevineWasmArtifacts } from "../src/types";
-import * as crypto from "crypto";
 import {
-  Eddsa,
-  Poseidon,
-  buildEddsa,
-  buildPoseidon,
-} from "circomlibjs";
-
-
+  AuthSecret,
+  GrapevineOutputSlot,
+  GrapevineWasmArtifacts,
+} from "../src/types";
+import * as crypto from "crypto";
+import { Eddsa, Poseidon, buildEddsa, buildPoseidon } from "circomlibjs";
 
 describe("Grapevine", () => {
   let wasm: GrapevineWasm;
@@ -30,26 +27,26 @@ describe("Grapevine", () => {
     artifacts = await GrapevineUtils.defaultArtifacts();
   });
 
-  it("Single Degree Test", async () => {
+  xit("Degree 1 Test", async () => {
     // create inputs for identity proof
     let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
     let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
     // run identity proof
-    let identityProof = await wasm.identity_proof(
+    const identityProof = await wasm.identity_proof(
       artifacts,
       JSON.stringify(inputMap),
       JSON.stringify(chaffMap),
       true
     );
     // verify the identity proof to get the outputs
-    let identityProofOutput = await wasm.verify_grapevine_proof(
+    const identityProofOutput = await wasm.verify_grapevine_proof(
       artifacts.params,
       identityProof,
       0,
       true
     );
     // create an auth secret (nullifier + sig over nullifier) from identity prover to degree 1
-    let { authSecret } = GrapevineUtils.deriveAuthSecret(
+    const { authSecret } = GrapevineUtils.deriveAuthSecret(
       poseidon,
       eddsa,
       keys[0],
@@ -65,7 +62,7 @@ describe("Grapevine", () => {
     );
     chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
     // run degree proof
-    let degreeProof = await wasm.degree_proof(
+    const degreeProof = await wasm.degree_proof(
       artifacts,
       JSON.stringify(inputMap),
       JSON.stringify(chaffMap),
@@ -74,11 +71,132 @@ describe("Grapevine", () => {
       true
     );
     // verify degree proof
-    let degreeProofOutput = await wasm.verify_grapevine_proof(
+    const degreeProofOutput = await wasm.verify_grapevine_proof(
       artifacts.params,
       degreeProof,
       1,
       true
     );
+  });
+
+  it("Basic Degree 8 test", async () => {
+    // derive auth secrets for users 0->8
+    let authSecrets: AuthSecret[] = [];
+    for (let i = 0; i < 8; i++) {
+      let recipient = eddsa.prv2pub(keys[i + 1]);
+      let { authSecret } = GrapevineUtils.deriveAuthSecret(
+        poseidon,
+        eddsa,
+        keys[i],
+        recipient
+      );
+      authSecrets.push(authSecret);
+    }
+    /// IDENTITY PROOF ///
+    // create inputs for identity proof
+    console.log("Creating Grapevine Identity Proof...");
+    let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
+    let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
+    // run identity proof
+    let proof = await wasm.identity_proof(
+      artifacts,
+      JSON.stringify(inputMap),
+      JSON.stringify(chaffMap),
+      false
+    );
+    console.log("Verifying Grapevine Identity Proof...");
+    // verify the identity proof to get the outputs
+    let proofOutput = await wasm.verify_grapevine_proof(
+      artifacts.params,
+      proof,
+      0,
+      false
+    );
+    // validate proof outputs match expectations
+    const expectedScope = Buffer.from(
+      poseidon(eddsa.prv2pub(keys[0]))
+    ).toString("hex");
+    const zero = Buffer.from(poseidon.F.e(0n)).toString("hex");
+    let expectedRelation = expectedScope;
+    let expectedNullifiers = [];
+    let empiricalOutputs = GrapevineUtils.parseGrapevineOutputArray(
+      poseidon.F,
+      proofOutput
+    );
+    expect(empiricalOutputs.obfuscate).to.equal(false);
+    expect(empiricalOutputs.degree).to.equal(0);
+    expect(Buffer.from(empiricalOutputs.scope).toString("hex")).to.equal(
+      expectedScope
+    );
+    expect(Buffer.from(empiricalOutputs.relation).toString("hex")).to.equal(
+      expectedRelation
+    );
+    for (let i = 0; i < 8; i++) {
+      expect(
+        Buffer.from(empiricalOutputs.nullifiers[i]).toString("hex")
+      ).to.equal(zero);
+    }
+    /// DEGREE PROOFS ///
+    for (let i = 1; i < 9; i++) {
+      console.log(`Creating Grapevine Proof of Degree ${i}...`);
+      // context
+      const prover = keys[i];
+      const relationPubkey = eddsa.prv2pub(keys[i - 1]); // this will be sent to the prover
+      const authSecret = authSecrets[i - 1];
+      const scope = proofOutput[GrapevineOutputSlot.Scope];
+      // create inputs for degree proof
+      inputMap = GrapevineUtils.makeDegreeInput(
+        eddsa,
+        prover,
+        relationPubkey,
+        authSecret,
+        scope
+      );
+      chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
+      // run degree proof
+      proof = await wasm.degree_proof(
+        artifacts,
+        JSON.stringify(inputMap),
+        JSON.stringify(chaffMap),
+        proof,
+        proofOutput,
+        false
+      );
+      // verify degree proof
+      console.log(`Verifying Grapevine Proof of Degree ${i}...`);
+      proofOutput = await wasm.verify_grapevine_proof(
+        artifacts.params,
+        proof,
+        i,
+        false
+      );
+      // validate proof outputs match expectations
+      expectedNullifiers.push(
+        Buffer.from(authSecret.nullifier).toString("hex")
+      );
+      expectedRelation = Buffer.from(poseidon(eddsa.prv2pub(prover))).toString(
+        "hex"
+      );
+      const empiricalOutputs = GrapevineUtils.parseGrapevineOutputArray(
+        poseidon.F,
+        proofOutput
+      );
+      expect(empiricalOutputs.obfuscate).to.equal(false);
+      expect(empiricalOutputs.degree).to.equal(i);
+      expect(Buffer.from(empiricalOutputs.scope).toString("hex")).to.equal(
+        expectedScope
+      );
+      expect(Buffer.from(empiricalOutputs.relation).toString("hex")).to.equal(
+        expectedRelation
+      );
+      for (let j = 0; j < 8; j++) {
+        const empiricalNullifier = Buffer.from(
+          empiricalOutputs.nullifiers[j]
+        ).toString("hex");
+        if (j < i) {
+          expect(empiricalNullifier).to.equal(expectedNullifiers[j]);
+        } else expect(empiricalNullifier).to.equal(zero);
+      }
+    }
   });
 });

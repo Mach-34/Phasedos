@@ -25,3 +25,12 @@ export enum GrapevineOutputSlot {
     Relation = 3, // the relation address denoting the prover showing they are N degrees separated from the scope
     Nullifier = 4, // the stat of the nullifiers - to access a specific nullifier, add the index to this
 }
+
+// Grapevine outputs formatted for manual use
+export type GrapevineOutputs = {
+    obfuscate: boolean,
+    degree: number,
+    scope: Uint8Array,
+    relation: Uint8Array,
+    nullifiers: Uint8Array[]
+}
