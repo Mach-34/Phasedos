@@ -9,7 +9,7 @@ export type User = {
     username: string;
 }
 
-const SERVER_URL = "http://localhost:8000" // TODO: swap out for env var
+export const SERVER_URL = "http://localhost:8000" // TODO: swap out for env var
 
 export const addRelationship = async (wasm: any, recipient: string, sender: User) => {
 

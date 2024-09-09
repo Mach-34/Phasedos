@@ -200,11 +200,23 @@ describe("Grapevine", () => {
     }
   });
 
+  describe("Server tests", async () => {
+    it("Register new user", async () => {
+        let res = await GrapevineUtils.registerUser(
+            eddsa,
+            poseidon,
+            artifacts,
+            wasm,
+            keys[0],
+            "user_0"
+        );
+        console.log("Result: ", res);
+    })
+  });
+
   describe("Bincode Tests", async () => {
     // this is dummy data with the right size. Just replace with the right data
-    it("Create relationship request", async () => {
-
-
+    xit("Create relationship request", async () => {
       const to = "Username";
       const ephemeralKey = crypto.randomBytes(32).toString("hex");
       const signatureCiphertext = crypto.randomBytes(80).toString("hex");
@@ -222,7 +234,10 @@ describe("Grapevine", () => {
     xit("Emit nullifier request", async () => {
       const to = "Username";
       const nullifierSecret = crypto.randomBytes(32).toString("hex");
-      const bincoded = await wasm.bincode_emit_nullifier_request(nullifierSecret, to);
+      const bincoded = await wasm.bincode_emit_nullifier_request(
+        nullifierSecret,
+        to
+      );
       console.log("bincoded", bincoded.length);
     });
     xit("Create user request", async () => {
@@ -240,7 +255,11 @@ describe("Grapevine", () => {
       let username = "Username";
       let pubkey = crypto.randomBytes(32).toString("hex");
       // bincode
-      let bincoded = await wasm.bincode_create_user_request(username, pubkey, proof);
+      let bincoded = await wasm.bincode_create_user_request(
+        username,
+        pubkey,
+        proof
+      );
       console.log("bincoded", bincoded.length);
     });
     xit("Degree proof request", async () => {
@@ -258,8 +277,12 @@ describe("Grapevine", () => {
       let previous = "oufwehfro9h30928r";
       let degree = 4;
       // bincode
-      let bincoded = await wasm.bincode_degree_proof_request(proof, previous, degree);
+      let bincoded = await wasm.bincode_degree_proof_request(
+        proof,
+        previous,
+        degree
+      );
       console.log("bincoded", bincoded.length);
-    })
+    });
   });
 });
