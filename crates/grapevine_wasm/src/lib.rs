@@ -359,6 +359,7 @@ pub async fn bincode_create_user_request(
     pubkey_string: String,
     proof_string: String,
 ) -> Uint8Array {
+    console_error_panic_hook::set_once();
     // parse pubkey
     let pubkey: [u8; 32] = hex::decode(pubkey_string).unwrap().try_into().unwrap();
     // destringify proof (should already be compressed)
@@ -384,6 +385,7 @@ pub async fn bincode_degree_proof_request(
     previous: String,
     degree: Number
 ) -> Uint8Array {
+    console_error_panic_hook::set_once();
     // destringify proof (should already be compressed)
     let proof: Vec<u8> = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
     // build DegreeProofRequest
@@ -409,6 +411,7 @@ pub async fn bincode_new_relationship_request(
     nullifier_ciphertext_string: String,
     nullifier_secret_ciphertext_string: String,
 ) -> Uint8Array {
+    console_error_panic_hook::set_once();
     // parse ephemeral key
     let ephemeral_key: [u8; 32] = hex::decode(ephemeral_key_string).unwrap().try_into().unwrap();
     // parse ciphertexts
@@ -437,6 +440,7 @@ pub async fn bincode_emit_nullifier_request(
     nullifier_secret_string: String,
     recipient: String,
 ) -> Uint8Array {
+    console_error_panic_hook::set_once();
     // parse nullifier secret
     let nullifier_secret: [u8; 32] = hex::decode(nullifier_secret_string).unwrap().try_into().unwrap();
     // build EmitNullifierRequest
