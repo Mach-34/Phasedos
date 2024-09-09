@@ -12,7 +12,7 @@ use flate2::read::GzDecoder;
 use std::io::Read;
 
 pub const PARAMS_CHUNKS: usize = 10;
-
+pub const PROOF_OUTPUT_SIZE: usize = 12;
 
 
 /**
@@ -136,6 +136,8 @@ pub fn stringify_proof_outputs(outputs: Vec<Fr>) -> Array {
     }
     serialized
 }
+
+
 
 /**
  * Given an array of hex strings, returns the proof ouuy

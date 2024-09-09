@@ -7,7 +7,7 @@ members = [
     "crates/grapevine_circuits",
     "crates/grapevine_server",
     "crates/grapevine_common",
-    # "crates/grapevine_wasm"
+    "crates/grapevine_wasm"
 ]
 default-members = ["crates/grapevine_cli"]
 resolver = "2"
@@ -26,7 +26,7 @@ babyjubjub-rs = { version = "0.0.11", features = ["aarch64"] }
 ff = { version = "0.13", features = ["derive"] }
 ff_ce = { version = "0.11", features = ["derive"] }
 hex = "0.4.3"
-nova-scotia = { git = "https://github.com/nalinbhardwaj/Nova-Scotia/" }
+nova-scotia = { git = "https://github.com/Mach-34/Nova-Scotia/" } # fork adds support for continue_recursive_circuit
 nova-snark = "0.23.0"
 num-bigint = "0.4.4"
 poseidon-rs = "0.0.8"
