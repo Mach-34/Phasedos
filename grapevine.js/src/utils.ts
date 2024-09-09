@@ -1,11 +1,12 @@
 import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts";
 import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm";
-import { WasmArtifacts } from "./types"; 
+import { AuthSecret, GrapevineOutputs, GrapevineOutputSlot, GrapevineWasmArtifacts } from "./types";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { Eddsa, Point, Poseidon, Signature } from "circomlibjs";
+import { BabyJub, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
 import { InputMap } from "./types";
 import * as crypto from "crypto";
+import { Scalar } from "ffjavascript";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -51,12 +52,12 @@ export const getParams = async (parallel = true): Promise<Blob> => {
  * @returns - the stringified json of the params
  */
 export const decompressParamsBlob = async (blob: Blob): Promise<string> => {
-  let ds = new DecompressionStream("gzip");
-  let reader = blob.stream().pipeThrough(ds).getReader();
+  const ds = new DecompressionStream("gzip");
+  const reader = blob.stream().pipeThrough(ds).getReader();
   let done = false;
   let params = "";
   while (!done) {
-    let decompressed = await reader.read();
+    const decompressed = await reader.read();
     done = decompressed.done;
     params += new TextDecoder().decode(decompressed.value);
   }
@@ -126,85 +127,226 @@ export const initGrapevineWasm = async (threads = 1): Promise<any> => {
   return GrapevineWasmModule;
 };
 
-export const defaultArtifacts =
-  async (): Promise<WasmArtifacts> => {
-    const params = await getParams();
-    const paramsString = await decompressParamsBlob(params);
-    return new WasmArtifacts(
-      paramsString,
-      R1CS_URI,
-      WASM_URI
-    );
-  };
+/**
+ * Get all default artifacts used by the Grapevine proving API
+ * @returns - downloaded params and URL for r1cs and circuit wasm
+ */
+export const defaultArtifacts = async (): Promise<GrapevineWasmArtifacts> => {
+  const params = await getParams();
+  const paramsString = await decompressParamsBlob(params);
+  return new GrapevineWasmArtifacts(paramsString, R1CS_URI, WASM_URI);
+};
 
-export const randomSignature = (eddsa: Eddsa): Signature => {
-  let key = crypto.randomBytes(32);
-  let randomMessage = eddsa.F.e(crypto.randomBytes(32));
-  let signature = eddsa.signPoseidon(key, randomMessage);
+const randomSignature = (eddsa: Eddsa): Signature => {
+  const key = crypto.randomBytes(32);
+  const randomMessage = eddsa.F.e(crypto.randomBytes(32));
+  const signature = eddsa.signPoseidon(key, randomMessage);
   return signature;
 };
 
+/**
+ * Generate the input map for an identity proof starting a degree chain in Grapevine
+ * 
+ * @param poseidon - the circomlibjs Poseidon hash function
+ * @param eddsa - the circomlibjs Eddsa signature scheme
+ * @param key - the private key of the prover running the circuit
+ * @returns - an input map formatted for the circom circuit's witness calculator
+ */
 export const makeIdentityInput = (
   poseidon: Poseidon,
   eddsa: Eddsa,
-  key: Buffer
+  prover: Buffer
 ): InputMap => {
-  // make real inputs
-  let proverPubkey = eddsa.prv2pub(key);
-  let address = poseidon(proverPubkey);
-  let scopeSignature = eddsa.signPoseidon(key, address);
+  // derive prover pubkey
+  const proverPubkey = eddsa.prv2pub(prover);
+  // sign own address since identity step = setting scope
+  const address = poseidon(proverPubkey);
+  const scopeSignature = eddsa.signPoseidon(prover, address);
+  // random relation
+  const relationKey = crypto.randomBytes(32);
+  const relationPubkey = eddsa.prv2pub(relationKey);
+  // random relation nullifier
+  const relationNullifier = poseidon.F.e(crypto.randomBytes(32));
+  // random auth signature
+  const authSignature = randomSignature(eddsa);
+  // build input map
+  return makeInputMap(
+    poseidon.F,
+    proverPubkey,
+    relationPubkey,
+    relationNullifier,
+    authSignature,
+    scopeSignature
+  );
+};
 
-  // make dummy inputs
-  let relationKey = crypto.randomBytes(32);
-  let relationPubkey = eddsa.prv2pub(relationKey);
-  let authSignature = randomSignature(eddsa);
-  let relationNullifier = poseidon.F.e(crypto.randomBytes(32));
+/**
+ * Generate the input map for a degree proof demonstrating relation to a previous proof in a Grapevine chain
+ * 
+ * @param eddsa - the circomlibjs Eddsa signature scheme
+ * @param prover - the private key of the prover running the circuit
+ * @param relationPubkey - the pubkey of the previous prover that the current proof is built from
+ * @param relationNullifier - the nullifier issued by the relation to the prover
+ * @param authSignature - the signature by the relation over the hash H|nullifier, proverAddress|
+ * @param scope - the stringified scope address outputted from a GrapevineProof
+ * @returns - an input map formatted for the circom circuit's witness calculator
+ */
+export const makeDegreeInput = (
+  eddsa: Eddsa,
+  prover: Buffer,
+  relationPubkey: Point,
+  authSecret: AuthSecret,
+  scope: String,
+) => {
+  // get the prover's pubkey from their private key
+  const proverPubkey = eddsa.prv2pub(prover);
+  // parse and sign the scope (identity proof address)
+  const parsedScope = parseGrapevineOutput(eddsa.F, scope);
+  const scopeSignature = eddsa.signPoseidon(prover, parsedScope);
+  // build the input map
+  return makeInputMap(
+    eddsa.F,
+    proverPubkey,
+    relationPubkey,
+    authSecret.nullifier,
+    authSecret.signature,
+    scopeSignature
+  );
+};
 
+/**
+ * Generate random satisfying witness for the chaff step of the Grapevine circuit
+ * 
+ * @param poseidon - the circomlibjs Poseidon hash function
+ * @param eddsa - the circomlibjs Eddsa signature scheme
+ * @returns - input map for a Grapevine chaff step
+ */
+export const makeRandomInput = (poseidon: Poseidon, eddsa: Eddsa): InputMap => {
+  // random prover
+  const proverKey = crypto.randomBytes(32);
+  const proverPubkey = eddsa.prv2pub(proverKey);
+  // random relation
+  const relationKey = crypto.randomBytes(32);
+  const relationPubkey = eddsa.prv2pub(relationKey);
+  // random nullifier
+  const relationNullifier = poseidon.F.e(crypto.randomBytes(32));
+  // random auth signature
+  const scopeSignature = randomSignature(eddsa);
+  // random scope signature
+  const authSignature = randomSignature(eddsa);
+  // build input map
+  return makeInputMap(
+    poseidon.F,
+    proverPubkey,
+    relationPubkey,
+    relationNullifier,
+    authSignature,
+    scopeSignature
+  );
+};
+
+/**
+ * Utility for creating an input map for all step types in the Grapevine Circuit
+ * 
+ * @param F - the Field api for normalizing values
+ * @param proverPubkey - the pubkey of the prover running the circuit
+ * @param relationPubkey - the pubkey of the previous prover that the current proof is built from
+ * @param relationNullifier - the nullifier issued by the relation to the prover
+ * @param authSignature - the signature by the relation over the hash H|nullifier, proverAddress|
+ * @param scopeSignature - the signature by the prover over the identity proof creator's address
+ * @returns - an input map formatted for the circom circuit's witness calculator
+ */
+const makeInputMap = (
+  F: any,
+  proverPubkey: Point,
+  relationPubkey: Point,
+  relationNullifier: Uint8Array,
+  authSignature: Signature,
+  scopeSignature: Signature
+): InputMap => {
   return {
-    prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    prover_pubkey: proverPubkey.map((x) => F.toObject(x).toString()),
     relation_pubkey: relationPubkey.map((x) =>
-      poseidon.F.toObject(x).toString()
+      F.toObject(x).toString()
     ),
-    relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
+    relation_nullifier: F.toObject(relationNullifier).toString(),
     auth_signature: [
-      poseidon.F.toObject(authSignature.R8[0]).toString(),
-      poseidon.F.toObject(authSignature.R8[1]).toString(),
+      F.toObject(authSignature.R8[0]).toString(),
+      F.toObject(authSignature.R8[1]).toString(),
       authSignature.S.toString(),
     ],
     scope_signature: [
-      poseidon.F.toObject(scopeSignature.R8[0]).toString(),
-      poseidon.F.toObject(scopeSignature.R8[1]).toString(),
+      F.toObject(scopeSignature.R8[0]).toString(),
+      F.toObject(scopeSignature.R8[1]).toString(),
       scopeSignature.S.toString(),
     ],
   };
-};
+}
 
-export const makeRandomInput = (
+/**
+ * Generate a random nullifier secret to store and auth secret for a relation to issue to a prover
+ * 
+ * @param poseidon - the circomlibjs Poseidon hash function
+ * @param eddsa - the circomlibjs Eddsa signature scheme
+ * @param sender - the private key of the user creating auth secret for recipient to use to prove relation
+ * @param recipient - the public key of the recipient of the auth secret
+ * @returns nullifierSecret - the trapdoor used by the relation to nullify the relationship
+ * @returns authSecret - the auth secret used by the prover to prove relation to previous proof creator
+ */
+export const deriveAuthSecret = (
   poseidon: Poseidon,
-  eddsa: Eddsa
-): InputMap => {
-  let proverKey = crypto.randomBytes(32);
-  let proverPubkey = eddsa.prv2pub(proverKey);
-  let relationKey = crypto.randomBytes(32);
-  let relationPubkey = eddsa.prv2pub(relationKey);
-  let scopeSignature = randomSignature(eddsa);
-  let authSignature = randomSignature(eddsa);
-  let relationNullifier = poseidon.F.e(crypto.randomBytes(32));
-  return {
-    prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
-    relation_pubkey: relationPubkey.map((x) =>
-      poseidon.F.toObject(x).toString()
-    ),
-    relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
-    auth_signature: [
-      poseidon.F.toObject(authSignature.R8[0]).toString(),
-      poseidon.F.toObject(authSignature.R8[1]).toString(),
-      authSignature.S.toString(),
-    ],
-    scope_signature: [
-      poseidon.F.toObject(scopeSignature.R8[0]).toString(),
-      poseidon.F.toObject(scopeSignature.R8[1]).toString(),
-      scopeSignature.S.toString(),
-    ],
-  };
+  eddsa: Eddsa,
+  sender: Buffer,
+  recipient: Point,
+): { nullifierSecret: Uint8Array, authSecret: AuthSecret} => {
+  // choose random nullifier secret
+  const nullifierSecret = poseidon.F.e(crypto.randomBytes(32));
+  // hash with own address to get the nullifier
+  const senderAddress = poseidon(eddsa.prv2pub(sender));
+  const nullifier = poseidon([nullifierSecret, senderAddress]);
+  // get the pubkey of the prover
+  const recipientAddress = poseidon(recipient);
+  // hash the nullifier with the recipient address to get the auth message
+  const authMessage = poseidon([nullifier, recipientAddress]);
+  // sign the nullifier
+  const signature = eddsa.signPoseidon(sender, authMessage);
+  return { nullifierSecret, authSecret: { nullifier, signature }};
 };
+
+/**
+ * Parses an Fr element from the GrapevineWasm output into LE Uint8Array form usable by circomlibjs
+ * 
+ * @param F - the circomlibjs Field api for normalizing values
+ * @param fr - the stringified field element outputted by the GrapevineWasm in BE
+ * @returns - the Uint8Array representation of the Fr element in LE
+ */
+export const parseGrapevineOutput = (F: any, fr: String): Uint8Array => {
+  let strippedHex = fr.startsWith("0x") ? fr.slice(2) : fr;
+  let byteArray = strippedHex.match(/.{1,2}/g);
+  let reversedByteArray = byteArray!.reverse();
+  let reversedHexString = reversedByteArray.join("");
+  let paddedHexString = reversedHexString.padStart(64, '0');
+  return F.fromObject("0x" + paddedHexString) as Uint8Array;
+};
+
+/**
+ * Parse the entire grapevine output array for client use
+ * 
+ * @param F - the circomlibjs Field api for normalizing values
+ * @param output - the array of field elements outputted by the GrapevineWasm
+ * @returns - the parsed GrapevineOutputs
+ */
+export const parseGrapevineOutputArray = (F: any, output: String[]): GrapevineOutputs => {
+  // raw parsing of the output array
+  const raw = output.map((x) => parseGrapevineOutput(F, x));
+  // parse each field
+  const obfuscate = F.toObject(raw[GrapevineOutputSlot.Obfuscate]) === 1n;
+  const degree = Number(F.toObject(raw[GrapevineOutputSlot.Degree]));
+  const scope = raw[GrapevineOutputSlot.Scope];
+  const relation = raw[GrapevineOutputSlot.Relation];
+  let nullifiers = [];
+  for (let i = GrapevineOutputSlot.Nullifier; i < output.length; i++) {
+    nullifiers.push(raw[i]);
+  }
+  return { obfuscate, degree, scope, relation, nullifiers };
+}
