@@ -1,6 +1,6 @@
 import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts";
 import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm";
-import { GrapevineWasmArtifacts } from "./types";
+import { AuthSecret, GrapevineWasmArtifacts } from "./types";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { BabyJub, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
@@ -127,6 +127,10 @@ export const initGrapevineWasm = async (threads = 1): Promise<any> => {
   return GrapevineWasmModule;
 };
 
+/**
+ * Get all default artifacts used by the Grapevine proving API
+ * @returns - downloaded params and URL for r1cs and circuit wasm
+ */
 export const defaultArtifacts = async (): Promise<GrapevineWasmArtifacts> => {
   const params = await getParams();
   const paramsString = await decompressParamsBlob(params);
@@ -191,8 +195,7 @@ export const makeDegreeInput = (
   eddsa: Eddsa,
   prover: Buffer,
   relationPubkey: Point,
-  relationNullifier: Uint8Array,
-  authSignature: Signature,
+  authSecret: AuthSecret,
   scope: String,
 ) => {
   // get the prover's pubkey from their private key
@@ -205,8 +208,8 @@ export const makeDegreeInput = (
     eddsa.F,
     proverPubkey,
     relationPubkey,
-    relationNullifier,
-    authSignature,
+    authSecret.nullifier,
+    authSecret.signature,
     scopeSignature
   );
 };
@@ -280,13 +283,34 @@ const makeInputMap = (
   };
 }
 
-export const deriveNullifier = async (
+/**
+ * Generate a random nullifier secret to store and auth secret for a relation to issue to a prover
+ * 
+ * @param poseidon - the circomlibjs Poseidon hash function
+ * @param eddsa - the circomlibjs Eddsa signature scheme
+ * @param sender - the private key of the user creating auth secret for recipient to use to prove relation
+ * @param recipient - the public key of the recipient of the auth secret
+ * @returns nullifierSecret - the trapdoor used by the relation to nullify the relationship
+ * @returns authSecret - the auth secret used by the prover to prove relation to previous proof creator
+ */
+export const deriveAuthSecret = (
   poseidon: Poseidon,
   eddsa: Eddsa,
-  sk: Buffer,
-  pk: Point
-) => {
-  
+  sender: Buffer,
+  recipient: Point,
+): { nullifierSecret: Uint8Array, authSecret: AuthSecret} => {
+  // choose random nullifier secret
+  let nullifierSecret = poseidon.F.e(crypto.randomBytes(32));
+  // hash with own address to get the nullifier
+  let senderAddress = poseidon(eddsa.prv2pub(sender));
+  let nullifier = poseidon([nullifierSecret, senderAddress]);
+  // get the pubkey of the prover
+  let recipientAddress = poseidon(recipient);
+  // hash the nullifier with the recipient address to get the auth message
+  let authMessage = poseidon([nullifier, recipientAddress]);
+  // sign the nullifier
+  let signature = eddsa.signPoseidon(sender, authMessage);
+  return { nullifierSecret, authSecret: { nullifier, signature }};
 };
 
 /**
