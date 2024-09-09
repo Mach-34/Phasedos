@@ -1,4 +1,4 @@
-export { WasmArtifacts } from "../wasm/grapevine_wasm"
+export { GrapevineWasmArtifacts } from "../wasm/grapevine_wasm"
 
 export type InputMap = {
     relation_pubkey: String[],

@@ -9,6 +9,14 @@ use poseidon_rs::Fr as Fr_ce;
 use sha256::digest;
 use sha3::{Digest, Sha3_256};
 
+#[cfg(target_arch = "wasm32")]
+pub fn gen_aes_key(seed: [u8; 32]) -> ([u8; 16], [u8; 16]) {
+    let hash = digest(&seed).as_bytes().to_vec();
+    let aes_key: [u8; 16] = hash[0..16].try_into().unwrap();
+    let aes_iv: [u8; 16] = hash[16..32].try_into().unwrap();
+    (aes_key, aes_iv)
+}
+
 /**
  * Computes an AES-CBC-128 Key from a Baby Jub Jub shared secret
  *
@@ -16,6 +24,7 @@ use sha3::{Digest, Sha3_256};
  * @param pk - the public key in the ecdh shared secret (ephemeral in practice)
  * @return - a tuple (AES Key, AES Iv) used to encrypt/ decrypt aes-cbc-128
  */
+#[cfg(not(target_arch = "wasm32"))]
 pub fn gen_aes_key(sk: PrivateKey, pk: Point) -> ([u8; 16], [u8; 16]) {
     // compute ecdh shared secret
     let shared_secret = pk.mul_scalar(&sk.scalar_key());

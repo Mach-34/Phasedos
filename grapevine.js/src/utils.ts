@@ -1,6 +1,6 @@
 import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts";
 import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm";
-import { WasmArtifacts } from "./types"; 
+import { GrapevineWasmArtifacts } from "./types";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { BabyJub, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
@@ -127,16 +127,11 @@ export const initGrapevineWasm = async (threads = 1): Promise<any> => {
   return GrapevineWasmModule;
 };
 
-export const defaultArtifacts =
-  async (): Promise<WasmArtifacts> => {
-    const params = await getParams();
-    const paramsString = await decompressParamsBlob(params);
-    return new WasmArtifacts(
-      paramsString,
-      R1CS_URI,
-      WASM_URI
-    );
-  };
+export const defaultArtifacts = async (): Promise<GrapevineWasmArtifacts> => {
+  const params = await getParams();
+  const paramsString = await decompressParamsBlob(params);
+  return new GrapevineWasmArtifacts(paramsString, R1CS_URI, WASM_URI);
+};
 
 export const randomSignature = (eddsa: Eddsa): Signature => {
   let key = crypto.randomBytes(32);
@@ -180,7 +175,6 @@ export const makeIdentityInput = (
   };
 };
 
-
 export const makeDegreeInput = (
   poseidon: Poseidon,
   eddsa: Eddsa,
@@ -188,23 +182,16 @@ export const makeDegreeInput = (
   relationPubkey: Point,
   authSignature: Signature,
   relationNullifier: Buffer,
-  scope: Point
+  scope: Uint8Array
 ) => {
-  // fix scope
-  // let strippedHex = scope.startsWith('0x') ? scope.slice(2) : scope;
-  // let scopeBytes = new Uint8Array(strippedHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)))
-  // let msgBuf = eddsa.babyJub.F.e(Scalar.fromRprLE(scopeBytes, 0))
-  let decimal = BigInt(`${scope}`);
-  let bytes = new Uint8Array(Buffer.from(decimal.toString(16), 'hex'));
-
-  console.log("Computed", BigInt("0x" + Buffer.from(bytes).toString('hex')));
-
   let proverPubkey = eddsa.prv2pub(proverKey);
-  let scopeSignature = eddsa.signPoseidon(proverKey, poseidon(relationPubkey));
+  let scopeSignature = eddsa.signPoseidon(proverKey, scope);
 
   return {
     prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
-    relation_pubkey: relationPubkey.map((x) => poseidon.F.toObject(x).toString()),
+    relation_pubkey: relationPubkey.map((x) =>
+      poseidon.F.toObject(x).toString()
+    ),
     relation_nullifier: poseidon.F.toObject(relationNullifier).toString(),
     auth_signature: [
       poseidon.F.toObject(authSignature.R8[0]).toString(),
@@ -217,12 +204,9 @@ export const makeDegreeInput = (
       scopeSignature.S.toString(),
     ],
   };
-}
+};
 
-export const makeRandomInput = (
-  poseidon: Poseidon,
-  eddsa: Eddsa
-): InputMap => {
+export const makeRandomInput = (poseidon: Poseidon, eddsa: Eddsa): InputMap => {
   let proverKey = crypto.randomBytes(32);
   let proverPubkey = eddsa.prv2pub(proverKey);
   let relationKey = crypto.randomBytes(32);
@@ -249,11 +233,18 @@ export const makeRandomInput = (
   };
 };
 
-export const deriveNullifier = async (poseidon: Poseidon, eddsa: Eddsa, sk: Buffer, pk: Point) => {
+export const deriveNullifier = async (
+  poseidon: Poseidon,
+  eddsa: Eddsa,
+  sk: Buffer,
+  pk: Point
+) => {};
 
-}
-
-export const deriveAesKey = async (bjj: BabyJub, sk: Buffer, pk: Point): Promise<[Buffer, Buffer]> => {
+export const deriveAesKey = async (
+  bjj: BabyJub,
+  sk: Buffer,
+  pk: Point
+): Promise<[Buffer, Buffer]> => {
   let secret = bjj.mulPointEscalar(pk, sk);
   let seed = Buffer.concat([Buffer.from(secret[0]), Buffer.from(secret[1])]);
   let hasher = crypto.createHash("sha256");
@@ -261,4 +252,13 @@ export const deriveAesKey = async (bjj: BabyJub, sk: Buffer, pk: Point): Promise
   let key = hash.subarray(0, 16);
   let iv = hash.subarray(16, 32);
   return [key, iv];
+};
+
+export const parseScopeAddress = (F: any, scope: String): Uint8Array => {
+  let strippedHex = scope.startsWith("0x") ? scope.slice(2) : scope;
+  let byteArray = strippedHex.match(/.{1,2}/g);
+  let reversedByteArray = byteArray!.reverse();
+  let reversedHexString = reversedByteArray.join("");
+  let paddedHexString = reversedHexString.padStart(64, '0');
+  return F.fromObject("0x" + paddedHexString) as Uint8Array;
 };
