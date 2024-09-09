@@ -44,6 +44,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
                 return Failure((Status::BadRequest, ErrorMessage(None)));
             }
         };
+
         // Check for X-Authorization header (signature over nonce)
         let signature = match request.headers().get_one("X-Authorization") {
             Some(data) => {

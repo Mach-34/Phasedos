@@ -36,7 +36,7 @@ impl AuthSecret {
 
     /**
      * Format inputs for circom
-     * 
+     *
      * @returns - ([r_x, r_y, s], nullifier)
      */
     pub fn fmt_circom(&self) -> ([Fr; 3], Fr) {
@@ -74,11 +74,12 @@ impl AuthSecretEncrypted {
         let plaintext = signature.compress();
         let mut sig_buf = [0u8; 80];
         sig_buf[..plaintext.len()].copy_from_slice(&plaintext);
-        let signature_ciphertext: [u8; 80] = Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
-            .encrypt_padded_mut::<Pkcs7>(&mut sig_buf, plaintext.len())
-            .unwrap()
-            .try_into()
-            .unwrap();
+        let signature_ciphertext: [u8; 80] =
+            Aes128CbcEnc::new(aes_key[..].into(), aes_iv[..].into())
+                .encrypt_padded_mut::<Pkcs7>(&mut sig_buf, plaintext.len())
+                .unwrap()
+                .try_into()
+                .unwrap();
 
         // encrypt the nullifier
         let mut null_buf = [0u8; 48];
@@ -125,7 +126,10 @@ impl AuthSecretEncrypted {
             .try_into()
             .unwrap();
 
-        AuthSecret { signature, nullifier }
+        AuthSecret {
+            signature,
+            nullifier,
+        }
     }
 }
 
