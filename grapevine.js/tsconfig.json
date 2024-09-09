@@ -7,7 +7,9 @@
     "esModuleInterop": true,             // Enable interoperability between CommonJS and ES Modules
     "skipLibCheck": true,                // Skip type checking of all declaration files (for faster compilation)
     "forceConsistentCasingInFileNames": true, // Enforce consistent casing in imports
-    "typeRoots": ["./types", "./node_modules/@types"]
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "rootDir": "./src",
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/**/*.ts",                       // Include all TypeScript files in the src directory
