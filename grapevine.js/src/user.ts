@@ -2,14 +2,9 @@ import { BabyJub, buildEddsa, buildPoseidon, Eddsa, Point, Poseidon } from "circ
 import * as crypto from "crypto";
 import * as ff from "ffjavascript";
 import createBlakeHash from 'blake-hash'
-
-export type User = {
-    privkey: string;
-    pubkey: Point;
-    username: string;
-}
-
-const SERVER_URL = "http://localhost:8000" // TODO: swap out for env var
+import { User } from "./types";
+import { SERVER_URL } from "./consts.ts";
+import { generateAuthHeaders } from "./utils.ts";
 
 export const addRelationship = async (wasm: any, recipient: string, sender: User) => {
 
@@ -120,49 +115,6 @@ const getUserPubkey = async (username: string): Promise<string> => {
     return await res.text()
 }
 
-const generateAuthHeaders = async (user: User) => {
-    const eddsa = await buildEddsa();
-    const nonce = await getNonce(user.privkey, user.username);
-    const nonceBytes = nonceToBytes(nonce);
-
-    const usernameBytes = usernametoFr(user.username);
-
-    const hasher = crypto.createHash("sha3-256");
-    const digest = hasher.update(usernameBytes).update(nonceBytes).digest();
-    const digestBytes = new Uint8Array(digest);
-    digestBytes[31] = 0;
-
-    const msg = eddsa.babyJub.F.e(ff.Scalar.fromRprLE(Buffer.from(digestBytes), 0))
-
-    // sign digest
-    const signature = eddsa.signPoseidon(Buffer.from(user.privkey, 'hex'), msg);
-    const signatureHex = Buffer.from(eddsa.packSignature(signature)).toString('hex');
-
-    return { "X-Authorization": signatureHex, "X-Username": user.username }
-}
-
-const getNonce = async (privatekey: string, username: string) => {
-    const eddsa = await buildEddsa();
-    const privkey = Buffer.from(privatekey, 'hex');
-    const buff = Buffer.from(username, 'utf8');
-    const msg = eddsa.babyJub.F.e(ff.Scalar.fromRprLE(buff, 0));
-
-    const signature = eddsa.signPoseidon(privkey, msg);
-
-    const payload = {
-        signature: Array.from(eddsa.packSignature(signature)),
-        username
-    };
-
-    const url = `${SERVER_URL}/user/nonce`;
-    const res = await fetch(url, {
-        body: JSON.stringify(payload),
-        method: "POST",
-        headers: { "content-type": 'application/json' }
-    });
-    return await res.json()
-}
-
 const getNullifierSecret = async (recipient: string, user: User) => {
     const url = `${SERVER_URL}/user/${recipient}/nullifier-secret`;
     const res = await fetch(url, {
@@ -173,6 +125,18 @@ const getNullifierSecret = async (recipient: string, user: User) => {
         }
     });
     return Buffer.from(await res.arrayBuffer());
+}
+
+export const getPendingRelationships = async (user: User) => {
+    const url = `${SERVER_URL}/user/relationship/pending`;
+    const res = await fetch(url, {
+        method: "GET",
+        // @ts-ignore
+        headers: {
+            ...(await generateAuthHeaders(user))
+        }
+    });
+    return await res.json()
 }
 
 const generateNullifier = async (poseidon: Poseidon, recipientAddress: bigint) => {
@@ -218,15 +182,6 @@ const generateRelationshipPayload = async (recipient: string, sender: User) => {
     };
 }
 
-const nonceToBytes = (nonce: number) => {
-    const arr = new Uint8Array(8); // Create an 8-byte array
-    for (let i = 7; i >= 0; i--) {
-        arr[i] = nonce & 0xff; // Extract the lowest 8 bits of the number
-        nonce = nonce >> 8; // Shift right by 8 bits
-    }
-    return arr.reverse();
-}
-
 export const nullifyRelationship = async (wasm: any, recipient: string, sender: User) => {
     const eddsa = await buildEddsa();
     const nullifierSecretCiphertext = await getNullifierSecret(recipient, sender);
@@ -252,16 +207,4 @@ export const nullifyRelationship = async (wasm: any, recipient: string, sender: 
         }
     });
     return await res.text()
-}
-
-const usernametoFr = (username: string) => {
-    if (username.length >= 32) {
-        throw Error("Max character length exceeded.");
-    }
-    const padded = new Uint8Array(32)
-    const usernameBytes = new Uint8Array(Buffer.from(username, 'utf-8'));
-    for (let i = 0; i < usernameBytes.length; i++) {
-        padded[30 - i] = usernameBytes[i];
-    }
-    return padded;
 }

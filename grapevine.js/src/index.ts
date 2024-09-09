@@ -1,6 +1,6 @@
 import { buildEddsa, } from "circomlibjs";
 import { initGrapevineWasm } from "./utils.ts";
-import { addRelationship, nullifyRelationship } from "./user.ts";
+import { addRelationship, getPendingRelationships, nullifyRelationship } from "./user.ts";
 
 
 // // let key = "0001020304050607080900010203040506070809000102030405060708090001";
@@ -59,6 +59,10 @@ import { addRelationship, nullifyRelationship } from "./user.ts";
 
     const relationshipResponse1 = await addRelationship(wasm, user2.username, user1);
     console.log('First relationship creation: ', relationshipResponse1);
+
+    const pending = await getPendingRelationships(user2);
+    console.log('Pending: ', pending)
+
     const relationshipResponse2 = await addRelationship(wasm, user1.username, user2);
     console.log('Second relationship creation: ', relationshipResponse2);
 

@@ -7,3 +7,5 @@ export type GrapevineWasm = typeof import("../wasm/grapevine_wasm");
 
 // length of the output array from a grapevine proof
 export const GRAPEVINE_OUTPUT_LENGTH = 12;
+
+export const SERVER_URL = "http://localhost:8000" // TODO: swap out for env var

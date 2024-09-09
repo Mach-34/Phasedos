@@ -1,4 +1,4 @@
-import { Signature } from "circomlibjs"
+import { Point, Signature } from "circomlibjs"
 
 export { GrapevineWasmArtifacts } from "../wasm/grapevine_wasm.js"
 
@@ -33,4 +33,10 @@ export type GrapevineOutputs = {
     scope: Uint8Array,
     relation: Uint8Array,
     nullifiers: Uint8Array[]
+}
+
+export type User = {
+    privkey: string;
+    pubkey: Point;
+    username: string;
 }
