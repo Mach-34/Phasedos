@@ -23,6 +23,13 @@ template Grapevine() {
    // **Only constrained if DEGREE step**
    // Check the relation pubkey hashes to the relation address
    component validate_relation_pubkey = CheckBJJAddress();
+   log("relation_pubkey x", relation_pubkey[0]);
+   log("relation_pubkey y", relation_pubkey[1]);
+   log("prover_pubkey x", prover_pubkey[0]);
+   log("prover_pubkey y", prover_pubkey[1]);
+   log("scope ", inputs.scope);
+   log("relation ", inputs.relation);
+   log("relation_nullifier ", relation_nullifier);
    validate_relation_pubkey.pubkey <== relation_pubkey;
    validate_relation_pubkey.address <== inputs.relation;
    validate_relation_pubkey.enabled <== inputs.is_degree_step;
@@ -30,6 +37,7 @@ template Grapevine() {
    // Compute the current prover's address
    component prover = BJJAddress();
    prover.pubkey <== prover_pubkey;
+   log("prover address", prover.address);
 
    // Multiplex between identity and degree steps to get scope
    // If chaff step, verifier will be disabled so incorrect assignment is ok

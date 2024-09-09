@@ -217,7 +217,8 @@ pub fn bigint_to_fr(val: String) -> Result<Fr, GrapevineError> {
 pub fn stringify_proof_outputs(outputs: Vec<Fr>) -> Array {
     let serialized = Array::new_with_length(outputs.len() as u32);
     for i in 0..outputs.len() as u32 {
-        let output = outputs[i as usize].to_bytes();
+        let mut output = outputs[i as usize].to_bytes();
+        output.reverse();
         serialized.set(i, JsValue::from_str(&format!("0x{}", hex::encode(output))));
     }
     serialized
@@ -303,8 +304,8 @@ pub async fn degree_proof(
     // parse the circuit inputs
     console_log!(verbose, "Parsing inputs");
     let inputs = serde_json::from_str::<InputMapJson>(&input_map).unwrap();
-    // let chaff = serde_json::from_str::<InputMapJson>(&chaff_map).unwrap();
-    let private_inputs = vec![inputs.to_map()];
+    let chaff = serde_json::from_str::<InputMapJson>(&chaff_map).unwrap();
+    let private_inputs = vec![inputs.to_map(), chaff.to_map()];
     // parse previous inputs
     console_log!(verbose, "Parsing previous outputs");
     let previous_output = destringify_proof_outputs(previous_output).unwrap();
