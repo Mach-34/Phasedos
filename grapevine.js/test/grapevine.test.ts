@@ -17,19 +17,16 @@ let mockAuthSignature = (
   poseidon: Poseidon,
   sender: Buffer,
   recipient: Point
-): { nullifier: Buffer; authSignature: Signature } => {
+): { nullifier: Uint8Array; authSignature: Signature } => {
   // choose random nullifier
   let nullifier = poseidon.F.e(crypto.randomBytes(32));
   // get the pubkey of the prover
   let recipientAddress = poseidon(recipient);
   // hash the auth secret scoped
-  let msg = poseidon([
-    poseidon.F.toObject(nullifier),
-    poseidon.F.toObject(recipientAddress),
-  ]);
+  let msg = poseidon([nullifier, recipientAddress]);
   // sign the auth secret
   let authSignature = eddsa.signPoseidon(sender, msg);
-  return { nullifier: Buffer.from(nullifier), authSignature };
+  return { nullifier, authSignature };
 };
 
 describe("Grapevine", () => {
@@ -64,9 +61,10 @@ describe("Grapevine", () => {
     );
     // verify the identity proof to get the outputs
     let identityProofOutput = await wasm.verify_grapevine_proof(
-      identityProof,
       artifacts.params,
-      0
+      identityProof,
+      0,
+      true
     );
     // create an auth secret (nullifier + sig over nullifier) from identity prover to degree 1
     let { nullifier, authSignature } = mockAuthSignature(
@@ -77,13 +75,12 @@ describe("Grapevine", () => {
     );
     // create inputs for degree proof
     input_map = GrapevineUtils.makeDegreeInput(
-      poseidon,
       eddsa,
       keys[1], // prover (degree 1) private key
       eddsa.prv2pub(keys[0]), // relation (previous prover) public key 
-      authSignature, // auth signature over H|nullifier, proverAddress|
-      nullifier, // nullifier given to current prover
-      GrapevineUtils.parseScopeAddress(F, identityProofOutput[2]) // identity scope for proof chain
+      nullifier,  // nullifier given to current prover
+      authSignature, // auth signature by relation over H|nullifier, proverAddress|
+      identityProofOutput[2], // scope address for proof chain outputted by previous proof
     );
     chaff_map = GrapevineUtils.makeRandomInput(poseidon, eddsa);
     // run degree proof
@@ -97,9 +94,10 @@ describe("Grapevine", () => {
     );
     // verify degree proof
     let degreeProofOutput = await wasm.verify_grapevine_proof(
-        degreeProof,
         artifacts.params,
-        1
+        degreeProof,
+        1,
+        true
     );
   });
 });

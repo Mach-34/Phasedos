@@ -7,7 +7,7 @@ use grapevine_circuits::{
     Z0_PRIMARY, Z0_SECONDARY,
 };
 use grapevine_common::{
-    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes}, crypto::{gen_aes_key, pubkey_to_address}, errors::GrapevineError, Fr, Params, G1, G2
+    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes}, errors::GrapevineError, Fr, Params, G1, G2
 };
 use js_sys::{Array, BigInt as JsBigInt, JsString, Number, Uint8Array};
 use nova_scotia::{
@@ -328,29 +328,23 @@ pub async fn degree_proof(
  * @return - the output of the proof if verified
  */
 #[wasm_bindgen]
-pub async fn verify_grapevine_proof(proof: String, params_string: String, degree: Number) -> Array {
+pub async fn verify_grapevine_proof( params_string: String, proof: String, degree: Number, verbose: bool) -> Array {
     console_error_panic_hook::set_once();
     // parse public parameters
+    console_log!(verbose, "Parsing public parameters");
     let params: Params = serde_json::from_str(&params_string).unwrap();
     // decompress proof
+    console_log!(verbose, "Decompressing proof");
     let proof_compressed = serde_json::from_str::<Vec<u8>>(&proof).unwrap();
     let proof = decompress_proof(&proof_compressed[..]);
     // convert degree to num steps in the circuit
     let iterations = degree.as_f64().unwrap() as usize * 2 + 2;
     // verify the proof
+    console_log!(verbose, "Verifying proof");
     let outputs = proof
         .verify(&params, iterations, &Z0_PRIMARY, &Z0_SECONDARY)
         .unwrap();
     // return stringified outputs
+    console_log!(verbose, "Stringifying outputs");
     stringify_proof_outputs(outputs.0)
-}
-
-#[wasm_bindgen]
-pub async fn derive_aes_key(seed: String) -> String {
-    let seed_bytes: [u8; 32] = hex::decode(seed).unwrap().try_into().unwrap();
-    // concat aes key
-    let mut serialized = [0u8; 32]; // Initialize an empty [u8; 32] array
-    serialized[..16].copy_from_slice(&aes_key.0);
-    serialized[16..].copy_from_slice(&aes_key.1);
-    hex::encode(serialized)
 }
