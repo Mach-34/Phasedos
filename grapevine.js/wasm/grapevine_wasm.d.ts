@@ -44,6 +44,35 @@ export function degree_proof(artifact_locations: GrapevineWasmArtifacts, input_m
 */
 export function verify_grapevine_proof(params_string: string, proof: string, degree: number, verbose: boolean): Promise<Array<any>>;
 /**
+* @param {string} username
+* @param {string} pubkey_string
+* @param {string} proof_string
+* @returns {Promise<Uint8Array>}
+*/
+export function bincode_create_user_request(username: string, pubkey_string: string, proof_string: string): Promise<Uint8Array>;
+/**
+* @param {string} proof_string
+* @param {string} previous
+* @param {number} degree
+* @returns {Promise<Uint8Array>}
+*/
+export function bincode_degree_proof_request(proof_string: string, previous: string, degree: number): Promise<Uint8Array>;
+/**
+* @param {string} to
+* @param {string} ephemeral_key_string
+* @param {string} signature_ciphertext_string
+* @param {string} nullifier_ciphertext_string
+* @param {string} nullifier_secret_ciphertext_string
+* @returns {Promise<Uint8Array>}
+*/
+export function bincode_new_relationship_request(to: string, ephemeral_key_string: string, signature_ciphertext_string: string, nullifier_ciphertext_string: string, nullifier_secret_ciphertext_string: string): Promise<Uint8Array>;
+/**
+* @param {string} nullifier_secret_string
+* @param {string} recipient
+* @returns {Promise<Uint8Array>}
+*/
+export function bincode_emit_nullifier_request(nullifier_secret_string: string, recipient: string): Promise<Uint8Array>;
+/**
 * @param {string} path
 * @returns {Promise<Uint8Array>}
 */
@@ -111,6 +140,10 @@ export interface InitOutput {
   readonly identity_proof: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
   readonly degree_proof: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
   readonly verify_grapevine_proof: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+  readonly bincode_create_user_request: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+  readonly bincode_degree_proof_request: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly bincode_new_relationship_request: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
+  readonly bincode_emit_nullifier_request: (a: number, b: number, c: number, d: number) => number;
   readonly __wbg_wbg_rayon_poolbuilder_free: (a: number, b: number) => void;
   readonly wbg_rayon_poolbuilder_numThreads: (a: number) => number;
   readonly wbg_rayon_poolbuilder_receiver: (a: number) => number;
