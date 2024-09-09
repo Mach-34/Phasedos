@@ -1,13 +1,12 @@
-use std::{collections::HashMap, str::FromStr};
-use ff::PrimeField;
 use babyjubjub_rs::{Point, PrivateKey, Signature};
+use ff::PrimeField;
 use grapevine_circuits::{
     inputs::{GrapevineArtifacts, GrapevineInputs},
     utils::{compress_proof, decompress_proof},
     Z0_PRIMARY, Z0_SECONDARY,
 };
 use grapevine_common::{
-    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes}, errors::GrapevineError, Fr, Params, G1, G2
+    compat::{ff_ce_from_le_bytes, ff_ce_to_le_bytes}, errors::GrapevineError, http::requests::{CreateUserRequest, DegreeProofRequest, EmitNullifierRequest, NewRelationshipRequest}, Fr, Params, G1, G2
 };
 use js_sys::{Array, BigInt as JsBigInt, JsString, Number, Uint8Array};
 use nova_scotia::{
@@ -18,6 +17,7 @@ use num::Num;
 use num_bigint::{BigInt, Sign};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::{collections::HashMap, str::FromStr};
 use wasm_bindgen::prelude::*;
 
 pub mod types;
@@ -153,7 +153,6 @@ async fn get_artifacts(artifact_locations: &GrapevineWasmArtifacts) -> Grapevine
         wasm_location,
     }
 }
-
 
 /**
  * Converts a stringified bigint to bn254 Fr
@@ -309,7 +308,8 @@ pub async fn degree_proof(
         private_inputs,
         Z0_PRIMARY.clone(),
         &artifacts.params,
-    ).await;
+    )
+    .await;
     // compress proof and return
     console_log!(verbose, "Compressing proof with gzip");
     let compressed = compress_proof(&proof);
@@ -317,7 +317,6 @@ pub async fn degree_proof(
     console_log!(verbose, "Stringifying proof");
     serde_json::to_string(&compressed).unwrap()
 }
-
 
 /**
  * Verify the correct execution of an IVC proof of the grapevine circuit
@@ -328,7 +327,12 @@ pub async fn degree_proof(
  * @return - the output of the proof if verified
  */
 #[wasm_bindgen]
-pub async fn verify_grapevine_proof( params_string: String, proof: String, degree: Number, verbose: bool) -> Array {
+pub async fn verify_grapevine_proof(
+    params_string: String,
+    proof: String,
+    degree: Number,
+    verbose: bool,
+) -> Array {
     console_error_panic_hook::set_once();
     // parse public parameters
     console_log!(verbose, "Parsing public parameters");
@@ -347,4 +351,108 @@ pub async fn verify_grapevine_proof( params_string: String, proof: String, degre
     // return stringified outputs
     console_log!(verbose, "Stringifying outputs");
     stringify_proof_outputs(outputs.0)
+}
+
+#[wasm_bindgen]
+pub async fn bincode_create_user_request(
+    username: String,
+    pubkey_string: String,
+    proof_string: String,
+) -> Uint8Array {
+    console_error_panic_hook::set_once();
+    // parse pubkey
+    let pubkey: [u8; 32] = hex::decode(pubkey_string).unwrap().try_into().unwrap();
+    // destringify proof (should already be compressed)
+    let proof: Vec<u8> = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
+    // build CreateUserRequest
+    let request = CreateUserRequest {
+        username,
+        pubkey,
+        proof,
+    };
+    // bincode the request
+    let serialized = bincode::serialize(&request).unwrap();
+    // copy into Uint8Array
+    let array = Uint8Array::new_with_length(serialized.len() as u32);
+    array.copy_from(&serialized[..]);
+    // return
+    array
+}
+
+#[wasm_bindgen]
+pub async fn bincode_degree_proof_request(
+    proof_string: String,
+    previous: String,
+    degree: Number
+) -> Uint8Array {
+    console_error_panic_hook::set_once();
+    // destringify proof (should already be compressed)
+    let proof: Vec<u8> = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
+    // build DegreeProofRequest
+    let request = DegreeProofRequest {
+        proof,
+        previous,
+        degree: degree.as_f64().unwrap() as u8,
+    };
+    // bincode the request
+    let serialized = bincode::serialize(&request).unwrap();
+    // copy into Uint8Array
+    let array = Uint8Array::new_with_length(serialized.len() as u32);
+    array.copy_from(&serialized[..]);
+    // return
+    array
+}
+
+#[wasm_bindgen]
+pub async fn bincode_new_relationship_request(
+    to: String,
+    ephemeral_key_string: String,
+    signature_ciphertext_string: String,
+    nullifier_ciphertext_string: String,
+    nullifier_secret_ciphertext_string: String,
+) -> Uint8Array {
+    console_error_panic_hook::set_once();
+    // parse ephemeral key
+    let ephemeral_key: [u8; 32] = hex::decode(ephemeral_key_string).unwrap().try_into().unwrap();
+    // parse ciphertexts
+    let signature_ciphertext: [u8; 80] = hex::decode(signature_ciphertext_string).unwrap().try_into().unwrap();
+    let nullifier_ciphertext: [u8; 48] = hex::decode(nullifier_ciphertext_string).unwrap().try_into().unwrap();
+    let nullifier_secret_ciphertext: [u8; 48] = hex::decode(nullifier_secret_ciphertext_string).unwrap().try_into().unwrap();
+    // build NewRelationshipRequest
+    let request = NewRelationshipRequest {
+        to,
+        ephemeral_key,
+        signature_ciphertext,
+        nullifier_ciphertext,
+        nullifier_secret_ciphertext,
+    };
+    // bincode the request
+    let serialized = bincode::serialize(&request).unwrap();
+    // copy into Uint8Array
+    let array = Uint8Array::new_with_length(serialized.len() as u32);
+    array.copy_from(&serialized[..]);
+    // return
+    array
+}
+
+#[wasm_bindgen]
+pub async fn bincode_emit_nullifier_request(
+    nullifier_secret_string: String,
+    recipient: String,
+) -> Uint8Array {
+    console_error_panic_hook::set_once();
+    // parse nullifier secret
+    let nullifier_secret: [u8; 32] = hex::decode(nullifier_secret_string).unwrap().try_into().unwrap();
+    // build EmitNullifierRequest
+    let request = EmitNullifierRequest {
+        nullifier_secret,
+        recipient,
+    };
+    // bincode the request
+    let serialized = bincode::serialize(&request).unwrap();
+    // copy into Uint8Array
+    let array = Uint8Array::new_with_length(serialized.len() as u32);
+    array.copy_from(&serialized[..]);
+    // return
+    array
 }

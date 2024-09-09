@@ -1,0 +1,16 @@
+{
+  "name": "grapevine_wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT or Apache-2.0",
+  "files": [
+    "grapevine_wasm_bg.wasm",
+    "grapevine_wasm.js",
+    "grapevine_wasm.d.ts"
+  ],
+  "main": "grapevine_wasm.js",
+  "types": "grapevine_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
