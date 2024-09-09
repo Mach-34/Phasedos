@@ -46,6 +46,8 @@ template Grapevine() {
    identity_scope_mux.c[0] <== prover.address;
    identity_scope_mux.c[1] <== inputs.scope;
 
+   log("identity_scope_mux out", identity_scope_mux.out);
+
    // **Only constrained if IDENTITY or DEGREE step**
    // Verify prover address controls the used pubkey with scope address
    component identity_verifier = ScopeSigVerifier();

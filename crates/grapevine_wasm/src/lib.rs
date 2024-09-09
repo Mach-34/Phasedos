@@ -218,7 +218,6 @@ pub fn stringify_proof_outputs(outputs: Vec<Fr>) -> Array {
     let serialized = Array::new_with_length(outputs.len() as u32);
     for i in 0..outputs.len() as u32 {
         let mut output = outputs[i as usize].to_bytes();
-        output.reverse();
         serialized.set(i, JsValue::from_str(&format!("0x{}", hex::encode(output))));
     }
     serialized

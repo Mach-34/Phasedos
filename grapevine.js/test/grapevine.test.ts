@@ -5,6 +5,7 @@ import { WasmArtifacts } from "../src/types";
 import * as crypto from "crypto";
 import {
   Eddsa,
+  Point,
   Poseidon,
   Signature,
   buildEddsa,
@@ -20,26 +21,47 @@ let convertValue = (value: Uint8Array, F: any): Buffer => {
 let mockAuthSignature = (
   eddsa: Eddsa,
   poseidon: Poseidon,
-  sk: Buffer
+  sk: Buffer,
+  pk: Point
 ): { nullifier: Buffer; authSignature: Signature } => {
+  // just make the nullifier the signer's address
   let pubkey = eddsa.prv2pub(sk);
-  let address = Buffer.from(poseidon(pubkey));
-  let authSignature = eddsa.signPoseidon(sk, address);
-  return { nullifier: address, authSignature };
+  let nullifier = poseidon(pubkey);
+  // get the pubkey of the prover
+  let recipientAddress = poseidon(pk);
+  // sign the hash of nullifier and recipient
+  let msg = poseidon([
+    poseidon.F.toObject(nullifier),
+    poseidon.F.toObject(recipientAddress),
+  ]);
+  console.log(
+    "Signer: ",
+    pubkey.map((x) => poseidon.F.toObject(x))
+  );
+  console.log("RECIPIENT: ", poseidon.F.toObject(recipientAddress));
+  console.log("NULLIFIER: ", poseidon.F.toObject(nullifier));
+  console.log("MESSAGE: ", poseidon.F.toObject(msg));
+  let authSignature = eddsa.signPoseidon(sk, msg);
+  console.log(
+    "R8: ",
+    authSignature.R8.map((x) => poseidon.F.toObject(x))
+  );
+  console.log("S: ", authSignature.S);
+  return { nullifier: Buffer.from(nullifier), authSignature };
 };
 
 const privateKeys = [
-    'e5a2fefac0fa70ee4c139702ca0e9adb888175a005d92fd7b297dfc78be69ad6',
-    '59fcd3722074b1f96f5e0e9f7d398d2a3ddea13e6a1fd04c207336d0b76d585d',
-    '946a6ba1caf036d4ff6fb7b3f89d68dc7430b37e214bfff45f600e9d554bdc3b',
-    'd7130a03de91dff1843e78b43c8e627c85c1fad12c06249551daabc2f29e7741',
-    'f31357628cfa9935158cddd80b1378a194738299e6cf6b4602d2490060c26b23',
-    '82edb793b8ab68c3feab124e4254a5368f6e1a01c8f3a914e01f08135ae5f587',
-    '1176ed9ea1ffb1656c49293f6c90c4c10af384da0acb0646709b8b2dc01161ce',
-    '43d06e29b62dacb9efbf852ddf2657e660e4d15e28eab13557adfe4511327355',
-    'c7377885ab8084285dd352c22d102333882e1aaf9f3acd863f56f5505e9906fa',
-    'c8dbd5316fad816f096d5e37074ac7d975862897390048f289b6f62d8c34aa2f'
-  ]
+  "e5a2fefac0fa70ee4c139702ca0e9adb888175a005d92fd7b297dfc78be69ad6",
+  "59fcd3722074b1f96f5e0e9f7d398d2a3ddea13e6a1fd04c207336d0b76d585d",
+  "946a6ba1caf036d4ff6fb7b3f89d68dc7430b37e214bfff45f600e9d554bdc3b",
+  "d7130a03de91dff1843e78b43c8e627c85c1fad12c06249551daabc2f29e7741",
+  "f31357628cfa9935158cddd80b1378a194738299e6cf6b4602d2490060c26b23",
+  "82edb793b8ab68c3feab124e4254a5368f6e1a01c8f3a914e01f08135ae5f587",
+  "1176ed9ea1ffb1656c49293f6c90c4c10af384da0acb0646709b8b2dc01161ce",
+  "43d06e29b62dacb9efbf852ddf2657e660e4d15e28eab13557adfe4511327355",
+  "c7377885ab8084285dd352c22d102333882e1aaf9f3acd863f56f5505e9906fa",
+  "c8dbd5316fad816f096d5e37074ac7d975862897390048f289b6f62d8c34aa2f",
+];
 
 describe("Grapevine", () => {
   let wasm: GrapevineWasm;
@@ -83,7 +105,6 @@ describe("Grapevine", () => {
   it("Degree Proof", async () => {
     // generate identity proof
     let input_map = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
-    console.log("Input map: ", input_map);
     let chaff_map = GrapevineUtils.makeRandomInput(poseidon, eddsa);
     let identityProof = await wasm.identity_proof(
       artifacts,
@@ -92,14 +113,6 @@ describe("Grapevine", () => {
       true
     );
 
-    let alicePubkey = eddsa.prv2pub(keys[0]);
-    let readable = {
-        x: F.toObject(alicePubkey[0]).toString(),
-        y: F.toObject(alicePubkey[1]).toString()
-    };
-    console.log("Address: ", F.toObject(poseidon(alicePubkey).toString()).toString(16));
-    console.log("Alice pubkey: ", readable);
-
     // verify the identity proof to get the outputs
     let identityProofOutput = await wasm.verify_grapevine_proof(
       identityProof,
@@ -107,19 +120,18 @@ describe("Grapevine", () => {
       0
     );
     console.log("Identity proof output: ", identityProofOutput);
-    
-   
 
     // create inputs for degree proof
-    let { nullifier, authSignature } = mockAuthSignature(eddsa, poseidon, keys[0]);
-    console.log("Nullifier: ", nullifier.toString('hex'));
+    let scope = BigInt(identityProofOutput[2]);
+    console.log("Scope: ", scope);
+    let { nullifier, authSignature } = mockAuthSignature(
+      eddsa,
+      poseidon,
+      keys[0],
+      eddsa.prv2pub(keys[1])
+    );
+    console.log("Nullifier: ", nullifier.toString("hex"));
 
-    alicePubkey = eddsa.prv2pub(keys[0]);
-    readable = {
-        x: F.toObject(alicePubkey[0]).toString(),
-        y: F.toObject(alicePubkey[1]).toString()
-    };
-    console.log("Alice pubkey: ", readable);
     // get input maps
     input_map = GrapevineUtils.makeDegreeInput(
       poseidon,
@@ -127,7 +139,8 @@ describe("Grapevine", () => {
       keys[1],
       eddsa.prv2pub(keys[0]),
       authSignature,
-      nullifier
+      nullifier,
+      identityProofOutput[2]
     );
     chaff_map = GrapevineUtils.makeRandomInput(poseidon, eddsa);
     console.log("Input map: ", input_map);
@@ -147,10 +160,12 @@ describe("Grapevine", () => {
     params = artifacts.params;
     console.log("Params: ", params.length);
   });
-  xit("Test mock signature", async () => {
-    let { nullifier, authSignature } = mockAuthSignature(eddsa, poseidon, keys[0]);
-    console.log("Nullifier: ", nullifier);
-    console.log("Signature: ", authSignature);
-
+  it("Test mock signature", async () => {
+    let { nullifier, authSignature } = mockAuthSignature(
+      eddsa,
+      poseidon,
+      keys[0],
+      eddsa.prv2pub(keys[1])
+    );
   });
 });

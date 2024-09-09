@@ -6,6 +6,7 @@ import { dirname } from "path";
 import { BabyJub, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
 import { InputMap } from "./types";
 import * as crypto from "crypto";
+import { Scalar } from "ffjavascript";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -179,17 +180,28 @@ export const makeIdentityInput = (
   };
 };
 
+
 export const makeDegreeInput = (
   poseidon: Poseidon,
   eddsa: Eddsa,
   proverKey: Buffer,
   relationPubkey: Point,
   authSignature: Signature,
-  relationNullifier: Buffer
+  relationNullifier: Buffer,
+  scope: Point
 ) => {
+  // fix scope
+  // let strippedHex = scope.startsWith('0x') ? scope.slice(2) : scope;
+  // let scopeBytes = new Uint8Array(strippedHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)))
+  // let msgBuf = eddsa.babyJub.F.e(Scalar.fromRprLE(scopeBytes, 0))
+  let decimal = BigInt(`${scope}`);
+  let bytes = new Uint8Array(Buffer.from(decimal.toString(16), 'hex'));
+
+  console.log("Computed", BigInt("0x" + Buffer.from(bytes).toString('hex')));
+
   let proverPubkey = eddsa.prv2pub(proverKey);
-  let address = poseidon(proverPubkey);
-  let scopeSignature = eddsa.signPoseidon(proverKey, address);
+  let scopeSignature = eddsa.signPoseidon(proverKey, poseidon(relationPubkey));
+
   return {
     prover_pubkey: proverPubkey.map((x) => poseidon.F.toObject(x).toString()),
     relation_pubkey: relationPubkey.map((x) => poseidon.F.toObject(x).toString()),
