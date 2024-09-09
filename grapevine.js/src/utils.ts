@@ -1,6 +1,6 @@
-import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts";
-import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm";
-import { AuthSecret, GrapevineOutputs, GrapevineOutputSlot, GrapevineWasmArtifacts } from "./types";
+import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI } from "./consts.ts";
+import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm.js";
+import { AuthSecret, GrapevineOutputs, GrapevineOutputSlot, GrapevineWasmArtifacts } from "./types.ts";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { BabyJub, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
@@ -298,7 +298,7 @@ export const deriveAuthSecret = (
   eddsa: Eddsa,
   sender: Buffer,
   recipient: Point,
-): { nullifierSecret: Uint8Array, authSecret: AuthSecret} => {
+): { nullifierSecret: Uint8Array, authSecret: AuthSecret } => {
   // choose random nullifier secret
   const nullifierSecret = poseidon.F.e(crypto.randomBytes(32));
   // hash with own address to get the nullifier
@@ -310,7 +310,7 @@ export const deriveAuthSecret = (
   const authMessage = poseidon([nullifier, recipientAddress]);
   // sign the nullifier
   const signature = eddsa.signPoseidon(sender, authMessage);
-  return { nullifierSecret, authSecret: { nullifier, signature }};
+  return { nullifierSecret, authSecret: { nullifier, signature } };
 };
 
 /**

@@ -1,6 +1,6 @@
 import { Signature } from "circomlibjs"
 
-export { GrapevineWasmArtifacts } from "../wasm/grapevine_wasm"
+export { GrapevineWasmArtifacts } from "../wasm/grapevine_wasm.js"
 
 // map of inputs formatted for use in circom witcalc
 export type InputMap = {

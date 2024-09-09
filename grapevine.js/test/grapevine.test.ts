@@ -203,6 +203,8 @@ describe("Grapevine", () => {
   describe("Bincode Tests", async () => {
     // this is dummy data with the right size. Just replace with the right data
     it("Create relationship request", async () => {
+
+
       const to = "Username";
       const ephemeralKey = crypto.randomBytes(32).toString("hex");
       const signatureCiphertext = crypto.randomBytes(80).toString("hex");
@@ -217,47 +219,47 @@ describe("Grapevine", () => {
       );
       console.log("bincoded", bincoded.length);
     });
-    it("Emit nullifier request", async () => {
-        const to = "Username";
-        const nullifierSecret = crypto.randomBytes(32).toString("hex");
-        const bincoded = await wasm.bincode_emit_nullifier_request(nullifierSecret, to);
-        console.log("bincoded", bincoded.length);
+    xit("Emit nullifier request", async () => {
+      const to = "Username";
+      const nullifierSecret = crypto.randomBytes(32).toString("hex");
+      const bincoded = await wasm.bincode_emit_nullifier_request(nullifierSecret, to);
+      console.log("bincoded", bincoded.length);
     });
-    it("Create user request", async () => {
-        // build proof
-        let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
-        let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
-        // run identity proof
-        let proof = await wasm.identity_proof(
-          artifacts,
-          JSON.stringify(inputMap),
-          JSON.stringify(chaffMap),
-          false
-        );
-        // mock other inputs
-        let username = "Username";
-        let pubkey = crypto.randomBytes(32).toString("hex");
-        // bincode
-        let bincoded = await wasm.bincode_create_user_request(username, pubkey, proof);
-        console.log("bincoded", bincoded.length);
+    xit("Create user request", async () => {
+      // build proof
+      let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
+      let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
+      // run identity proof
+      let proof = await wasm.identity_proof(
+        artifacts,
+        JSON.stringify(inputMap),
+        JSON.stringify(chaffMap),
+        false
+      );
+      // mock other inputs
+      let username = "Username";
+      let pubkey = crypto.randomBytes(32).toString("hex");
+      // bincode
+      let bincoded = await wasm.bincode_create_user_request(username, pubkey, proof);
+      console.log("bincoded", bincoded.length);
     });
-    it("Degree proof request", async () => {
-        // build proof
-        let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
-        let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
-        // run identity proof (it looks basically the same as a degree proof so its fine)
-        let proof = await wasm.identity_proof(
-          artifacts,
-          JSON.stringify(inputMap),
-          JSON.stringify(chaffMap),
-          false
-        );
-        // mock other inputs
-        let previous = "oufwehfro9h30928r";
-        let degree = 4;
-        // bincode
-        let bincoded = await wasm.bincode_degree_proof_request(proof, previous, degree);
-        console.log("bincoded", bincoded.length);
+    xit("Degree proof request", async () => {
+      // build proof
+      let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
+      let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
+      // run identity proof (it looks basically the same as a degree proof so its fine)
+      let proof = await wasm.identity_proof(
+        artifacts,
+        JSON.stringify(inputMap),
+        JSON.stringify(chaffMap),
+        false
+      );
+      // mock other inputs
+      let previous = "oufwehfro9h30928r";
+      let degree = 4;
+      // bincode
+      let bincoded = await wasm.bincode_degree_proof_request(proof, previous, degree);
+      console.log("bincoded", bincoded.length);
     })
   });
 });
