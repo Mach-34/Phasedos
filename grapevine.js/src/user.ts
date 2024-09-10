@@ -11,6 +11,7 @@ export const addRelationship = async (wasm: any, recipient: string, sender: User
     // get recipient pubkey
     const recipientPubkey = await getUserPubkey(recipient);
     const payload = await generateRelationshipPayload(recipientPubkey, sender);
+    console.log('Nullifier secret ciphertext: ', new Uint8Array(Buffer.from(payload.nullifier_ciphertext, 'hex')))
     const bincoded = await wasm.bincode_new_relationship_request(
         recipient,
         payload.ephemeral_key,
@@ -36,7 +37,7 @@ export const decryptAes = (aesKey: Buffer, aesIv: Buffer, ciphertext: Buffer) =>
     const decipher = crypto.createDecipheriv('aes-128-cbc', aesKey, aesIv);
     let decrypted = decipher.update(ciphertext);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.reverse().toString('hex');
+    return decrypted.toString('hex');
 }
 
 export const deriveAesKey = async (bjj: BabyJub, sk: any, pk: Point): Promise<[Buffer, Buffer]> => {
@@ -96,6 +97,8 @@ const generateAuthSignature = async (
 
     const [aesKey, aesIv] = await deriveAesKey(eddsa.babyJub, formattedPrivkey, pubkeyPoint);
     const compressedSignature = eddsa.packSignature(signature);
+
+    // console.log('Nullifier: ', new Uint8Array(nullifier));
 
     // encrypt signature
     const signatureCiphertext = encryptAes(aesKey, aesIv, Buffer.from(compressedSignature));
@@ -182,7 +185,7 @@ const generateRelationshipPayload = async (recipient: string, sender: User) => {
 export const nullifyRelationship = async (wasm: any, recipient: string, sender: User) => {
     const eddsa = await buildEddsa();
     const nullifierSecretCiphertext = await getNullifierSecret(recipient, sender);
-
+    console.log('Nullifier secret ciphertext: ', new Uint8Array(nullifierSecretCiphertext));
     const formattedPrivkey = formatPrivKeyForBabyJub(
         eddsa,
         BigInt(`0x${sender.privkey}`)
@@ -190,8 +193,9 @@ export const nullifyRelationship = async (wasm: any, recipient: string, sender: 
 
     const [aesKey, aesIv] = await deriveAesKey(eddsa.babyJub, formattedPrivkey, sender.pubkey);
     const nullifierSecret = decryptAes(aesKey, aesIv, nullifierSecretCiphertext);
+    const reversed = Buffer.from(nullifierSecret, 'hex').reverse().toString('hex') // TODO: Figure out why this is flipped
 
-    const bincoded = await wasm.bincode_emit_nullifier_request(nullifierSecret, recipient);
+    const bincoded = await wasm.bincode_emit_nullifier_request(reversed, recipient);
 
     const url = `${SERVER_URL}/user/relationship/nullify`;
     const res = await fetch(url, {

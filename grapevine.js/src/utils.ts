@@ -478,6 +478,17 @@ export const getAvailableProofs = async (user: User): Promise<string[]> => {
   return await res.json();
 }
 
+export const getProvenDegrees = async (user: User) => {
+  const url = `${SERVER_URL}/proof/proven`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      ...(await generateAuthHeaders(user))
+    }
+  });
+  return await res.json();
+}
+
 export const getProofWithParams = async (proofId: string, user: User) => {
   const url = `${SERVER_URL}/proof/params/${proofId}`;
   const res = await fetch(url, {
@@ -489,6 +500,28 @@ export const getProofWithParams = async (proofId: string, user: User) => {
   return await res.json();
 }
 
+const createDegreeProof = async (wasm: any, payload: any, user: User) => {
+  // console.log('Above degree bincode')
+  const bincoded = await wasm.bincode_degree_proof_request(
+    payload.proof,
+    payload.previousProofId,
+    payload.degree
+  );
+  // make https request
+  const url = `${SERVER_URL}/proof/degree`;
+  const res = await fetch(url, {
+    body: bincoded,
+    method: "POST",
+    // @ts-ignore
+    headers: {
+      "content-type": "application/octet-stream",
+      ...(await generateAuthHeaders(user))
+    },
+  })
+  console.log('Res: ', res);
+  return await res.text()
+}
+
 export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
   const artifacts = await defaultArtifacts();
   const eddsa = await buildEddsa();
@@ -496,9 +529,6 @@ export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
   const poseidon = await buildPoseidon();
   for (const proof of proofs) {
     const params = await getProofWithParams(proof._id.$oid, user);
-    // console.log('Params: ', params);
-    // console.log('Prover: ', user.username);
-    // console.log('Scope: ', proof.scope);
 
     const previousOutput = await wasm.verify_grapevine_proof(
       artifacts.params,
@@ -506,6 +536,7 @@ export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
       proof.degree,
       true
     );
+
 
     const relationPubkeyUnpacked = babyJub.unpackPoint(params.relation_pubkey);
 
@@ -515,13 +546,12 @@ export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
     );
 
     const [aesKey, aesIv] = await deriveAesKey(babyJub, formattedPrivkey, babyJub.unpackPoint(params.ephemeral_key));
-
     const decryptedNullifier = decryptAes(aesKey, aesIv, Buffer.from(params.nullifier_ciphertext));
-    const decryptedSignature = decryptAes(aesKey, aesIv, Buffer.from(new Uint8Array(params.signature_ciphertext)));
+    const decryptedSignature = decryptAes(aesKey, aesIv, Buffer.from(params.signature_ciphertext));
 
     const authSecret: AuthSecret = {
       nullifier: new Uint8Array(Buffer.from(decryptedNullifier, 'hex')),
-      signature: eddsa.unpackSignature(new Uint8Array(Buffer.from(decryptedSignature, 'hex')))
+      signature: eddsa.unpackSignature(Buffer.from(decryptedSignature, 'hex'))
     }
 
     // create inputs for degree proof
@@ -533,8 +563,6 @@ export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
       previousOutput[2]
     );
 
-    console.log('Params proof: ', params.proof);
-
     const chaffMap = makeRandomInput(poseidon, eddsa);
     // run degree proof
     const degreeProof = await wasm.degree_proof(
@@ -545,14 +573,23 @@ export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
       previousOutput,
       true
     );
-    console.log('Below degree proof')
     // verify degree proof
-    // console.log(`Verifying Grapevine Proof of Degree ${proof.degree + 1}...`);
-    // await wasm.verify_grapevine_proof(
-    //   artifacts.params,
-    //   degreeProof,
-    //   proof.degree + 1,
-    //   false
-    // );
+    console.log(`Verifying Grapevine Proof of Degree ${proof.degree + 1}...`);
+    await wasm.verify_grapevine_proof(
+      artifacts.params,
+      degreeProof,
+      proof.degree + 1,
+      false
+    );
+
+    const payload = {
+      previousProofId: proof._id.$oid,
+      proof: degreeProof,
+      degree: proof.degree + 1
+    }
+
+    // send degree proof to server
+    const res = await createDegreeProof(wasm, payload, user);
+    console.log('Res: ', res);
   }
 }

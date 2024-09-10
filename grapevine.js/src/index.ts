@@ -1,5 +1,5 @@
 import { buildEddsa, buildPoseidon, } from "circomlibjs";
-import { initGrapevineWasm, getAvailableProofs, proveAvailable, defaultArtifacts, makeIdentityInput, makeRandomInput, deriveAuthSecret, makeDegreeInput } from "./utils.ts";
+import { initGrapevineWasm, getAvailableProofs, proveAvailable, defaultArtifacts, makeIdentityInput, makeRandomInput, deriveAuthSecret, makeDegreeInput, getProvenDegrees } from "./utils.ts";
 import { addRelationship, getPendingRelationships, nullifyRelationship } from "./user.ts";
 
 
@@ -36,112 +36,51 @@ import { addRelationship, getPendingRelationships, nullifyRelationship } from ".
 
 // main();
 
-
-const proveLocal = async () => {
+const proveServer = async () => {
     const eddsa = await buildEddsa();
-    const poseidon = await buildPoseidon();
-    const keys = [
-        Buffer.from("dda4e349a469ee48c59c72fa72ea21854bc7f57bb66890988fda83527dd30057", 'hex'),
-        Buffer.from("11061bc4c9b5a4885d7ce398b34c963a437e13ea9e4bbb7dcda638c13cafecf5", "hex")
-    ];
-    const wasm = await initGrapevineWasm();
-    const artifacts = await defaultArtifacts();
+    const wasm = await initGrapevineWasm()
 
-    let inputMap = makeIdentityInput(poseidon, eddsa, keys[0]);
-    let chaffMap = makeRandomInput(poseidon, eddsa);
+    const privkey1 = "b5a4c309f5fb71c45ef24ee90e91411d5203db8f948fc18dc9ccd073c30f6b26";
+    const privkey2 = "1603adb60ef063a939b1659f2fc344c3f3920168b7c0f75d3015f8959c5372ce";
 
-    const identityProof = await wasm.identity_proof(
-        artifacts,
-        JSON.stringify(inputMap),
-        JSON.stringify(chaffMap),
-        true
-    );
+    const user1 = {
+        privkey: privkey1,
+        pubkey: eddsa.prv2pub(Buffer.from(privkey1, 'hex')),
+        username: 'testuser'
+    };
 
-    // verify the identity proof to get the outputs
-    const identityProofOutput = await wasm.verify_grapevine_proof(
-        artifacts.params,
-        identityProof,
-        0,
-        true
-    );
-    // create an auth secret (nullifier + sig over nullifier) from identity prover to degree 1
-    const { authSecret } = deriveAuthSecret(
-        poseidon,
-        eddsa,
-        keys[0],
-        eddsa.prv2pub(keys[1])
-    );
-    // create inputs for degree proof
-    inputMap = makeDegreeInput(
-        eddsa,
-        keys[1], // prover (degree 1) private key
-        eddsa.prv2pub(keys[0]), // relation (previous prover) public key
-        authSecret, // auth secret given by previous prover to current prover
-        identityProofOutput[2] // scope address for proof chain outputted by previous proof
-    );
+    const user2 = {
+        privkey: privkey2,
+        pubkey: eddsa.prv2pub(Buffer.from(privkey2, 'hex')),
+        username: 'usertest'
+    }
 
-    console.log('Input map: ', inputMap)
 
-    chaffMap = makeRandomInput(poseidon, eddsa);
-    // run degree proof
-    const degreeProof = await wasm.degree_proof(
-        artifacts,
-        JSON.stringify(inputMap),
-        JSON.stringify(chaffMap),
-        identityProof,
-        identityProofOutput,
-        true
-    );
-    // verify degree proof
-    const degreeProofOutput = await wasm.verify_grapevine_proof(
-        artifacts.params,
-        degreeProof,
-        1,
-        true
-    );
+    const relationshipResponse1 = await addRelationship(wasm, user2.username, user1);
+    console.log('Res: 1', relationshipResponse1);
+
+    const pending = await getPendingRelationships(user2);
+
+    const relationshipResponse2 = await addRelationship(wasm, user1.username, user2);
+    console.log('Res: 2', relationshipResponse2);
+
+    const availableProofs = await getAvailableProofs(user1);
+    console.log("Available proofs for user1", availableProofs);
+    await proveAvailable(wasm, availableProofs, user1);
+
+    const proven = await getProvenDegrees(user1);
+    console.log('Proven: ', proven);
+
+
+    const nullifyRes1 = await nullifyRelationship(wasm, user2.username, user1);
+    // console.log('First nullification: ', nullifyRes1);
+
+    const nullifyRes2 = await nullifyRelationship(wasm, user1.username, user2);
+    // console.log('Second nullification: ', nullifyRes2);
 }
 
 
 (async () => {
-    await proveLocal();
-    // 
-
-    // const eddsa = await buildEddsa();
-    // const wasm = await initGrapevineWasm()
-
-    // const privkey1 = "dda4e349a469ee48c59c72fa72ea21854bc7f57bb66890988fda83527dd30057";
-    // const privkey2 = "11061bc4c9b5a4885d7ce398b34c963a437e13ea9e4bbb7dcda638c13cafecf5";
-
-    // const user1 = {
-    //     privkey: privkey1,
-    //     pubkey: eddsa.prv2pub(Buffer.from(privkey1, 'hex')),
-    //     username: 'testuser'
-    // };
-
-    // const user2 = {
-    //     privkey: privkey2,
-    //     pubkey: eddsa.prv2pub(Buffer.from(privkey2, 'hex')),
-    //     username: 'usertest'
-    // }
-
-
-    // const relationshipResponse1 = await addRelationship(wasm, user2.username, user1);
-    // console.log('First relationship creation: ', relationshipResponse1);
-
-    // const pending = await getPendingRelationships(user2);
-    // console.log('Pending: ', pending)
-
-    // const relationshipResponse2 = await addRelationship(wasm, user1.username, user2);
-    // console.log('Second relationship creation: ', relationshipResponse2);
-
-    // const availableProofs = await getAvailableProofs(user1);
-    // // console.log("Available proofs for user1", availableProofs);
-
-    // await proveAvailable(wasm, availableProofs, user1);
-
-    // const nullifyRes1 = await nullifyRelationship(wasm, user2.username, user1);
-    // // console.log('First nullification: ', nullifyRes1);
-
-    // const nullifyRes2 = await nullifyRelationship(wasm, user1.username, user2);
-    // // console.log('Second nullification: ', nullifyRes2);
+    // await proveLocal();
+    await proveServer();
 })();
