@@ -404,6 +404,7 @@ export const registerUser = async (
 export const generateAuthHeaders = async (user: User) => {
   const eddsa = await buildEddsa();
   const nonce = await getNonce(user.privkey, user.username);
+  console.log("nonce", nonce);
   const nonceBytes = nonceToBytes(nonce);
 
   const usernameBytes = usernametoFr(user.username);
@@ -426,6 +427,8 @@ const getNonce = async (privatekey: string, username: string) => {
   const eddsa = await buildEddsa();
   const privkey = Buffer.from(privatekey, 'hex');
   const msg = eddsa.babyJub.F.e(usernametoFr(username));
+  // const buff = Buffer.from(username, 'utf8');
+  // const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
 
   const signature = eddsa.signPoseidon(privkey, msg);
 
@@ -465,11 +468,10 @@ const usernametoFr = (username: string) => {
 }
 
 export const getAvailableProofs = async (user: User): Promise<string[]> => {
-  const url = `${SERVER_URL}/proofs`;
+  const url = `${SERVER_URL}/proof/available`;
   const res = await fetch(url, {
     method: "GET",
     headers: {
-      "content-type": 'application/json',
       ...(await generateAuthHeaders(user))
     }
   });
