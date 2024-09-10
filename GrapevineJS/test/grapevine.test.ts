@@ -8,6 +8,7 @@ import {
 } from "../src/types";
 import * as crypto from "crypto";
 import { Eddsa, Poseidon, buildEddsa, buildPoseidon } from "circomlibjs";
+import { addRelationship } from "../src/user";
 
 describe("Grapevine", () => {
   let wasm: GrapevineWasm;
@@ -200,11 +201,46 @@ describe("Grapevine", () => {
     }
   });
 
+  describe("Server tests", async () => {
+    const username_0 = `user_${crypto.randomBytes(4).toString("hex")}`;
+    const username_1 = `user_${crypto.randomBytes(4).toString("hex")}`;
+    it("Register two users", async () => {
+        await GrapevineUtils.registerUser(
+            eddsa,
+            poseidon,
+            artifacts,
+            wasm,
+            keys[0],
+            username_0
+        );
+        await GrapevineUtils.registerUser(
+            eddsa,
+            poseidon,
+            artifacts,
+            wasm,
+            keys[1],
+            username_1
+        );
+    });
+    it("Establish relationship between users", async () => {
+        const user_0 = {
+            privkey: keys[0].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[0]),
+            username: username_0
+        };
+        const user_1 = {
+            privkey: keys[1].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[1]),
+            username: username_1
+        };
+        await addRelationship(wasm, user_1.username, user_0);
+        await addRelationship(wasm, user_0.username, user_1);
+    });
+  });
+
   describe("Bincode Tests", async () => {
     // this is dummy data with the right size. Just replace with the right data
-    it("Create relationship request", async () => {
-
-
+    xit("Create relationship request", async () => {
       const to = "Username";
       const ephemeralKey = crypto.randomBytes(32).toString("hex");
       const signatureCiphertext = crypto.randomBytes(80).toString("hex");
@@ -222,7 +258,10 @@ describe("Grapevine", () => {
     xit("Emit nullifier request", async () => {
       const to = "Username";
       const nullifierSecret = crypto.randomBytes(32).toString("hex");
-      const bincoded = await wasm.bincode_emit_nullifier_request(nullifierSecret, to);
+      const bincoded = await wasm.bincode_emit_nullifier_request(
+        nullifierSecret,
+        to
+      );
       console.log("bincoded", bincoded.length);
     });
     xit("Create user request", async () => {
@@ -240,7 +279,11 @@ describe("Grapevine", () => {
       let username = "Username";
       let pubkey = crypto.randomBytes(32).toString("hex");
       // bincode
-      let bincoded = await wasm.bincode_create_user_request(username, pubkey, proof);
+      let bincoded = await wasm.bincode_create_user_request(
+        username,
+        pubkey,
+        proof
+      );
       console.log("bincoded", bincoded.length);
     });
     xit("Degree proof request", async () => {
@@ -258,8 +301,12 @@ describe("Grapevine", () => {
       let previous = "oufwehfro9h30928r";
       let degree = 4;
       // bincode
-      let bincoded = await wasm.bincode_degree_proof_request(proof, previous, degree);
+      let bincoded = await wasm.bincode_degree_proof_request(
+        proof,
+        previous,
+        degree
+      );
       console.log("bincoded", bincoded.length);
-    })
+    });
   });
 });

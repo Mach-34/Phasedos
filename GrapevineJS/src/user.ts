@@ -10,9 +10,7 @@ export const addRelationship = async (wasm: any, recipient: string, sender: User
 
     // get recipient pubkey
     const recipientPubkey = await getUserPubkey(recipient);
-
     const payload = await generateRelationshipPayload(recipientPubkey, sender);
-
     const bincoded = await wasm.bincode_new_relationship_request(
         recipient,
         payload.ephemeral_key,
@@ -20,7 +18,6 @@ export const addRelationship = async (wasm: any, recipient: string, sender: User
         payload.nullifier_ciphertext,
         payload.nullifier_secret_ciphertext
     );
-
     const url = `${SERVER_URL}/user/relationship/add`
     const res = await fetch(url, {
         body: bincoded, // TODO

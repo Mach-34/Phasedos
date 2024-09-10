@@ -1,6 +1,11 @@
-import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI, SERVER_URL } from "./consts.ts";
+import { PARAMS_URI, NUM_PARAMS_CHUNKS, WASM_URI, R1CS_URI, SERVER_URL, GrapevineWasm } from "./consts.ts";
 import init, * as GrapevineWasmModule from "../wasm/grapevine_wasm.js";
-import { AuthSecret, GrapevineOutputs, GrapevineOutputSlot, GrapevineWasmArtifacts } from "./types.ts";
+import {
+  AuthSecret,
+  GrapevineOutputs,
+  GrapevineOutputSlot,
+  GrapevineWasmArtifacts,
+} from "./types.ts";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { BabyJub, buildEddsa, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
@@ -146,7 +151,7 @@ const randomSignature = (eddsa: Eddsa): Signature => {
 
 /**
  * Generate the input map for an identity proof starting a degree chain in Grapevine
- * 
+ *
  * @param poseidon - the circomlibjs Poseidon hash function
  * @param eddsa - the circomlibjs Eddsa signature scheme
  * @param key - the private key of the prover running the circuit
@@ -182,7 +187,7 @@ export const makeIdentityInput = (
 
 /**
  * Generate the input map for a degree proof demonstrating relation to a previous proof in a Grapevine chain
- * 
+ *
  * @param eddsa - the circomlibjs Eddsa signature scheme
  * @param prover - the private key of the prover running the circuit
  * @param relationPubkey - the pubkey of the previous prover that the current proof is built from
@@ -196,7 +201,7 @@ export const makeDegreeInput = (
   prover: Buffer,
   relationPubkey: Point,
   authSecret: AuthSecret,
-  scope: String,
+  scope: String
 ) => {
   // get the prover's pubkey from their private key
   const proverPubkey = eddsa.prv2pub(prover);
@@ -216,7 +221,7 @@ export const makeDegreeInput = (
 
 /**
  * Generate random satisfying witness for the chaff step of the Grapevine circuit
- * 
+ *
  * @param poseidon - the circomlibjs Poseidon hash function
  * @param eddsa - the circomlibjs Eddsa signature scheme
  * @returns - input map for a Grapevine chaff step
@@ -247,7 +252,7 @@ export const makeRandomInput = (poseidon: Poseidon, eddsa: Eddsa): InputMap => {
 
 /**
  * Utility for creating an input map for all step types in the Grapevine Circuit
- * 
+ *
  * @param F - the Field api for normalizing values
  * @param proverPubkey - the pubkey of the prover running the circuit
  * @param relationPubkey - the pubkey of the previous prover that the current proof is built from
@@ -266,9 +271,7 @@ const makeInputMap = (
 ): InputMap => {
   return {
     prover_pubkey: proverPubkey.map((x) => F.toObject(x).toString()),
-    relation_pubkey: relationPubkey.map((x) =>
-      F.toObject(x).toString()
-    ),
+    relation_pubkey: relationPubkey.map((x) => F.toObject(x).toString()),
     relation_nullifier: F.toObject(relationNullifier).toString(),
     auth_signature: [
       F.toObject(authSignature.R8[0]).toString(),
@@ -281,11 +284,11 @@ const makeInputMap = (
       scopeSignature.S.toString(),
     ],
   };
-}
+};
 
 /**
  * Generate a random nullifier secret to store and auth secret for a relation to issue to a prover
- * 
+ *
  * @param poseidon - the circomlibjs Poseidon hash function
  * @param eddsa - the circomlibjs Eddsa signature scheme
  * @param sender - the private key of the user creating auth secret for recipient to use to prove relation
@@ -297,8 +300,8 @@ export const deriveAuthSecret = (
   poseidon: Poseidon,
   eddsa: Eddsa,
   sender: Buffer,
-  recipient: Point,
-): { nullifierSecret: Uint8Array, authSecret: AuthSecret } => {
+  recipient: Point
+): { nullifierSecret: Uint8Array; authSecret: AuthSecret } => {
   // choose random nullifier secret
   const nullifierSecret = poseidon.F.e(crypto.randomBytes(32));
   // hash with own address to get the nullifier
@@ -315,7 +318,7 @@ export const deriveAuthSecret = (
 
 /**
  * Parses an Fr element from the GrapevineWasm output into LE Uint8Array form usable by circomlibjs
- * 
+ *
  * @param F - the circomlibjs Field api for normalizing values
  * @param fr - the stringified field element outputted by the GrapevineWasm in BE
  * @returns - the Uint8Array representation of the Fr element in LE
@@ -325,18 +328,21 @@ export const parseGrapevineOutput = (F: any, fr: String): Uint8Array => {
   let byteArray = strippedHex.match(/.{1,2}/g);
   let reversedByteArray = byteArray!.reverse();
   let reversedHexString = reversedByteArray.join("");
-  let paddedHexString = reversedHexString.padStart(64, '0');
+  let paddedHexString = reversedHexString.padStart(64, "0");
   return F.fromObject("0x" + paddedHexString) as Uint8Array;
 };
 
 /**
  * Parse the entire grapevine output array for client use
- * 
+ *
  * @param F - the circomlibjs Field api for normalizing values
  * @param output - the array of field elements outputted by the GrapevineWasm
  * @returns - the parsed GrapevineOutputs
  */
-export const parseGrapevineOutputArray = (F: any, output: String[]): GrapevineOutputs => {
+export const parseGrapevineOutputArray = (
+  F: any,
+  output: String[]
+): GrapevineOutputs => {
   // raw parsing of the output array
   const raw = output.map((x) => parseGrapevineOutput(F, x));
   // parse each field
@@ -349,7 +355,51 @@ export const parseGrapevineOutputArray = (F: any, output: String[]): GrapevineOu
     nullifiers.push(raw[i]);
   }
   return { obfuscate, degree, scope, relation, nullifiers };
-}
+};
+
+export const registerUser = async (
+  eddsa: Eddsa,
+  poseidon: Poseidon,
+  artifacts: GrapevineWasmArtifacts,
+  wasm: GrapevineWasm,
+  key: Buffer,
+  username: string,
+  verbose = false
+): Promise<string> => {
+  // construct identity proof
+  const inputMap = makeIdentityInput(eddsa.poseidon, eddsa, key);
+  const chaffMap = makeRandomInput(poseidon, eddsa);
+  // run identity proof
+  const proof = await wasm.identity_proof(
+    artifacts,
+    JSON.stringify(inputMap),
+    JSON.stringify(chaffMap),
+    verbose
+  );
+  // build https inputs
+  const pubkey = eddsa.prv2pub(key);
+  const packedPubkey = Buffer.from(eddsa.babyJub.packPoint(pubkey)).toString(
+    "hex"
+  );
+  const bincoded = await wasm.bincode_create_user_request(
+    username,
+    packedPubkey,
+    proof
+  );
+  // make https request
+  const url = `${SERVER_URL}/proof/identity`;
+  const res = await fetch(url, {
+    body: bincoded,
+    method: "POST",
+    // @ts-ignore
+    headers: {
+      "content-type": "application/octet-stream",
+    },
+  });
+  const data = await res.text();
+  return data;
+};
+
 
 export const generateAuthHeaders = async (user: User) => {
   const eddsa = await buildEddsa();
@@ -375,8 +425,7 @@ export const generateAuthHeaders = async (user: User) => {
 const getNonce = async (privatekey: string, username: string) => {
   const eddsa = await buildEddsa();
   const privkey = Buffer.from(privatekey, 'hex');
-  const buff = Buffer.from(username, 'utf8');
-  const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
+  const msg = eddsa.babyJub.F.e(usernametoFr(username));
 
   const signature = eddsa.signPoseidon(privkey, msg);
 
