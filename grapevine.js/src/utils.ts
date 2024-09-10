@@ -463,3 +463,15 @@ const usernametoFr = (username: string) => {
   }
   return padded;
 }
+
+export const getAvailableProofs = async (user: User): Promise<string[]> => {
+  const url = `${SERVER_URL}/proofs`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "content-type": 'application/json',
+      ...(await generateAuthHeaders(user))
+    }
+  });
+  return await res.json();
+}

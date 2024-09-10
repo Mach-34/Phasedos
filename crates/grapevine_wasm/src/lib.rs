@@ -245,7 +245,7 @@ pub async fn identity_proof(
     input_map: String,
     chaff_map: String,
     verbose: bool,
-) -> String {
+) -> Uint8Array {
     console_error_panic_hook::set_once();
     // create artifacts
     console_log!(verbose, "Retrieving and parsing artifacts");
@@ -269,9 +269,10 @@ pub async fn identity_proof(
     // compress proof and return
     console_log!(verbose, "Compressing proof with gzip");
     let compressed = compress_proof(&proof);
-    // stringify proof and return
-    console_log!(verbose, "Stringifying proof");
-    serde_json::to_string(&compressed).unwrap()
+    // return proof
+    let array = Uint8Array::new_with_length(compressed.len() as u32);
+    array.copy_from(&compressed[..]);
+    array
 }
 
 #[wasm_bindgen]
@@ -279,10 +280,10 @@ pub async fn degree_proof(
     artifact_locations: &GrapevineWasmArtifacts,
     input_map: String,
     chaff_map: String,
-    proof_string: String,
+    proof_compressed: Uint8Array,
     previous_output: Array,
     verbose: bool,
-) -> String {
+) -> Uint8Array {
     console_error_panic_hook::set_once();
     // create artifacts
     console_log!(verbose, "Retrieving and parsing artifacts");
@@ -296,8 +297,7 @@ pub async fn degree_proof(
     console_log!(verbose, "Parsing previous outputs");
     let previous_output = destringify_proof_outputs(previous_output).unwrap();
     // decompress proof
-    let proof_compressed = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
-    let mut proof = decompress_proof(&proof_compressed[..]);
+    let mut proof = decompress_proof(&proof_compressed.to_vec()[..]);
     // create the degree proof
     console_log!(verbose, "Creating proof");
     continue_recursive_circuit(
@@ -313,9 +313,10 @@ pub async fn degree_proof(
     // compress proof and return
     console_log!(verbose, "Compressing proof with gzip");
     let compressed = compress_proof(&proof);
-    // stringify proof and return
-    console_log!(verbose, "Stringifying proof");
-    serde_json::to_string(&compressed).unwrap()
+    // return proof
+    let array = Uint8Array::new_with_length(compressed.len() as u32);
+    array.copy_from(&compressed[..]);
+    array
 }
 
 /**
@@ -329,7 +330,7 @@ pub async fn degree_proof(
 #[wasm_bindgen]
 pub async fn verify_grapevine_proof(
     params_string: String,
-    proof: String,
+    proof_compressed: Uint8Array,
     degree: Number,
     verbose: bool,
 ) -> Array {
@@ -339,8 +340,7 @@ pub async fn verify_grapevine_proof(
     let params: Params = serde_json::from_str(&params_string).unwrap();
     // decompress proof
     console_log!(verbose, "Decompressing proof");
-    let proof_compressed = serde_json::from_str::<Vec<u8>>(&proof).unwrap();
-    let proof = decompress_proof(&proof_compressed[..]);
+    let proof = decompress_proof(&proof_compressed.to_vec()[..]);
     // convert degree to num steps in the circuit
     let iterations = degree.as_f64().unwrap() as usize * 2 + 2;
     // verify the proof
@@ -357,18 +357,17 @@ pub async fn verify_grapevine_proof(
 pub async fn bincode_create_user_request(
     username: String,
     pubkey_string: String,
-    proof_string: String,
+    proof: Uint8Array,
 ) -> Uint8Array {
     console_error_panic_hook::set_once();
     // parse pubkey
     let pubkey: [u8; 32] = hex::decode(pubkey_string).unwrap().try_into().unwrap();
     // destringify proof (should already be compressed)
-    let proof: Vec<u8> = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
     // build CreateUserRequest
     let request = CreateUserRequest {
         username,
         pubkey,
-        proof,
+        proof: proof.to_vec(),
     };
     // bincode the request
     let serialized = bincode::serialize(&request).unwrap();
@@ -381,16 +380,14 @@ pub async fn bincode_create_user_request(
 
 #[wasm_bindgen]
 pub async fn bincode_degree_proof_request(
-    proof_string: String,
+    proof: Uint8Array,
     previous: String,
     degree: Number
 ) -> Uint8Array {
     console_error_panic_hook::set_once();
-    // destringify proof (should already be compressed)
-    let proof: Vec<u8> = serde_json::from_str::<Vec<u8>>(&proof_string).unwrap();
     // build DegreeProofRequest
     let request = DegreeProofRequest {
-        proof,
+        proof: proof.to_vec(),
         previous,
         degree: degree.as_f64().unwrap() as u8,
     };

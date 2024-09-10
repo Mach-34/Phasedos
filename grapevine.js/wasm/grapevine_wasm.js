@@ -23,6 +23,19 @@ function takeObject(idx) {
     return ret;
 }
 
+function isLikeNone(x) {
+    return x === undefined || x === null;
+}
+
+let cachedDataViewMemory0 = null;
+
+function getDataViewMemory0() {
+    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer !== wasm.memory.buffer) {
+        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
+    }
+    return cachedDataViewMemory0;
+}
+
 const cachedTextDecoder = (typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8', { ignoreBOM: true, fatal: true }) : { decode: () => { throw Error('TextDecoder not available') } } );
 
 if (typeof TextDecoder !== 'undefined') { cachedTextDecoder.decode(); };
@@ -48,19 +61,6 @@ function addHeapObject(obj) {
 
     heap[idx] = obj;
     return idx;
-}
-
-function isLikeNone(x) {
-    return x === undefined || x === null;
-}
-
-let cachedDataViewMemory0 = null;
-
-function getDataViewMemory0() {
-    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer !== wasm.memory.buffer) {
-        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
-    }
-    return cachedDataViewMemory0;
 }
 
 let WASM_VECTOR_LEN = 0;
@@ -169,7 +169,7 @@ function _assertClass(instance, klass) {
 * @param {string} input_map
 * @param {string} chaff_map
 * @param {boolean} verbose
-* @returns {Promise<string>}
+* @returns {Promise<Uint8Array>}
 */
 export function identity_proof(artifact_locations, input_map, chaff_map, verbose) {
     _assertClass(artifact_locations, GrapevineWasmArtifacts);
@@ -185,20 +185,18 @@ export function identity_proof(artifact_locations, input_map, chaff_map, verbose
 * @param {GrapevineWasmArtifacts} artifact_locations
 * @param {string} input_map
 * @param {string} chaff_map
-* @param {string} proof_string
+* @param {Uint8Array} proof_compressed
 * @param {Array<any>} previous_output
 * @param {boolean} verbose
-* @returns {Promise<string>}
+* @returns {Promise<Uint8Array>}
 */
-export function degree_proof(artifact_locations, input_map, chaff_map, proof_string, previous_output, verbose) {
+export function degree_proof(artifact_locations, input_map, chaff_map, proof_compressed, previous_output, verbose) {
     _assertClass(artifact_locations, GrapevineWasmArtifacts);
     const ptr0 = passStringToWasm0(input_map, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(chaff_map, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(proof_string, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.degree_proof(artifact_locations.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, addHeapObject(previous_output), verbose);
+    const ret = wasm.degree_proof(artifact_locations.__wbg_ptr, ptr0, len0, ptr1, len1, addHeapObject(proof_compressed), addHeapObject(previous_output), verbose);
     return takeObject(ret);
 }
 
@@ -212,49 +210,43 @@ export function degree_proof(artifact_locations, input_map, chaff_map, proof_str
 * * @return - the output of the proof if verified
 *
 * @param {string} params_string
-* @param {string} proof
+* @param {Uint8Array} proof_compressed
 * @param {number} degree
 * @param {boolean} verbose
 * @returns {Promise<Array<any>>}
 */
-export function verify_grapevine_proof(params_string, proof, degree, verbose) {
+export function verify_grapevine_proof(params_string, proof_compressed, degree, verbose) {
     const ptr0 = passStringToWasm0(params_string, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(proof, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.verify_grapevine_proof(ptr0, len0, ptr1, len1, addHeapObject(degree), verbose);
+    const ret = wasm.verify_grapevine_proof(ptr0, len0, addHeapObject(proof_compressed), addHeapObject(degree), verbose);
     return takeObject(ret);
 }
 
 /**
 * @param {string} username
 * @param {string} pubkey_string
-* @param {string} proof_string
+* @param {Uint8Array} proof
 * @returns {Promise<Uint8Array>}
 */
-export function bincode_create_user_request(username, pubkey_string, proof_string) {
+export function bincode_create_user_request(username, pubkey_string, proof) {
     const ptr0 = passStringToWasm0(username, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(pubkey_string, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(proof_string, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.bincode_create_user_request(ptr0, len0, ptr1, len1, ptr2, len2);
+    const ret = wasm.bincode_create_user_request(ptr0, len0, ptr1, len1, addHeapObject(proof));
     return takeObject(ret);
 }
 
 /**
-* @param {string} proof_string
+* @param {Uint8Array} proof
 * @param {string} previous
 * @param {number} degree
 * @returns {Promise<Uint8Array>}
 */
-export function bincode_degree_proof_request(proof_string, previous, degree) {
-    const ptr0 = passStringToWasm0(proof_string, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function bincode_degree_proof_request(proof, previous, degree) {
+    const ptr0 = passStringToWasm0(previous, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(previous, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.bincode_degree_proof_request(ptr0, len0, ptr1, len1, addHeapObject(degree));
+    const ret = wasm.bincode_degree_proof_request(addHeapObject(proof), ptr0, len0, addHeapObject(degree));
     return takeObject(ret);
 }
 
@@ -537,15 +529,15 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_log_9d6654d2b23cadb6 = function(arg0, arg1) {
         console.log(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
-        const ret = getStringFromWasm0(arg0, arg1);
-        return addHeapObject(ret);
-    };
     imports.wbg.__wbindgen_number_get = function(arg0, arg1) {
         const obj = getObject(arg1);
         const ret = typeof(obj) === 'number' ? obj : undefined;
         getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
         getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+    };
+    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
+        const ret = getStringFromWasm0(arg0, arg1);
+        return addHeapObject(ret);
     };
     imports.wbg.__wbindgen_string_get = function(arg0, arg1) {
         const obj = getObject(arg1);
@@ -784,11 +776,11 @@ function __wbg_get_imports() {
         const ret = startWorkers(takeObject(arg0), takeObject(arg1), wbg_rayon_PoolBuilder.__wrap(arg2));
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper1514 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper1509 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 325, __wbg_adapter_28);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper1516 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper1511 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 325, __wbg_adapter_28);
         return addHeapObject(ret);
     };

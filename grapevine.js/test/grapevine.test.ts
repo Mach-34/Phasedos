@@ -28,7 +28,7 @@ describe("Grapevine", () => {
     artifacts = await GrapevineUtils.defaultArtifacts();
   });
 
-  xit("Degree 1 Test", async () => {
+  it("Degree 1 Test", async () => {
     // create inputs for identity proof
     let inputMap = GrapevineUtils.makeIdentityInput(poseidon, eddsa, keys[0]);
     let chaffMap = GrapevineUtils.makeRandomInput(poseidon, eddsa);
@@ -201,17 +201,26 @@ describe("Grapevine", () => {
     }
   });
 
-  describe("Server tests", async () => {
-    const username_0 = `user_${crypto.randomBytes(4).toString("hex")}`;
-    const username_1 = `user_${crypto.randomBytes(4).toString("hex")}`;
+  xdescribe("Server tests", async () => {
+    
     it("Register two users", async () => {
+        const user0 = {
+            privkey: keys[0].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[0]),
+            username: `user_${crypto.randomBytes(4).toString("hex")}`
+        };
+        const user1 = {
+            privkey: keys[1].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[1]),
+            username: `user_${crypto.randomBytes(4).toString("hex")}`
+        };
         await GrapevineUtils.registerUser(
             eddsa,
             poseidon,
             artifacts,
             wasm,
             keys[0],
-            username_0
+            user0.username
         );
         await GrapevineUtils.registerUser(
             eddsa,
@@ -219,23 +228,38 @@ describe("Grapevine", () => {
             artifacts,
             wasm,
             keys[1],
-            username_1
+            user1.username
         );
     });
     it("Establish relationship between users", async () => {
-        const user_0 = {
+        const user0 = {
             privkey: keys[0].toString('hex'),
             pubkey: eddsa.prv2pub(keys[0]),
-            username: username_0
+            username: `user_${crypto.randomBytes(4).toString("hex")}`
         };
-        const user_1 = {
+        const user1 = {
             privkey: keys[1].toString('hex'),
             pubkey: eddsa.prv2pub(keys[1]),
-            username: username_1
+            username: `user_${crypto.randomBytes(4).toString("hex")}`
         };
-        await addRelationship(wasm, user_1.username, user_0);
-        await addRelationship(wasm, user_0.username, user_1);
+        await addRelationship(wasm, user1.username, user0);
+        await addRelationship(wasm, user0.username, user1);
     });
+    it("Prove next degree of separation", async () => {
+        const user0 = {
+            privkey: keys[0].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[0]),
+            username: `user_${crypto.randomBytes(4).toString("hex")}`
+        };
+        const user1 = {
+            privkey: keys[1].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[1]),
+            username: `user_${crypto.randomBytes(4).toString("hex")}`
+        };
+        // get available proofs for user0
+        const availableProofs = await GrapevineUtils.getAvailableProofs(user0);
+        console.log("Available proofs for user0", availableProofs);
+    })
   });
 
   describe("Bincode Tests", async () => {

@@ -14,19 +14,19 @@
 * @param {string} input_map
 * @param {string} chaff_map
 * @param {boolean} verbose
-* @returns {Promise<string>}
+* @returns {Promise<Uint8Array>}
 */
-export function identity_proof(artifact_locations: GrapevineWasmArtifacts, input_map: string, chaff_map: string, verbose: boolean): Promise<string>;
+export function identity_proof(artifact_locations: GrapevineWasmArtifacts, input_map: string, chaff_map: string, verbose: boolean): Promise<Uint8Array>;
 /**
 * @param {GrapevineWasmArtifacts} artifact_locations
 * @param {string} input_map
 * @param {string} chaff_map
-* @param {string} proof_string
+* @param {Uint8Array} proof_compressed
 * @param {Array<any>} previous_output
 * @param {boolean} verbose
-* @returns {Promise<string>}
+* @returns {Promise<Uint8Array>}
 */
-export function degree_proof(artifact_locations: GrapevineWasmArtifacts, input_map: string, chaff_map: string, proof_string: string, previous_output: Array<any>, verbose: boolean): Promise<string>;
+export function degree_proof(artifact_locations: GrapevineWasmArtifacts, input_map: string, chaff_map: string, proof_compressed: Uint8Array, previous_output: Array<any>, verbose: boolean): Promise<Uint8Array>;
 /**
 *
 * * Verify the correct execution of an IVC proof of the grapevine circuit
@@ -37,26 +37,26 @@ export function degree_proof(artifact_locations: GrapevineWasmArtifacts, input_m
 * * @return - the output of the proof if verified
 * 
 * @param {string} params_string
-* @param {string} proof
+* @param {Uint8Array} proof_compressed
 * @param {number} degree
 * @param {boolean} verbose
 * @returns {Promise<Array<any>>}
 */
-export function verify_grapevine_proof(params_string: string, proof: string, degree: number, verbose: boolean): Promise<Array<any>>;
+export function verify_grapevine_proof(params_string: string, proof_compressed: Uint8Array, degree: number, verbose: boolean): Promise<Array<any>>;
 /**
 * @param {string} username
 * @param {string} pubkey_string
-* @param {string} proof_string
+* @param {Uint8Array} proof
 * @returns {Promise<Uint8Array>}
 */
-export function bincode_create_user_request(username: string, pubkey_string: string, proof_string: string): Promise<Uint8Array>;
+export function bincode_create_user_request(username: string, pubkey_string: string, proof: Uint8Array): Promise<Uint8Array>;
 /**
-* @param {string} proof_string
+* @param {Uint8Array} proof
 * @param {string} previous
 * @param {number} degree
 * @returns {Promise<Uint8Array>}
 */
-export function bincode_degree_proof_request(proof_string: string, previous: string, degree: number): Promise<Uint8Array>;
+export function bincode_degree_proof_request(proof: Uint8Array, previous: string, degree: number): Promise<Uint8Array>;
 /**
 * @param {string} to
 * @param {string} ephemeral_key_string
@@ -138,10 +138,10 @@ export interface InitOutput {
   readonly grapevinewasmartifacts_r1cs_url: (a: number, b: number) => void;
   readonly grapevinewasmartifacts_wasm_url: (a: number, b: number) => void;
   readonly identity_proof: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-  readonly degree_proof: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
-  readonly verify_grapevine_proof: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-  readonly bincode_create_user_request: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-  readonly bincode_degree_proof_request: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly degree_proof: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+  readonly verify_grapevine_proof: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly bincode_create_user_request: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly bincode_degree_proof_request: (a: number, b: number, c: number, d: number) => number;
   readonly bincode_new_relationship_request: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
   readonly bincode_emit_nullifier_request: (a: number, b: number, c: number, d: number) => number;
   readonly __wbg_wbg_rayon_poolbuilder_free: (a: number, b: number) => void;
