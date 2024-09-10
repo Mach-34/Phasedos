@@ -1,6 +1,6 @@
 import { buildEddsa, } from "circomlibjs";
 import { initGrapevineWasm } from "./utils.ts";
-import { addRelationship, getPendingRelationships, nullifyRelationship } from "./user.ts";
+import { addRelationship, getAccountDetails, listActiveRelationships, listPendingNullification, rejectRelationship, removeRelationship } from "./user.ts";
 
 
 // // let key = "0001020304050607080900010203040506070809000102030405060708090001";
@@ -60,15 +60,16 @@ import { addRelationship, getPendingRelationships, nullifyRelationship } from ".
     const relationshipResponse1 = await addRelationship(wasm, user2.username, user1);
     console.log('First relationship creation: ', relationshipResponse1);
 
-    const pending = await getPendingRelationships(user2);
-    console.log('Pending: ', pending)
-
     const relationshipResponse2 = await addRelationship(wasm, user1.username, user2);
     console.log('Second relationship creation: ', relationshipResponse2);
 
-    const nullifyRes1 = await nullifyRelationship(wasm, user2.username, user1);
-    console.log('First nullification: ', nullifyRes1);
+    await removeRelationship(wasm, user2.username, user1);
 
-    const nullifyRes2 = await nullifyRelationship(wasm, user1.username, user2);
-    console.log('Second nullification: ', nullifyRes2);
+    const listNullified = await listPendingNullification(user2);
+    console.log('List nullified: ', listNullified)
+
+    const list = await listActiveRelationships(user2);
+    console.log('List: ', list);
+
+    await removeRelationship(wasm, user1.username, user2);
 })();

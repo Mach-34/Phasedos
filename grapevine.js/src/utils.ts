@@ -404,6 +404,7 @@ export const registerUser = async (
 export const generateAuthHeaders = async (user: User) => {
   const eddsa = await buildEddsa();
   const nonce = await getNonce(user.privkey, user.username);
+  console.log
   const nonceBytes = nonceToBytes(nonce);
 
   const usernameBytes = usernametoFr(user.username);
@@ -425,7 +426,8 @@ export const generateAuthHeaders = async (user: User) => {
 const getNonce = async (privatekey: string, username: string) => {
   const eddsa = await buildEddsa();
   const privkey = Buffer.from(privatekey, 'hex');
-  const msg = eddsa.babyJub.F.e(usernametoFr(username));
+  const buff = Buffer.from(username, 'utf8');
+  const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
 
   const signature = eddsa.signPoseidon(privkey, msg);
 

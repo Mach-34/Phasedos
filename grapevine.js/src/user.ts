@@ -106,6 +106,18 @@ const generateAuthSignature = async (
     return { ephem_pk, nullifierCiphertext, signatureCiphertext }
 }
 
+export const getAccountDetails = async (user: User) => {
+    const url = `${SERVER_URL}/user/details`;
+    const res = await fetch(url, {
+        method: "GET",
+        // @ts-ignore
+        headers: {
+            ...(await generateAuthHeaders(user))
+        }
+    });
+    return await res.json()
+}
+
 const getUserPubkey = async (username: string): Promise<string> => {
     const url = `${SERVER_URL}/user/${username}/pubkey`
     const res = await fetch(url);
@@ -122,18 +134,6 @@ const getNullifierSecret = async (recipient: string, user: User) => {
         }
     });
     return Buffer.from(await res.arrayBuffer());
-}
-
-export const getPendingRelationships = async (user: User) => {
-    const url = `${SERVER_URL}/user/relationship/pending`;
-    const res = await fetch(url, {
-        method: "GET",
-        // @ts-ignore
-        headers: {
-            ...(await generateAuthHeaders(user))
-        }
-    });
-    return await res.json()
 }
 
 const generateNullifier = async (poseidon: Poseidon, recipientAddress: bigint) => {
@@ -179,7 +179,58 @@ const generateRelationshipPayload = async (recipient: string, sender: User) => {
     };
 }
 
-export const nullifyRelationship = async (wasm: any, recipient: string, sender: User) => {
+export const listActiveRelationships = async (user: User) => {
+    const url = `${SERVER_URL}/user/relationship/active`;
+    const res = await fetch(url, {
+        method: "GET",
+        // @ts-ignore
+        headers: {
+            ...(await generateAuthHeaders(user))
+        }
+    });
+    return await res.json()
+}
+
+
+export const listPendingRelationships = async (user: User) => {
+    const url = `${SERVER_URL}/user/relationship/pending`;
+    const res = await fetch(url, {
+        method: "GET",
+        // @ts-ignore
+        headers: {
+            ...(await generateAuthHeaders(user))
+        }
+    });
+    return await res.json()
+}
+
+export const listPendingNullification = async (user: User) => {
+    const url = `${SERVER_URL}/user/relationship/nullified`;
+    const res = await fetch(url, {
+        method: "GET",
+        // @ts-ignore
+        headers: {
+            ...(await generateAuthHeaders(user))
+        }
+    });
+    return await res.json()
+}
+
+export const rejectRelationship = async (recipient: User, sender: string) => {
+    const url = `${SERVER_URL}/user/relationship/reject/${sender}`
+    const res = await fetch(url, {
+        method: "POST",
+        // @ts-ignore
+        headers: {
+            'content-type': 'application/octet-stream',
+            ...(await generateAuthHeaders(recipient))
+        }
+    });
+    const data = await res.text()
+    return data;
+}
+
+export const removeRelationship = async (wasm: any, recipient: string, sender: User) => {
     const eddsa = await buildEddsa();
     const nullifierSecretCiphertext = await getNullifierSecret(recipient, sender);
 
