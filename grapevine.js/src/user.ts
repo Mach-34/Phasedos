@@ -32,14 +32,14 @@ export const addRelationship = async (wasm: any, recipient: string, sender: User
     return data;
 }
 
-const decryptAes = (aesKey: Buffer, aesIv: Buffer, ciphertext: Buffer) => {
+export const decryptAes = (aesKey: Buffer, aesIv: Buffer, ciphertext: Buffer) => {
     const decipher = crypto.createDecipheriv('aes-128-cbc', aesKey, aesIv);
     let decrypted = decipher.update(ciphertext);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
     return decrypted.reverse().toString('hex');
 }
 
-const deriveAesKey = async (bjj: BabyJub, sk: any, pk: Point): Promise<[Buffer, Buffer]> => {
+export const deriveAesKey = async (bjj: BabyJub, sk: any, pk: Point): Promise<[Buffer, Buffer]> => {
     let secret = bjj.mulPointEscalar(pk, sk);
     const secretX = bjj.F.toObject(secret[0]).toString(16).padStart(64, '0');
     const secretY = bjj.F.toObject(secret[1]).toString(16).padStart(64, '0');
@@ -59,7 +59,7 @@ const encryptAes = (aesKey: Buffer, aesIv: Buffer, plaintext: Buffer): Buffer =>
     return Buffer.concat([encryptedNullifier, cipher.final()]);
 }
 
-const formatPrivKeyForBabyJub = (eddsa: Eddsa, privKey: bigint): bigint => {
+export const formatPrivKeyForBabyJub = (eddsa: Eddsa, privKey: bigint): bigint => {
     const buffer = Buffer.from(privKey.toString(16), 'hex');
     const sBuff = eddsa.pruneBuffer(
         createBlakeHash('blake512')

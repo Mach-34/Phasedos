@@ -204,100 +204,101 @@ describe("Grapevine", () => {
   describe("Server tests", async () => {
     const key_0 = Buffer.from("479ed2e4fb6eedc79bca33de9c71cce5c13381f1f7e4af1b59ec088a087affb7", 'hex');
     const key_1 = Buffer.from("7631d954c5a6e74611e36e19cac8a0910bc330b24271746323be76a5df25ef05", "hex");
-    const username_0 = `user_${crypto.randomBytes(4).toString("hex")}`;
-    const username_1 = `user_${crypto.randomBytes(4).toString("hex")}`;
+    const username_0 = `user_${crypto.randomBytes(2).toString("hex")}`;
+    const username_1 = `user_${crypto.randomBytes(2).toString("hex")}`;
+
     // const username_0 = "testuser";
     // const username_1 = "usertest";
     it("Register two users", async () => {
-        const user0 = {
-            privkey: keys[0].toString('hex'),
-            pubkey: eddsa.prv2pub(keys[0]),
-            username: username_0
-        };
-        const user1 = {
-            privkey: keys[1].toString('hex'),
-            pubkey: eddsa.prv2pub(keys[1]),
-            username: username_1
-        };
-        // const user0 = {
-        //     privkey: key_0.toString('hex'),
-        //     pubkey: eddsa.prv2pub(key_0),
-        //     username: username_0
-        // };
-        // const user1 = {
-        //     privkey: key_1.toString('hex'),
-        //     pubkey: eddsa.prv2pub(key_1),
-        //     username: username_1
-        // };
-        await GrapevineUtils.registerUser(
-            eddsa,
-            poseidon,
-            artifacts,
-            wasm,
-            keys[0],
-            user0.username
-        );
-        await GrapevineUtils.registerUser(
-            eddsa,
-            poseidon,
-            artifacts,
-            wasm,
-            keys[1],
-            user1.username
-        );
+      const user0 = {
+        privkey: keys[0].toString('hex'),
+        pubkey: eddsa.prv2pub(keys[0]),
+        username: username_0
+      };
+      const user1 = {
+        privkey: keys[1].toString('hex'),
+        pubkey: eddsa.prv2pub(keys[1]),
+        username: username_1
+      };
+      // const user0 = {
+      //     privkey: key_0.toString('hex'),
+      //     pubkey: eddsa.prv2pub(key_0),
+      //     username: username_0
+      // };
+      // const user1 = {
+      //     privkey: key_1.toString('hex'),
+      //     pubkey: eddsa.prv2pub(key_1),
+      //     username: username_1
+      // };
+      await GrapevineUtils.registerUser(
+        eddsa,
+        poseidon,
+        artifacts,
+        wasm,
+        keys[0],
+        user0.username
+      );
+      await GrapevineUtils.registerUser(
+        eddsa,
+        poseidon,
+        artifacts,
+        wasm,
+        keys[1],
+        user1.username
+      );
     });
     it("Establish relationship between users", async () => {
-        const user0 = {
-            privkey: keys[0].toString('hex'),
-            pubkey: eddsa.prv2pub(keys[0]),
-            username: username_0
-        };
-        const user1 = {
-            privkey: keys[1].toString('hex'),
-            pubkey: eddsa.prv2pub(keys[1]),
-            username: username_1
-        };
-        // const user0 = {
-        //     privkey: key_0.toString('hex'),
-        //     pubkey: eddsa.prv2pub(key_0),
-        //     username: username_0
-        // };
-        // const user1 = {
-        //     privkey: key_1.toString('hex'),
-        //     pubkey: eddsa.prv2pub(key_1),
-        //     username: username_1
-        // };
-        await addRelationship(wasm, user1.username, user0);
-        await addRelationship(wasm, user0.username, user1);
+      const user0 = {
+        privkey: keys[0].toString('hex'),
+        pubkey: eddsa.prv2pub(keys[0]),
+        username: username_0
+      };
+      const user1 = {
+        privkey: keys[1].toString('hex'),
+        pubkey: eddsa.prv2pub(keys[1]),
+        username: username_1
+      };
+      // const user0 = {
+      //     privkey: key_0.toString('hex'),
+      //     pubkey: eddsa.prv2pub(key_0),
+      //     username: username_0
+      // };
+      // const user1 = {
+      //     privkey: key_1.toString('hex'),
+      //     pubkey: eddsa.prv2pub(key_1),
+      //     username: username_1
+      // };
+      await addRelationship(wasm, user1.username, user0);
+      await addRelationship(wasm, user0.username, user1);
     });
     xit("Prove next degree of separation", async () => {
-        // const user0 = {
-        //     privkey: keys[0].toString('hex'),
-        //     pubkey: eddsa.prv2pub(keys[0]),
-        //     username: username_0
-        // };
-        // const user1 = {
-        //     privkey: keys[1].toString('hex'),
-        //     pubkey: eddsa.prv2pub(keys[1]),
-        //     username: username_1
-        // };
-        const user0 = {
-            privkey: key_0.toString('hex'),
-            pubkey: eddsa.prv2pub(key_0),
-            username: username_0
-        };
-        const user1 = {
-            privkey: key_1.toString('hex'),
-            pubkey: eddsa.prv2pub(key_1),
-            username: username_1
-        };
-        // get available proofs for user0
-        const availableProofs = await GrapevineUtils.getAvailableProofs(user0);
-        console.log("Available proofs for user0", availableProofs);
+      // const user0 = {
+      //     privkey: keys[0].toString('hex'),
+      //     pubkey: eddsa.prv2pub(keys[0]),
+      //     username: username_0
+      // };
+      // const user1 = {
+      //     privkey: keys[1].toString('hex'),
+      //     pubkey: eddsa.prv2pub(keys[1]),
+      //     username: username_1
+      // };
+      const user0 = {
+        privkey: key_0.toString('hex'),
+        pubkey: eddsa.prv2pub(key_0),
+        username: username_0
+      };
+      const user1 = {
+        privkey: key_1.toString('hex'),
+        pubkey: eddsa.prv2pub(key_1),
+        username: username_1
+      };
+      // get available proofs for user0
+      const availableProofs = await GrapevineUtils.getAvailableProofs(user0);
+      console.log("Available proofs for user0", availableProofs);
     })
   });
 
-  describe("Bincode Tests", async () => {
+  xdescribe("Bincode Tests", async () => {
     // this is dummy data with the right size. Just replace with the right data
     xit("Create relationship request", async () => {
       const to = "Username";

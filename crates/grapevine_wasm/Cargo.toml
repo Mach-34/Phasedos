@@ -1,4 +1,4 @@
-cargo-features = ["per-package-target"]
+# scargo-features = ["per-package-target"]
 
 [package]
 name = "grapevine_wasm"

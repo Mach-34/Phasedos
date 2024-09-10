@@ -8,10 +8,11 @@ import {
 } from "./types.ts";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { BabyJub, buildEddsa, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
+import { BabyJub, buildEddsa, buildPoseidon, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
 import { InputMap, User } from "./types";
 import * as crypto from "crypto";
 import { Scalar } from "ffjavascript";
+import { decryptAes, deriveAesKey, formatPrivKeyForBabyJub } from "./user.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -404,7 +405,6 @@ export const registerUser = async (
 export const generateAuthHeaders = async (user: User) => {
   const eddsa = await buildEddsa();
   const nonce = await getNonce(user.privkey, user.username);
-  console.log("nonce", nonce);
   const nonceBytes = nonceToBytes(nonce);
 
   const usernameBytes = usernametoFr(user.username);
@@ -426,9 +426,9 @@ export const generateAuthHeaders = async (user: User) => {
 const getNonce = async (privatekey: string, username: string) => {
   const eddsa = await buildEddsa();
   const privkey = Buffer.from(privatekey, 'hex');
-  const msg = eddsa.babyJub.F.e(usernametoFr(username));
-  // const buff = Buffer.from(username, 'utf8');
-  // const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
+  // const msg = eddsa.babyJub.F.e(usernametoFr(username));
+  const buff = Buffer.from(username, 'utf8');
+  const msg = eddsa.babyJub.F.e(Scalar.fromRprLE(buff, 0));
 
   const signature = eddsa.signPoseidon(privkey, msg);
 
@@ -476,4 +476,83 @@ export const getAvailableProofs = async (user: User): Promise<string[]> => {
     }
   });
   return await res.json();
+}
+
+export const getProofWithParams = async (proofId: string, user: User) => {
+  const url = `${SERVER_URL}/proof/params/${proofId}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      ...(await generateAuthHeaders(user))
+    }
+  });
+  return await res.json();
+}
+
+export const proveAvailable = async (wasm: any, proofs: any[], user: User) => {
+  const artifacts = await defaultArtifacts();
+  const eddsa = await buildEddsa();
+  const babyJub = eddsa.babyJub;
+  const poseidon = await buildPoseidon();
+  for (const proof of proofs) {
+    const params = await getProofWithParams(proof._id.$oid, user);
+    // console.log('Params: ', params);
+    // console.log('Prover: ', user.username);
+    // console.log('Scope: ', proof.scope);
+
+    const previousOutput = await wasm.verify_grapevine_proof(
+      artifacts.params,
+      params.proof,
+      proof.degree,
+      true
+    );
+
+    const relationPubkeyUnpacked = babyJub.unpackPoint(params.relation_pubkey);
+
+    const formattedPrivkey = formatPrivKeyForBabyJub(
+      eddsa,
+      BigInt(`0x${user.privkey}`)
+    );
+
+    const [aesKey, aesIv] = await deriveAesKey(babyJub, formattedPrivkey, babyJub.unpackPoint(params.ephemeral_key));
+
+    const decryptedNullifier = decryptAes(aesKey, aesIv, Buffer.from(params.nullifier_ciphertext));
+    const decryptedSignature = decryptAes(aesKey, aesIv, Buffer.from(new Uint8Array(params.signature_ciphertext)));
+
+    const authSecret: AuthSecret = {
+      nullifier: new Uint8Array(Buffer.from(decryptedNullifier, 'hex')),
+      signature: eddsa.unpackSignature(new Uint8Array(Buffer.from(decryptedSignature, 'hex')))
+    }
+
+    // create inputs for degree proof
+    const inputMap = makeDegreeInput(
+      eddsa,
+      Buffer.from(user.privkey, 'hex'),
+      relationPubkeyUnpacked,
+      authSecret,
+      previousOutput[2]
+    );
+
+    console.log('Params proof: ', params.proof);
+
+    const chaffMap = makeRandomInput(poseidon, eddsa);
+    // run degree proof
+    const degreeProof = await wasm.degree_proof(
+      artifacts,
+      JSON.stringify(inputMap),
+      JSON.stringify(chaffMap),
+      params.proof,
+      previousOutput,
+      true
+    );
+    console.log('Below degree proof')
+    // verify degree proof
+    // console.log(`Verifying Grapevine Proof of Degree ${proof.degree + 1}...`);
+    // await wasm.verify_grapevine_proof(
+    //   artifacts.params,
+    //   degreeProof,
+    //   proof.degree + 1,
+    //   false
+    // );
+  }
 }
