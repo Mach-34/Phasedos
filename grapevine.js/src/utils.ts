@@ -370,7 +370,8 @@ export const registerUser = async (
   artifacts: GrapevineWasmArtifacts,
   wasm: GrapevineWasm,
   key: Buffer,
-  username: string
+  username: string,
+  verbose = false
 ): Promise<string> => {
   // construct identity proof
   const inputMap = makeIdentityInput(eddsa.poseidon, eddsa, key);
@@ -380,7 +381,7 @@ export const registerUser = async (
     artifacts,
     JSON.stringify(inputMap),
     JSON.stringify(chaffMap),
-    true
+    verbose
   );
   // build https inputs
   const pubkey = eddsa.prv2pub(key);

@@ -8,6 +8,7 @@ import {
 } from "../src/types";
 import * as crypto from "crypto";
 import { Eddsa, Poseidon, buildEddsa, buildPoseidon } from "circomlibjs";
+import { addRelationship } from "../src/user";
 
 describe("Grapevine", () => {
   let wasm: GrapevineWasm;
@@ -201,17 +202,40 @@ describe("Grapevine", () => {
   });
 
   describe("Server tests", async () => {
-    it("Register new user", async () => {
-        let res = await GrapevineUtils.registerUser(
+    const username_0 = `user_${crypto.randomBytes(4).toString("hex")}`;
+    const username_1 = `user_${crypto.randomBytes(4).toString("hex")}`;
+    it("Register two users", async () => {
+        await GrapevineUtils.registerUser(
             eddsa,
             poseidon,
             artifacts,
             wasm,
             keys[0],
-            "user_0"
+            username_0
         );
-        console.log("Result: ", res);
-    })
+        await GrapevineUtils.registerUser(
+            eddsa,
+            poseidon,
+            artifacts,
+            wasm,
+            keys[1],
+            username_1
+        );
+    });
+    it("Establish relationship between users", async () => {
+        const user_0 = {
+            privkey: keys[0].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[0]),
+            username: username_0
+        };
+        const user_1 = {
+            privkey: keys[1].toString('hex'),
+            pubkey: eddsa.prv2pub(keys[1]),
+            username: username_1
+        };
+        await addRelationship(wasm, user_1.username, user_0);
+        await addRelationship(wasm, user_0.username, user_1);
+    });
   });
 
   describe("Bincode Tests", async () => {

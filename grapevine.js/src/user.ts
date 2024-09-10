@@ -15,9 +15,7 @@ export const addRelationship = async (wasm: any, recipient: string, sender: User
 
     // get recipient pubkey
     const recipientPubkey = await getUserPubkey(recipient);
-
     const payload = await generateRelationshipPayload(recipientPubkey, sender);
-
     const bincoded = await wasm.bincode_new_relationship_request(
         recipient,
         payload.ephemeral_key,
@@ -25,7 +23,6 @@ export const addRelationship = async (wasm: any, recipient: string, sender: User
         payload.nullifier_ciphertext,
         payload.nullifier_secret_ciphertext
     );
-
     const url = `${SERVER_URL}/user/relationship/add`
     const res = await fetch(url, {
         body: bincoded, // TODO
@@ -124,9 +121,7 @@ const generateAuthHeaders = async (user: User) => {
     const eddsa = await buildEddsa();
     const nonce = await getNonce(user.privkey, user.username);
     const nonceBytes = nonceToBytes(nonce);
-
     const usernameBytes = usernametoFr(user.username);
-
     const hasher = crypto.createHash("sha3-256");
     const digest = hasher.update(usernameBytes).update(nonceBytes).digest();
     const digestBytes = new Uint8Array(digest);
@@ -144,8 +139,7 @@ const generateAuthHeaders = async (user: User) => {
 const getNonce = async (privatekey: string, username: string) => {
     const eddsa = await buildEddsa();
     const privkey = Buffer.from(privatekey, 'hex');
-    const buff = Buffer.from(username, 'utf8');
-    const msg = eddsa.babyJub.F.e(ff.Scalar.fromRprLE(buff, 0));
+    const msg = eddsa.babyJub.F.e(usernametoFr(username));
 
     const signature = eddsa.signPoseidon(privkey, msg);
 
@@ -254,7 +248,7 @@ export const nullifyRelationship = async (wasm: any, recipient: string, sender: 
     return await res.text()
 }
 
-const usernametoFr = (username: string) => {
+const usernametoFr = (username: string): Uint8Array => {
     if (username.length >= 32) {
         throw Error("Max character length exceeded.");
     }
