@@ -2,5 +2,11 @@
 node_modules
 phrasedos_degree_*
 grapevine_degree_*
+crates/grapevine_circuits/public_params.json
+crates/grapevine_circuits/circom/artifacts/public_params.json
+crates/grapevine_server/static/public_params.json
 crates/grapevine_server/db
 .env
+crates/grapevine_circuits/circom/artifacts/params_chunked
+*/inputs.json
+*/witness.wtns

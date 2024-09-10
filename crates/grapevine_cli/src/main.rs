@@ -1,15 +1,19 @@
 use clap::{Parser, Subcommand};
 mod controllers;
 mod http;
+mod tests {
+    mod helpers;
+    mod test;
+}
 mod utils;
 
-///    ______                           _           
-///   / ____/________ _____  ___ _   __(_)___  ___  
+///    ______                           _
+///   / ____/________ _____  ___ _   __(_)___  ___
 ///  / / __/ ___/ __ `/ __ \/ _ \ | / / / __ \/ _ \
 /// / /_/ / /  / /_/ / /_/ /  __/ |/ / / / / /  __/
-/// \____/_/   \__,_/ .___/\___/|___/_/_/ /_/\___/  
-///                /_/                              
-///                                                 
+/// \____/_/   \__,_/ .___/\___/|___/_/_/ /_/\___/
+///                /_/
+///
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, verbatim_doc_comment)]
 #[command(propagate_version = true)]
@@ -31,9 +35,9 @@ enum Commands {
     /// Commands for managing relationships
     #[command(subcommand, verbatim_doc_comment)]
     Relationship(RelationshipCommands),
-    /// Commands for interacting with phrases and degree proofs
+    /// Commands for interacting with identity and degree proofs
     #[command(subcommand, verbatim_doc_comment)]
-    Phrase(PhraseCommands),
+    Proof(ProofCommands),
 }
 
 #[derive(Subcommand)]
@@ -52,10 +56,20 @@ enum RelationshipCommands {
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
     Reject { username: String },
-    /// List the username of all of your active relationships
+    /// Remove a relationship by username
+    /// usage: `grapevine relationship remove <username>`
+    #[command(verbatim_doc_comment)]
+    #[clap(value_parser)]
+    Remove { username: String },
+    /// List the usernames of all of your active relationships
     /// usage: `grapevine relationship list`
     #[command(verbatim_doc_comment)]
     List,
+
+    /// List the usernames of counterparties that have nullified their relationship with you
+    /// usage: `grapevine relationship reveal-nullified`
+    #[command(verbatim_doc_comment)]
+    RevealNullified,
 }
 
 #[derive(Subcommand)]
@@ -63,10 +77,8 @@ enum AccountCommands {
     /// Register a new Grapevine account
     /// usage: `grapevine account register <username>`
     #[command(verbatim_doc_comment)]
-    Register {
-        #[clap(value_parser)]
-        username: String,
-    },
+    #[clap(value_parser)]
+    Register { username: String },
     /// Get information about your Grapevine account
     /// usage: `grapevine account info`
     #[command(verbatim_doc_comment)]
@@ -78,29 +90,24 @@ enum AccountCommands {
 }
 
 #[derive(Subcommand)]
-enum PhraseCommands {
-    /// Prove knowledge of a phrase. Description is discarded if the phrase already exists
-    /// usage: `grapevine phrase prove "<phrase>" "<description>"`
+enum ProofCommands {
+    /// Retrieve a list of available degree proofs to build from
+    /// usage: `grapevine proof available
     #[command(verbatim_doc_comment)]
-    #[clap(value_parser)]
-    Prove { phrase: String, description: String },
-    /// Check for new degree proofs from relationships and build degrees on top of them
-    /// usage: `grapevine phrase sync`
+    Available,
+    /// List all your degree proofs
+    /// usage: `grapevine proof list`
+    #[command(verbatim_doc_comment)]
+    List,
+    /// Prove all available degrees
+    /// usage: `grapevine proof sync
     #[command(verbatim_doc_comment)]
     Sync,
-    /// Get all information known by this account about a given phrase by its index
-    /// usage: `grapevine phrase get <index>`
+    /// Get your degree proof for a given scope
+    /// usage: `grapevine proof scope <username>
     #[command(verbatim_doc_comment)]
     #[clap(value_parser)]
-    Get { index: u32 },
-    /// Return all phrases known by this account (degree 1)
-    /// usage: `grapevine phrase known`
-    #[command(verbatim_doc_comment)]
-    Known,
-    /// Return all degree proofs created by this account (degree > 1)
-    /// usage: `grapevine phrase degrees`
-    #[command(verbatim_doc_comment)]
-    Degrees,
+    Scope { username: String },
 }
 
 /**
@@ -111,11 +118,19 @@ pub async fn main() {
     let cli = Cli::parse();
 
     let result = match &cli.command {
-        Commands::Health => controllers::health().await,
         Commands::Account(cmd) => match cmd {
             AccountCommands::Register { username } => controllers::register(username).await,
             AccountCommands::Info => controllers::account_details().await,
             AccountCommands::Export => controllers::export_key(),
+        },
+        Commands::Health => controllers::health().await,
+        Commands::Proof(cmd) => match cmd {
+            ProofCommands::Available => controllers::get_available_proofs().await,
+            ProofCommands::List => controllers::get_my_proofs().await,
+            ProofCommands::Sync => controllers::prove_all_available().await,
+            ProofCommands::Scope { username } => {
+                controllers::get_proof_metadata_by_scope(username).await
+            }
         },
         Commands::Relationship(cmd) => match cmd {
             RelationshipCommands::Add { username } => controllers::add_relationship(username).await,
@@ -123,17 +138,13 @@ pub async fn main() {
             RelationshipCommands::Reject { username } => {
                 controllers::reject_relationship(username).await
             }
+            RelationshipCommands::Remove { username } => {
+                controllers::nullify_relationship(username).await
+            }
             RelationshipCommands::List => controllers::get_relationships(true).await,
-        },
-        Commands::Phrase(cmd) => match cmd {
-            PhraseCommands::Prove {
-                phrase,
-                description,
-            } => controllers::prove_phrase(phrase, description).await,
-            PhraseCommands::Sync => controllers::prove_all_available().await,
-            PhraseCommands::Get { index } => controllers::get_phrase(*index).await,
-            PhraseCommands::Known => controllers::get_known_phrases().await,
-            PhraseCommands::Degrees => controllers::get_my_proofs().await,
+            RelationshipCommands::RevealNullified => {
+                controllers::list_relationships_to_nullify().await
+            }
         },
     };
 

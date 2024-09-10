@@ -1,5 +1,9 @@
 use grapevine_common::{Fr, Params, G1, G2};
 use lazy_static::lazy_static;
+use mongodb::bson::{
+    self,
+    Bson::{self},
+};
 use nova_scotia::circom::circuit::R1CS;
 use nova_scotia::circom::reader::load_r1cs;
 use nova_scotia::FileLocation;
@@ -8,6 +12,32 @@ use std::path::PathBuf;
 
 lazy_static! {
     pub static ref PUBLIC_PARAMS: Params = use_public_params().unwrap();
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RelationshipStatus {
+    None,
+    Pending,
+    Active,
+}
+
+#[derive(Debug, Clone)]
+pub struct GetRelationshipOptions {
+    pub counterparty: bool,
+    pub full: bool,
+}
+
+pub trait ToBson {
+    fn to_bson(&self) -> Bson;
+}
+
+impl ToBson for Vec<u8> {
+    fn to_bson(&self) -> Bson {
+        Bson::Binary(bson::Binary {
+            subtype: bson::spec::BinarySubtype::Generic,
+            bytes: self.clone(),
+        })
+    }
 }
 
 // @TODO: lazy static implementation for public params and r1cs

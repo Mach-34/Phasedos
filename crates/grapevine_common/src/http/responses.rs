@@ -1,20 +1,11 @@
+use bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct DegreeData {
-    pub description: String,
-    pub phrase_index: u32,
-    pub degree: Option<u8>,
-    pub relation: Option<String>,
-    pub preceding_relation: Option<String>,
-    #[serde(with = "serde_bytes")]
-    pub phrase_hash: [u8; 32],
-    #[serde(with = "serde_bytes")]
-    pub secret_phrase: Option<[u8; 192]>
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PhraseCreationResponse {
-    pub phrase_index: u32,
-    pub new_phrase: bool,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProofMetadata {
+    #[serde(rename = "_id")]
+    pub id: ObjectId,
+    pub degree: u8,
+    pub scope: String,
+    pub relation: String,
 }

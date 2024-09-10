@@ -1,2 +1,10 @@
 [env]
 RUST_TEST_THREADS = "1"
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C",
+    "target-feature=+atomics,+bulk-memory,+mutable-globals",
+    "-C",
+    "link-arg=--max-memory=4294967296",
+]

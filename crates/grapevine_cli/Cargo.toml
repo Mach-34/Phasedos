@@ -24,6 +24,7 @@ reqwest.workspace = true
 lazy_static.workspace = true
 clap = { version = "4.4.7", features = ["derive", "wrap_help"] }
 poseidon-rs = "0.0.10"
+assert_cmd = "2.0.15"
 
 [build-dependencies]
 dotenv.workspace = true

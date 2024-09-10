@@ -10,12 +10,15 @@ pub enum GrapevineError {
     PubkeyExists(String),
     UserExists(String),
     PhraseTooLong,
+    NoRelationship(String, String),
     NoPendingRelationship(String, String),
     PendingRelationshipExists(String, String),
     ActiveRelationshipExists(String, String),
     RelationshipSenderIsTarget,
+    RelationshipNullified,
     PhraseExists,
     PhraseNotFound,
+    ProofNotFound(String),
     InvalidPhraseHash,
     NonceMismatch(u64, u64),
     MongoError(String),
@@ -23,8 +26,10 @@ pub enum GrapevineError {
     InternalError,
     SerdeError(String),
     DegreeProofExists,
-    DegreeProofVerificationFailed,
-    FsError(String)
+    ProofFailed(String),
+    FsError(String),
+    // here to get tests to pass but eventually will be removed with GrapevineError refactor
+    PlaceholderError(String),
 }
 
 impl std::fmt::Display for GrapevineError {
@@ -46,7 +51,7 @@ impl std::fmt::Display for GrapevineError {
             }
             GrapevineError::UserExists(msg) => {
                 write!(f, "User {} already exists with the supplied pubkey", msg)
-            },
+            }
             GrapevineError::PhraseTooLong => write!(f, "Phrase is too long"),
             GrapevineError::PendingRelationshipExists(sender, recipient) => {
                 write!(
@@ -69,8 +74,14 @@ impl std::fmt::Display for GrapevineError {
                     sender, recipient
                 )
             }
+            GrapevineError::NoRelationship(sender, recipient) => {
+                write!(f, "No relationship exists from {} to {}", sender, recipient)
+            }
             GrapevineError::RelationshipSenderIsTarget => {
                 write!(f, "Relationship sender and target are the same")
+            }
+            GrapevineError::RelationshipNullified => {
+                write!(f, "Nullified relationship is being used")
             }
             &GrapevineError::NonceMismatch(expected, actual) => write!(
                 f,
@@ -81,6 +92,7 @@ impl std::fmt::Display for GrapevineError {
                 write!(f, "This phrase has already added used by another account")
             }
             GrapevineError::PhraseNotFound => write!(f, "Phrase not found"),
+            GrapevineError::ProofNotFound(oid) => write!(f, "Proof '{}' not found", oid),
             GrapevineError::MongoError(msg) => write!(f, "Mongo error: {}", msg),
             GrapevineError::HeaderError(msg) => write!(f, "Bad http header error: `{}`", msg),
             GrapevineError::InvalidPhraseHash => write!(f, "Invalid phrase hash provided"),
@@ -92,10 +104,11 @@ impl std::fmt::Display for GrapevineError {
                     "Degree proof already exists between these accounts for this phrase"
                 )
             }
-            GrapevineError::DegreeProofVerificationFailed => {
-                write!(f, "Failed to verify degree proof")
-            },
+            GrapevineError::ProofFailed(msg) => {
+                write!(f, "Failed to verify proof: {}", msg)
+            }
             GrapevineError::FsError(msg) => write!(f, "Filesystem error: {}", msg),
+            GrapevineError::PlaceholderError(msg) => write!(f, "{}", msg),
         }
     }
 }

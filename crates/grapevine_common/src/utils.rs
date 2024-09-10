@@ -1,4 +1,8 @@
-use crate::{Fr, MAX_SECRET_CHARS, MAX_USERNAME_CHARS, SECRET_FIELD_LENGTH};
+use crate::{
+    compat::ff_ce_from_le_bytes, Fr, MAX_SECRET_CHARS, MAX_USERNAME_CHARS, SECRET_FIELD_LENGTH,
+};
+use babyjubjub_rs::Fr as Fr_ce;
+use poseidon_rs::Poseidon;
 use std::error::Error;
 
 /**
@@ -8,6 +12,21 @@ use std::error::Error;
  */
 pub fn random_fr() -> Fr {
     ff::Field::random(rand::rngs::OsRng)
+}
+
+pub fn random_fr_ce() -> Fr_ce {
+    ff_ce_from_le_bytes(random_fr().to_bytes())
+}
+
+/**
+ * Computes a nullifier from a secret and saddress
+ *
+ * @param address - address of nullifier secret owner
+ * @param nullifier_secret - secret used to compute nullifier
+ */
+pub fn compute_nullifier(address: Fr_ce, nullifier_secret: Fr_ce) -> Fr_ce {
+    let hasher = Poseidon::new();
+    hasher.hash(vec![nullifier_secret, address]).unwrap()
 }
 
 /**
@@ -58,4 +77,28 @@ pub fn convert_username_to_fr(username: &String) -> Result<[u8; 32], Box<dyn Err
     bytes.reverse();
     //    Ok(format!("0x{}", hex::encode(bytes)))
     Ok(bytes)
+}
+
+// TODO: Add documentation
+pub fn to_array_32(mut vec: Vec<u8>) -> [u8; 32] {
+    // Ensure the vector is either 31 or 32 bytes long
+    assert!(
+        vec.len() == 31 || vec.len() == 32,
+        "Vec must be either 31 or 32 bytes long"
+    );
+
+    // Pad with a zero byte if the vector is 31 bytes long
+    if vec.len() == 31 {
+        vec.push(0);
+    }
+
+    // Convert the vector to a boxed slice and then try into a fixed-size array
+    let boxed_slice = vec.into_boxed_slice();
+    let boxed_array: Box<[u8; 32]> = match boxed_slice.try_into() {
+        Ok(array) => array,
+        Err(_) => unreachable!("The length should be 32 at this point"),
+    };
+
+    // Unbox the array to get [u8; 32]
+    *boxed_array
 }

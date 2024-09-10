@@ -11,14 +11,16 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Responder)]
 pub enum GrapevineResponse {
+    #[response(status = 200)]
+    Ok(String),
     #[response(status = 201)]
     Created(String),
     #[response(status = 400)]
     BadRequest(ErrorMessage),
-    // #[response(status = 401)]
-    // Unauthorized(ErrorMessage),
+    #[response(status = 401)]
+    Unauthorized(ErrorMessage),
     #[response(status = 404)]
-    NotFound(String),
+    NotFound(ErrorMessage),
     #[response(status = 409)]
     Conflict(ErrorMessage),
     #[response(status = 413)]
@@ -29,40 +31,28 @@ pub enum GrapevineResponse {
     // NotImplemented(String),
 }
 
-// #[catch(400)]
-// pub fn bad_request(req: &Request) -> GrapevineResponse {
-//     match req.local_cache(|| ErrorMessage(None)) {
-//         ErrorMessage(Some(err)) => {
-//             let x = GrapevineError::Signature(("".to_string(), 0));
-//             let y = x.into();
-//             GrapevineResponse::BadRequest(ErrorMessage(Some(err.clone())))
-//         }
-//         ErrorMessage(None) => {
-//             GrapevineResponse::BadRequest(ErrorMessage(Some(GrapevineError::InternalError)))
-//         }
-//     }
-// }
+#[catch(400)]
+pub fn bad_request(req: &Request) -> GrapevineResponse {
+    let res = req.local_cache(|| ErrorMessage(None));
+    GrapevineResponse::BadRequest(ErrorMessage(res.0.clone()))
+}
 
-// #[catch(401)]
-// pub fn unauthorized(req: &Request) -> GrapevineResponse {
-//     match req.local_cache(|| ErrorMessage(None)) {
-//         ErrorMessage(Some(msg)) => Response::Unauthorized(msg.to_string()),
-//         ErrorMessage(None) => {
-//             Response::Unauthorized("Unknown authorization error has occurred".to_string())
-//         }
-//     }
-// }
+#[catch(401)]
+pub fn unauthorized(req: &Request) -> GrapevineResponse {
+    let res = req.local_cache(|| ErrorMessage(None));
+    GrapevineResponse::Unauthorized(ErrorMessage(res.0.clone()))
+}
 
-// #[catch(404)]
-// pub fn not_found(req: &Request) -> Response {
-//     match req.local_cache(|| ErrorMessage(None)) {
-//         ErrorMessage(Some(msg)) => Response::NotFound(msg.to_string()),
-//         ErrorMessage(None) => Response::NotFound("Asset not found".to_string()),
-//     }
-// }
+#[catch(404)]
+pub fn not_found(req: &Request) -> GrapevineResponse {
+    let res = req.local_cache(|| ErrorMessage(None));
+    // TODO:  Figure out whether to get rid of error message enum or put not
+    //        found response inside
+    GrapevineResponse::NotFound(ErrorMessage(res.0.clone()))
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ErrorMessage(pub Option<GrapevineError>, pub Option<u64>);
+pub struct ErrorMessage(pub Option<GrapevineError>);
 
 impl<'r> Responder<'r, 'static> for ErrorMessage {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
@@ -72,11 +62,6 @@ impl<'r> Responder<'r, 'static> for ErrorMessage {
         };
         let mut res = Response::build_from(body.respond_to(req)?);
 
-        // optionally add nonce to header
-        if self.1.is_some() {
-            res.raw_header("X-Nonce", self.1.unwrap().to_string())
-                .status(Status::Unauthorized);
-        };
         res.header(ContentType::JSON).ok()
     }
 }

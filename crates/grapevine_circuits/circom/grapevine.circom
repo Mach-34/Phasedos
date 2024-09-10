@@ -1,97 +1,76 @@
 pragma circom 2.1.6;
 
-include "node_modules/circomlib/circuits/poseidon.circom";
-include "node_modules/circomlib/circuits/mux1.circom";
-include "node_modules/circomlib/circuits/comparators.circom";
-include "node_modules/circomlib/circuits/gates.circom";
-include "./templates/chaff.circom";
+include "./node_modules/circomlib/circuits/mux1.circom";
+include "./templates/auth.circom";
+include "./templates/step_utils.circom";
 
-template grapevine(num_felts) {  
+template Grapevine() { 
 
-    // in_out schema
-    // 0: degrees of separation
-    // 1: secret hash from previous step
-    // 2: hash of username + secret hash from previous step
-    // 3: chaff
+   signal input relation_pubkey[2]; // the pubkey of the previous prover
+   signal input prover_pubkey[2]; // the pubkey of current prover showing connection to relation
+   signal input relation_nullifier; // the nullifier issued by the previous prover
+   signal input auth_signature[3]; // the signature by relation over H|nullifier, prover address|
+   signal input scope_signature[3]; // the signature by prover over scope address
 
-    signal input step_in[4];
-    signal output step_out[4];
+   // See ./templates/step_utils.circom:ParseInputs for deserialization schema
+   signal input step_in[12];
+   signal output step_out[12];
 
-    // private inputs
-    signal input phrase[num_felts]; // secret phrase, if first iteration
-    signal input usernames[2]; // prev username, current username
-    signal input auth_secrets[2]; // prev degree's user secret, current degree's user secret
+   // Parse step inputs into labeled signals & validate them
+   component inputs = ParseInputs();
+   inputs.step_in <== step_in;
 
-    // name inputs from step_in
-    signal degrees_of_separation <== step_in[0];
-    signal given_phrase_hash <== step_in[1];
-    signal given_degree_secret_hash <== step_in[2];
-    signal is_chaff_step <== step_in[3];
+   // **Only constrained if DEGREE step**
+   // Check the relation pubkey hashes to the relation address
+   component validate_relation_pubkey = CheckBJJAddress();
+   validate_relation_pubkey.pubkey <== relation_pubkey;
+   validate_relation_pubkey.address <== inputs.relation;
+   validate_relation_pubkey.enabled <== inputs.is_degree_step;
 
-    // determine whether degrees of separation from secret is zero
-    component is_degree_zero = IsZero();
-    is_degree_zero.in <== degrees_of_separation;
+   // Compute the current prover's address
+   component prover = BJJAddress();
+   prover.pubkey <== prover_pubkey;
 
-    // compute poseidon hash of secret
-    // same as the word essentially
-    component phrase_hasher = Poseidon(num_felts);
-    phrase_hasher.inputs <== phrase;
-    
-    // mux between computed hash and previous iteration's hash to get phrase hash to use
-    // if degrees of separation = 0 use computed hash, else use hash from previous step
-    component phrase_mux = Mux1();
-    phrase_mux.c[0] <== given_phrase_hash;
-    phrase_mux.c[1] <== phrase_hasher.out;
-    phrase_mux.s <== is_degree_zero.out;
+   // Multiplex between identity and degree steps to get scope
+   // If chaff step, verifier will be disabled so incorrect assignment is ok
+   component identity_scope_mux = Mux1();
+   identity_scope_mux.s <== inputs.is_degree_step;
+   identity_scope_mux.c[0] <== prover.address;
+   identity_scope_mux.c[1] <== inputs.scope;
 
-    // compute hash of given degree secret
-    // H(H(preimage), username, auth_secret[0])
-    // where preimage is muxed depending on whether degree N is 1 or > 1
-    component degree_secret_hasher = Poseidon(3);
-    degree_secret_hasher.inputs[0] <== phrase_mux.out;
-    degree_secret_hasher.inputs[1] <== usernames[0];
-    degree_secret_hasher.inputs[2] <== auth_secrets[0];
+   // **Only constrained if IDENTITY or DEGREE step**
+   // Verify prover address controls the used pubkey with scope address
+   component identity_verifier = ScopeSigVerifier();
+   identity_verifier.pubkey <== prover_pubkey;
+   identity_verifier.scope <== identity_scope_mux.out;
+   identity_verifier.signature <== scope_signature;
+   identity_verifier.enabled <== 1 - inputs.obfuscate;
 
-    // compare computed degree secret hash to prev degree secret hash
-    component degree_secret_hash_match = IsEqual();
-    degree_secret_hash_match.in[0] <== degree_secret_hasher.out;
-    degree_secret_hash_match.in[1] <== given_degree_secret_hash;
+   // **Only constrained if DEGREE step**
+   // Verify the prover has a connection to relation by verifying the auth signature
+   // Also validates the authenticity of the issued nullifier
+   component auth_verifier = AuthSigVerifier();
+   auth_verifier.pubkey <== relation_pubkey;
+   auth_verifier.nullifier <== relation_nullifier;
+   auth_verifier.prover <== prover.address;
+   auth_verifier.signature <== auth_signature;
+   auth_verifier.enabled <== inputs.is_degree_step;
 
-    // create boolean that is true if either is true:
-    //  - given degree secret hash matches computed hash
-    //  - is a chaff step
-    component degree_secret_match_or_chaff = OR();
-    degree_secret_match_or_chaff.a <== degree_secret_hash_match.out;
-    degree_secret_match_or_chaff.b <== is_chaff_step;
+   // Marshal outputs into step out conditional to step type
+   component marshal_outputs = MarshalOutputs();
+   marshal_outputs.obfuscate <== inputs.obfuscate;
+   marshal_outputs.degree <== inputs.degree;
+   marshal_outputs.scope <== inputs.scope;
+   marshal_outputs.relation <== inputs.relation;
+   marshal_outputs.nullifiers <== inputs.nullifiers;
+   marshal_outputs.prover <== prover.address;
+   marshal_outputs.relation_nullifier <== relation_nullifier;
+   marshal_outputs.identity_step <== inputs.is_identity_step;
+   marshal_outputs.degree_step <== inputs.is_degree_step;
 
-    // create boolean that is muxes according to:
-    //  - if degrees of separation = 0, always true (no check needed)
-    //  - if degree of separation > 0, return output of degree_secret_match_or_chaff
-    component degree_secret_satisfied_mux = Mux1();
-    degree_secret_satisfied_mux.c[0] <== degree_secret_match_or_chaff.out;
-    degree_secret_satisfied_mux.c[1] <== 1;
-    degree_secret_satisfied_mux.s <== is_degree_zero.out;
-
-    // constrain degree_secret_satisfied_mux to be true
-    degree_secret_satisfied_mux.out === 1;
-
-    // compute the next username hash
-    component next_degree_secret_hash = Poseidon(3);
-    next_degree_secret_hash.inputs[0] <== phrase_mux.out;
-    next_degree_secret_hash.inputs[1] <== usernames[1];
-    next_degree_secret_hash.inputs[2] <== auth_secrets[1];
-
-    // mux step_out signal according to whether or not this is a chaff step
-    component chaff_mux = ChaffMux();
-    chaff_mux.degrees_of_separation <== degrees_of_separation;
-    chaff_mux.given_phrase_hash <== given_phrase_hash;
-    chaff_mux.given_degree_secret_hash <== given_degree_secret_hash;
-    chaff_mux.is_chaff_step <== is_chaff_step;
-    chaff_mux.computed_phrase_hash <== phrase_mux.out;
-    chaff_mux.computed_degree_secret_hash <== next_degree_secret_hash.out;
-
-    // wire output signals
-    step_out <== chaff_mux.out;
+   // Assign output signals
+   step_out <== marshal_outputs.step_out;
 }
 
-component main { public [step_in] } = grapevine(6);
+
+component main { public [step_in] } = Grapevine();
