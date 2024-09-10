@@ -4,7 +4,7 @@ import { AuthSecret, GrapevineOutputs, GrapevineOutputSlot, GrapevineWasmArtifac
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { BabyJub, buildEddsa, Eddsa, Point, Poseidon, Signature } from "circomlibjs";
-import { InputMap, User } from "./types";
+import { InputMap, User } from "./types.ts";
 import * as crypto from "crypto";
 import { Scalar } from "ffjavascript";
 

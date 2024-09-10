@@ -2,7 +2,7 @@ import { BabyJub, buildEddsa, buildPoseidon, Eddsa, Point, Poseidon } from "circ
 import * as crypto from "crypto";
 import * as ff from "ffjavascript";
 import createBlakeHash from 'blake-hash'
-import { User } from "./types";
+import { User } from "./types.ts";
 import { SERVER_URL } from "./consts.ts";
 import { generateAuthHeaders } from "./utils.ts";
 
