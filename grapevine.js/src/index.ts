@@ -40,8 +40,8 @@ const proveServer = async () => {
     const eddsa = await buildEddsa();
     const wasm = await initGrapevineWasm()
 
-    const privkey1 = "b5a4c309f5fb71c45ef24ee90e91411d5203db8f948fc18dc9ccd073c30f6b26";
-    const privkey2 = "1603adb60ef063a939b1659f2fc344c3f3920168b7c0f75d3015f8959c5372ce";
+    const privkey1 = "c50132b0e6467505435fee05b1139decba0a58e361f7cdb52b808cb735ba769b";
+    const privkey2 = "be2484ab5dc92d7c6713b980289511e9786a57fd65af9ae5d38c2f088941dde0";
 
     const user1 = {
         privkey: privkey1,
@@ -65,7 +65,6 @@ const proveServer = async () => {
     console.log('Res: 2', relationshipResponse2);
 
     const availableProofs = await getAvailableProofs(user1);
-    console.log("Available proofs for user1", availableProofs);
     await proveAvailable(wasm, availableProofs, user1);
 
     const proven = await getProvenDegrees(user1);
