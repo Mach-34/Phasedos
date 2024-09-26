@@ -28,7 +28,7 @@ ff_ce = { version = "0.11", features = ["derive"] }
 hex = "0.4.3"
 nova-scotia = { git = "https://github.com/Mach-34/Nova-Scotia/" } # fork adds support for continue_recursive_circuit
 nova-snark = "0.23.0"
-num-bigint = "0.4.4"
+num-bigint = "^0.4"
 poseidon-rs = "0.0.8"
 rand = "0.8.5"
 serde = "1.0.190"
